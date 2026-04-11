@@ -28,7 +28,7 @@ from tqdm import tqdm
 
 from lerobot.configs import parser
 from lerobot.configs.train import TrainPipelineConfig
-from lerobot.datasets.factory import make_dataset
+from lerobot.datasets.factory import make_dataset, make_handcap_dataset
 from lerobot.datasets.sampler import EpisodeAwareSampler
 from lerobot.datasets.utils import cycle
 from lerobot.envs.factory import make_env, make_env_pre_post_processors
@@ -219,13 +219,45 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
     # Dataset loading synchronization: main process downloads first to avoid race conditions
     if is_main_process:
         logging.info("Creating dataset")
-        dataset = make_dataset(cfg)
+        if cfg.use_handcap:
+            dataset = make_handcap_dataset(cfg)
+        else:
+            dataset = make_dataset(cfg)
 
     accelerator.wait_for_everyone()
 
     # Now all other processes can safely load the dataset
     if not is_main_process:
-        dataset = make_dataset(cfg)
+        if cfg.use_handcap:
+            dataset = make_handcap_dataset(cfg)
+        else:
+            dataset = make_dataset(cfg)
+
+    if getattr(cfg, "use_handcap", False):
+        from lerobot.datasets.compute_stats import get_feature_stats
+        if is_main_process:
+            logging.info("Recomputing stats for handcap dataset before creating policy")
+        
+        # Temporary dataloader just to cycle stats
+        dl = torch.utils.data.DataLoader(dataset, num_workers=cfg.num_workers, batch_size=cfg.batch_size)            
+        obs_stats_dict = []
+        action_dict = []
+        with torch.no_grad():
+            for batch in dl:
+                if 'observation.state' in batch:
+                    obs_stats_dict.append(batch['observation.state'])
+                if 'action' in batch:
+                    action_dict.append(batch['action'])
+        
+        if len(obs_stats_dict) > 0 and len(action_dict) > 0:
+            obs_stats_dict = torch.cat(obs_stats_dict, dim=0).view(-1, obs_stats_dict[0].shape[-1])
+            action_dict = torch.cat(action_dict, dim=0).view(-1, action_dict[0].shape[-1])
+            dataset.meta.stats['observation.state'] = get_feature_stats(obs_stats_dict.numpy(), axis=0, keepdims=False)
+            dataset.meta.stats['action'] = get_feature_stats(action_dict.numpy(), axis=0, keepdims=False)
+        
+        cfg.policy.use_handcap = True
+        
+    accelerator.wait_for_everyone()
 
     # Create environment used for evaluating checkpoints during training on simulation data.
     # On real-world data, no need to create an environment as evaluations are done outside train.py,

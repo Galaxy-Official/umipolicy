@@ -105,6 +105,10 @@ class DiffusionConfig(PreTrainedConfig):
     horizon: int = 16
     n_action_steps: int = 8
 
+    policies_algo_type: str = "default"
+    use_tactile: bool = False
+    use_handcap: bool = False
+
     normalization_mapping: dict[str, NormalizationMode] = field(
         default_factory=lambda: {
             "VISUAL": NormalizationMode.MEAN_STD,
@@ -238,7 +242,7 @@ class DiffusionConfig(PreTrainedConfig):
                     )
 
         # Check that all input images have the same shape.
-        if len(self.image_features) > 0:
+        if len(self.image_features) > 0 and not self.use_tactile:
             first_image_key, first_image_ft = next(iter(self.image_features.items()))
             for key, image_ft in self.image_features.items():
                 if image_ft.shape != first_image_ft.shape:

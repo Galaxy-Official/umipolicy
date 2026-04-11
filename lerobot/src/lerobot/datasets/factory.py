@@ -21,9 +21,13 @@ import torch
 from lerobot.configs.policies import PreTrainedConfig
 from lerobot.configs.train import TrainPipelineConfig
 from lerobot.datasets.dataset_metadata import LeRobotDatasetMetadata
+from lerobot.datasets.dataset_metadata_handcap import LeRobotDatasetMetadataHandcap
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.datasets.lerobot_dataset_handcap import LeRobotDatasetHandcap
 from lerobot.datasets.multi_dataset import MultiLeRobotDataset
+from lerobot.datasets.multi_dataset_handcap import MultiLeRobotDatasetHandcap
 from lerobot.datasets.streaming_dataset import StreamingLeRobotDataset
+from lerobot.datasets.streaming_dataset_handcap import StreamingLeRobotDatasetHandcap
 from lerobot.datasets.transforms import ImageTransforms
 from lerobot.utils.constants import ACTION, OBS_PREFIX, REWARD
 
@@ -112,6 +116,72 @@ def make_dataset(cfg: TrainPipelineConfig) -> LeRobotDataset | MultiLeRobotDatas
     else:
         raise NotImplementedError("The MultiLeRobotDataset isn't supported for now.")
         dataset = MultiLeRobotDataset(
+            cfg.dataset.repo_id,
+            # TODO(aliberts): add proper support for multi dataset
+            # delta_timestamps=delta_timestamps,
+            image_transforms=image_transforms,
+            video_backend=cfg.dataset.video_backend,
+        )
+        logging.info(
+            "Multiple datasets were provided. Applied the following index mapping to the provided datasets: "
+            f"{pformat(dataset.repo_id_to_index, indent=2)}"
+        )
+
+    if cfg.dataset.use_imagenet_stats:
+        for key in dataset.meta.camera_keys:
+            for stats_type, stats in IMAGENET_STATS.items():
+                dataset.meta.stats[key][stats_type] = torch.tensor(stats, dtype=torch.float32)
+
+    return dataset
+
+
+
+def make_handcap_dataset(cfg: TrainPipelineConfig) -> LeRobotDatasetHandcap | MultiLeRobotDatasetHandcap:
+    """Handles the logic of setting up delta timestamps and image transforms before creating a dataset.
+
+    Args:
+        cfg (TrainPipelineConfig): A TrainPipelineConfig config which contains a DatasetConfig and a PreTrainedConfig.
+
+    Raises:
+        NotImplementedError: The MultiLeRobotDatasetHandcap is currently deactivated.
+
+    Returns:
+        LeRobotDataset | MultiLeRobotDatasetHandcap
+    """
+    image_transforms = (
+        ImageTransforms(cfg.dataset.image_transforms) if cfg.dataset.image_transforms.enable else None
+    )
+
+    if isinstance(cfg.dataset.repo_id, str):
+        ds_meta = LeRobotDatasetMetadataHandcap(
+            cfg.dataset.repo_id, root=cfg.dataset.root, revision=cfg.dataset.revision
+        )
+        delta_timestamps = resolve_delta_timestamps(cfg.policy, ds_meta)
+        if not cfg.dataset.streaming:
+            dataset = LeRobotDatasetHandcap(
+                cfg.dataset.repo_id,
+                root=cfg.dataset.root,
+                episodes=cfg.dataset.episodes,
+                delta_timestamps=delta_timestamps,
+                image_transforms=image_transforms,
+                revision=cfg.dataset.revision,
+                video_backend=cfg.dataset.video_backend,
+                tolerance_s=cfg.tolerance_s,
+            )
+        else:
+            dataset = StreamingLeRobotDatasetHandcap(
+                cfg.dataset.repo_id,
+                root=cfg.dataset.root,
+                episodes=cfg.dataset.episodes,
+                delta_timestamps=delta_timestamps,
+                image_transforms=image_transforms,
+                revision=cfg.dataset.revision,
+                max_num_shards=cfg.num_workers,
+                tolerance_s=cfg.tolerance_s,
+            )
+    else:
+        raise NotImplementedError("The MultiLeRobotDataset isn't supported for now.")
+        dataset = MultiLeRobotDatasetHandcap(
             cfg.dataset.repo_id,
             # TODO(aliberts): add proper support for multi dataset
             # delta_timestamps=delta_timestamps,

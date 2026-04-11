@@ -43,6 +43,8 @@ from lerobot.policies.utils import (
 )
 from lerobot.utils.constants import ACTION, OBS_ENV_STATE, OBS_IMAGES, OBS_STATE
 
+from lerobot.policies.tactile_backbone.tactile_backbone import CLIPPretrainedTactileEncoderPooled
+
 
 class DiffusionPolicy(PreTrainedPolicy):
     """
@@ -183,6 +185,19 @@ class DiffusionModel(nn.Module):
         if self.config.env_state_feature:
             global_cond_dim += self.config.env_state_feature.shape[0]
 
+        if getattr(self.config, "policies_algo_type", "default") == "ftvalign":
+            self.force_mlp = nn.Sequential(
+                nn.Linear(1, 512),
+                nn.ReLU(),
+                nn.Linear(512, 1024)
+            )
+            self.vision_tactile_fusion = nn.Linear(2048, 1024)
+            self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
+            
+        if getattr(self.config, "use_tactile", False):
+            tactile_pretrained_ckpt = "ckpt/pretrained_tactile_encoder.pt"
+            self.tac_backbone = CLIPPretrainedTactileEncoderPooled(tactile_pretrained_ckpt)
+
         self.unet = DiffusionConditionalUnet1d(config, global_cond_dim=global_cond_dim * config.n_obs_steps)
 
         if config.compile_model:
@@ -243,43 +258,102 @@ class DiffusionModel(nn.Module):
 
         return sample
 
-    def _prepare_global_conditioning(self, batch: dict[str, Tensor]) -> Tensor:
+    def ftvalign(self, tactile_feature, visual_feature, force_feature):
+        """
+        Compute Contrative Loss between tactile and visual and force.
+        """
+        combined_visual_force_feature = torch.cat([visual_feature, force_feature], dim=-1)
+
+        combined_visual_force_feature = combined_visual_force_feature / combined_visual_force_feature.norm(dim=1, keepdim=True)
+        tactile_feature = tactile_feature / tactile_feature.norm(dim=1, keepdim=True)
+
+        logit_scale = self.logit_scale.exp()
+        logits_per_visualforce = logit_scale * combined_visual_force_feature @ tactile_feature.t()
+        logits_per_tactile = logits_per_visualforce.t()
+
+        labels = torch.arange(tactile_feature.size(0), device=tactile_feature.device)
+
+        loss_vf_to_tactile = F.cross_entropy(logits_per_visualforce, labels)
+        loss_tactile_to_vf = F.cross_entropy(logits_per_tactile, labels)
+
+        contra_loss = (loss_tactile_to_vf + loss_vf_to_tactile) / 2.0
+
+        return contra_loss
+
+    def _prepare_global_conditioning(self, batch: dict[str, Tensor], return_ftvalign_loss=False) -> Tensor:
         """Encode image features and concatenate them all together along with the state vector."""
         batch_size, n_obs_steps = batch[OBS_STATE].shape[:2]
         global_cond_feats = [batch[OBS_STATE]]
+        ftvalign_loss = 0.0
+
         # Extract image features.
         if self.config.image_features:
-            if self.config.use_separate_rgb_encoder_per_camera:
-                # Combine batch and sequence dims while rearranging to make the camera index dimension first.
-                images_per_camera = einops.rearrange(batch[OBS_IMAGES], "b s n ... -> n (b s) ...")
-                img_features_list = torch.cat(
-                    [
-                        encoder(images)
-                        for encoder, images in zip(self.rgb_encoder, images_per_camera, strict=True)
-                    ]
-                )
-                # Separate batch and sequence dims back out. The camera index dim gets absorbed into the
-                # feature dim (effectively concatenating the camera features).
-                img_features = einops.rearrange(
-                    img_features_list, "(n b s) ... -> b s (n ...)", b=batch_size, s=n_obs_steps
-                )
+            if getattr(self.config, "use_tactile", False):
+                # Separate visual and tactile keys based on shape. Tactile images are usually 224x224.
+                obs_images = []
+                obs_tactile = []
+                for key in self.config.image_features:
+                    if batch[key].shape[3] != 224:
+                        obs_images.append(batch[key])
+                    else:
+                        obs_tactile.append(batch[key])
+                batch_images = torch.stack(obs_images, dim=-4) if len(obs_images)>0 else None
+                batch_tactiles = torch.stack(obs_tactile, dim=-4) if len(obs_tactile)>0 else None
             else:
-                # Combine batch, sequence, and "which camera" dims before passing to shared encoder.
-                img_features = self.rgb_encoder(
-                    einops.rearrange(batch[OBS_IMAGES], "b s n ... -> (b s n) ...")
-                )
-                # Separate batch dim and sequence dim back out. The camera index dim gets absorbed into the
-                # feature dim (effectively concatenating the camera features).
-                img_features = einops.rearrange(
-                    img_features, "(b s n) ... -> b s (n ...)", b=batch_size, s=n_obs_steps
-                )
+                batch_images = batch[OBS_IMAGES]
+                batch_tactiles = None
+
+            if self.config.use_separate_rgb_encoder_per_camera:
+                if batch_images is not None:
+                    images_per_camera = einops.rearrange(batch_images, "b s n ... -> n (b s) ...")
+                    img_features_list = torch.cat([
+                        encoder(images)
+                        for encoder, images in zip(self.rgb_encoder, images_per_camera, strict=False)
+                    ])
+                    img_features = einops.rearrange(
+                        img_features_list, "(n b s) ... -> b s (n ...)", b=batch_size, s=n_obs_steps
+                    )
+                if batch_tactiles is not None:
+                    # Not using separate encoder for tactiles currently
+                    pass
+            else:
+                if batch_images is not None:
+                    img_features = self.rgb_encoder(
+                        einops.rearrange(batch_images, "b s n ... -> (b s n) ...")
+                    )
+                    img_features = einops.rearrange(
+                        img_features, "(b s n) ... -> b s (n ...)", b=batch_size, s=n_obs_steps
+                    )
+                
+                if batch_tactiles is not None:
+                    tactile_features = self.tac_backbone(
+                        einops.rearrange(batch_tactiles, "b s n ... -> (b s n) ...")
+                    )
+                    tactile_features = einops.rearrange(
+                        tactile_features, "(b s n) ... -> b s (n ...)", b=batch_size, s=n_obs_steps
+                    )
+                    
+                    if getattr(self.config, "policies_algo_type", "default") == "ftvalign":
+                        force_feature = self.force_mlp(
+                            einops.rearrange(batch["observation.forces.left"], "b s n ... -> (b s n) ...") # HACK: Hardcoded for now. 
+                        )
+                        force_feature = einops.rearrange(
+                            force_feature, "(b s n) ... -> b s (n ...)", b=batch_size, s=1
+                        )
+                        ftvalign_loss = self.ftvalign(tactile_features, img_features, force_feature)
+                    
+                    img_features = torch.cat([img_features, tactile_features], dim=-1)
+
             global_cond_feats.append(img_features)
 
         if self.config.env_state_feature:
             global_cond_feats.append(batch[OBS_ENV_STATE])
 
         # Concatenate features then flatten to (B, global_cond_dim).
-        return torch.cat(global_cond_feats, dim=-1).flatten(start_dim=1)
+        cond = torch.cat(global_cond_feats, dim=-1).flatten(start_dim=1)
+        if return_ftvalign_loss:
+            return cond, ftvalign_loss
+        return cond
 
     def generate_actions(self, batch: dict[str, Tensor], noise: Tensor | None = None) -> Tensor:
         """
@@ -331,7 +405,11 @@ class DiffusionModel(nn.Module):
         assert n_obs_steps == self.config.n_obs_steps
 
         # Encode image features and concatenate them all together along with the state vector.
-        global_cond = self._prepare_global_conditioning(batch)  # (B, global_cond_dim)
+        if getattr(self.config, "policies_algo_type", "default") == "ftvalign":
+            global_cond, ftvalign_loss = self._prepare_global_conditioning(batch, return_ftvalign_loss=True)
+        else:
+            global_cond = self._prepare_global_conditioning(batch)
+            ftvalign_loss = 0.0
 
         # Forward diffusion.
         trajectory = batch[ACTION]
@@ -371,7 +449,7 @@ class DiffusionModel(nn.Module):
             in_episode_bound = ~batch["action_is_pad"]
             loss = loss * in_episode_bound.unsqueeze(-1)
 
-        return loss.mean()
+        return loss.mean() + ftvalign_loss
 
 
 class SpatialSoftmax(nn.Module):
