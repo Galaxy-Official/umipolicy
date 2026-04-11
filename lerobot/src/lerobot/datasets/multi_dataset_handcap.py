@@ -23,7 +23,7 @@ import torch.utils
 
 from lerobot.datasets.compute_stats import aggregate_stats
 from lerobot.datasets.feature_utils import get_hf_features_from_features
-from lerobot.datasets.lerobot_dataset import LeRobotDatasetHandcap
+from lerobot.datasets.lerobot_dataset_handcap import LeRobotDatasetHandcap
 from lerobot.datasets.video_utils import VideoFrame
 from lerobot.utils.constants import HF_LEROBOT_HOME
 
