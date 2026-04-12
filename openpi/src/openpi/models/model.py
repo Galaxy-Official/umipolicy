@@ -23,8 +23,8 @@ import openpi.shared.array_typing as at
 
 logger = logging.getLogger("openpi")
 
-# Type variable for array types (JAX arrays, PyTorch tensors, or numpy arrays)
-ArrayT = TypeVar("ArrayT", bound=jax.Array | torch.Tensor | np.ndarray)
+# Type variable for array types
+ArrayT = TypeVar("ArrayT", at.Array, jax.ShapeDtypeStruct)
 
 
 class ModelType(enum.Enum):
@@ -35,11 +35,20 @@ class ModelType(enum.Enum):
     PI05 = "pi05"
 
 
-# The model always expects these images
 IMAGE_KEYS = (
-    "base_0_rgb",
-    "left_wrist_0_rgb",
-    "right_wrist_0_rgb",
+    "head_0_rgb",
+    "wrist_0_rgb",
+    "side_0_rgb",
+)
+
+TACTILE_IMAGE_KEYS = (
+    "left_tactile_0_rgb",
+    "right_tactile_0_rgb"
+)
+
+TACTILE_IMAGE_KEYS = (
+    "left_tactile_0_rgb",
+    "right_tactile_0_rgb"
 )
 
 
@@ -89,8 +98,10 @@ class Observation(Generic[ArrayT]):
 
     # Images, in [-1, 1] float32.
     images: dict[str, at.Float[ArrayT, "*b h w c"]]
+    tactile_images: dict[str, at.Float[ArrayT, "*b h w c"]]
     # Image masks, with same keys as images.
     image_masks: dict[str, at.Bool[ArrayT, "*b"]]
+    tactile_image_masks: dict[str, at.Bool[ArrayT, "*b"]]
     # Low-dimensional robot state.
     state: at.Float[ArrayT, "*b s"]
 
@@ -112,15 +123,39 @@ class Observation(Generic[ArrayT]):
         # Ensure that tokenized_prompt and tokenized_prompt_mask are provided together.
         if ("tokenized_prompt" in data) != ("tokenized_prompt_mask" in data):
             raise ValueError("tokenized_prompt and tokenized_prompt_mask must be provided together.")
-        # If images are uint8, convert them to [-1, 1] float32.
+        images = {}
+        tactile_images = {}
         for key in data["image"]:
-            if data["image"][key].dtype == np.uint8:
-                data["image"][key] = data["image"][key].astype(np.float32) / 255.0 * 2.0 - 1.0
-            elif hasattr(data["image"][key], "dtype") and data["image"][key].dtype == torch.uint8:
-                data["image"][key] = data["image"][key].to(torch.float32).permute(0, 3, 1, 2) / 255.0 * 2.0 - 1.0
+            if key in IMAGE_KEYS:
+                images[key] = data["image"][key]
+            elif key in TACTILE_IMAGE_KEYS:
+                tactile_images[key] = data["image"][key]
+
+        image_masks = {}
+        tactile_image_masks = {}
+        for key in data["image_mask"]:
+            if key in IMAGE_KEYS:
+                image_masks[key] = data["image_mask"][key]
+            elif key in TACTILE_IMAGE_KEYS:
+                tactile_image_masks[key] = data["image_mask"][key]
+
+        for key in images:
+            if images[key].dtype == np.uint8:
+                images[key] = images[key].astype(np.float32) / 255.0 * 2.0 - 1.0
+            elif hasattr(images[key], "dtype") and images[key].dtype == torch.uint8:
+                images[key] = images[key].to(torch.float32).permute(0, 3, 1, 2) / 255.0 * 2.0 - 1.0
+
+        for key in tactile_images:
+            if tactile_images[key].dtype == np.uint8:
+                tactile_images[key] = tactile_images[key].astype(np.float32) / 255.0 * 2.0 - 1.0
+            elif hasattr(tactile_images[key], "dtype") and tactile_images[key].dtype == torch.uint8:
+                tactile_images[key] = tactile_images[key].to(torch.float32).permute(0, 3, 1, 2) / 255.0 * 2.0 - 1.0
+
         return cls(
-            images=data["image"],
-            image_masks=data["image_mask"],
+            images=images,
+            tactile_images=tactile_images,
+            image_masks=image_masks,
+            tactile_image_masks=tactile_image_masks,
             state=data["state"],
             tokenized_prompt=data.get("tokenized_prompt"),
             tokenized_prompt_mask=data.get("tokenized_prompt_mask"),
@@ -131,8 +166,8 @@ class Observation(Generic[ArrayT]):
     def to_dict(self) -> at.PyTree[ArrayT]:
         """Convert the Observation to a nested dict."""
         result = dataclasses.asdict(self)
-        result["image"] = result.pop("images")
-        result["image_mask"] = result.pop("image_masks")
+        result["image"] = {**result.pop("images"), **result.pop("tactile_images", {})}
+        result["image_mask"] = {**result.pop("image_masks"), **result.pop("tactile_image_masks", {})}
         return result
 
 
@@ -147,19 +182,23 @@ def preprocess_observation(
     *,
     train: bool = False,
     image_keys: Sequence[str] = IMAGE_KEYS,
+    tactile_image_keys: Sequence[str] = TACTILE_IMAGE_KEYS,
     image_resolution: tuple[int, int] = IMAGE_RESOLUTION,
 ) -> Observation:
     """Preprocess the observations by performing image augmentations (if train=True), resizing (if necessary), and
     filling in a default image mask (if necessary).
     """
 
-    if not set(image_keys).issubset(observation.images):
-        raise ValueError(f"images dict missing keys: expected {image_keys}, got {list(observation.images)}")
+    missing = set(image_keys) - set(observation.images)
+    if missing:
+        logger.warning(f"[preprocess_observation] Missing image keys: {missing}, will skip them.")
 
     batch_shape = observation.state.shape[:-1]
 
     out_images = {}
     for key in image_keys:
+        if key not in observation.images:
+            continue
         image = observation.images[key]
         if image.shape[1:3] != image_resolution:
             logger.info(f"Resizing image {key} from {image.shape[1:3]} to {image_resolution}")
@@ -188,6 +227,38 @@ def preprocess_observation(
 
         out_images[key] = image
 
+    out_tactile_images = {}
+    for key in tactile_image_keys:
+        if key not in observation.tactile_images:
+            continue
+        image = observation.tactile_images[key]
+        if image.shape[1:3] != image_resolution:
+            logger.info(f"Resizing tactile image {key} from {image.shape[1:3]} to {image_resolution}")
+            image = image_tools.resize_with_pad(image, *image_resolution)
+
+        if train:
+            # Convert from [-1, 1] to [0, 1] for augmax.
+            image = image / 2.0 + 0.5
+
+            transforms = []
+            if "tactile" in key:
+                height, width = image.shape[1:3]
+                transforms += [
+                    augmax.RandomCrop(int(width * 0.95), int(height * 0.95)),
+                    augmax.Resize(width, height),
+                    augmax.Rotate((-5, 5)),
+                ]
+            transforms += [
+                augmax.ColorJitter(brightness=0.3, contrast=0.4, saturation=0.5),
+            ]
+            sub_rngs = jax.random.split(rng, image.shape[0])
+            image = jax.vmap(augmax.Chain(*transforms))(sub_rngs, image)
+
+            # Back to [-1, 1].
+            image = image * 2.0 - 1.0
+
+        out_tactile_images[key] = image
+
     # obtain mask
     out_masks = {}
     for key in out_images:
@@ -197,9 +268,19 @@ def preprocess_observation(
         else:
             out_masks[key] = jnp.asarray(observation.image_masks[key])
 
+    out_tactile_image_masks = {}
+    for key in out_tactile_images:
+        if key not in observation.tactile_image_masks:
+            # do not mask by default
+            out_tactile_image_masks[key] = jnp.ones(batch_shape, dtype=jnp.bool)
+        else:
+            out_tactile_image_masks[key] = jnp.asarray(observation.tactile_image_masks[key])
+
     return Observation(
         images=out_images,
         image_masks=out_masks,
+        tactile_images=out_tactile_images,
+        tactile_image_masks=out_tactile_image_masks,
         state=observation.state,
         tokenized_prompt=observation.tokenized_prompt,
         tokenized_prompt_mask=observation.tokenized_prompt_mask,

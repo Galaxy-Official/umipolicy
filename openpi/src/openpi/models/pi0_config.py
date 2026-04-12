@@ -25,6 +25,10 @@ class Pi0Config(_model.BaseModelConfig):
     action_dim: int = 32
     action_horizon: int = 50
     max_token_len: int = None  # type: ignore
+    
+    use_tactile: bool = False
+    tactile_pretrained_ckpt: str = ""
+    camera_keys: tuple = ("head_0_rgb", "wrist_0_rgb", "side_0_rgb")
     # Pi05 has two differences from Pi0:
     # - the state input is part of the discrete language tokens rather than a continuous input that is part of the suffix
     # - the action expert uses adaRMSNorm to inject the flow matching timestep
@@ -67,15 +71,15 @@ class Pi0Config(_model.BaseModelConfig):
 
         with at.disable_typechecking():
             observation_spec = _model.Observation(
-                images={
-                    "base_0_rgb": image_spec,
-                    "left_wrist_0_rgb": image_spec,
-                    "right_wrist_0_rgb": image_spec,
+                images={k: image_spec for k in self.camera_keys},
+                tactile_images={
+                    "left_tactile_0_rgb": image_spec,
+                    "right_tactile_0_rgb": image_spec,
                 },
-                image_masks={
-                    "base_0_rgb": image_mask_spec,
-                    "left_wrist_0_rgb": image_mask_spec,
-                    "right_wrist_0_rgb": image_mask_spec,
+                image_masks={k: image_mask_spec for k in self.camera_keys},
+                tactile_image_masks={
+                    "left_tactile_0_rgb": image_mask_spec,
+                    "right_tactile_0_rgb": image_mask_spec,
                 },
                 state=jax.ShapeDtypeStruct([batch_size, self.action_dim], jnp.float32),
                 tokenized_prompt=jax.ShapeDtypeStruct([batch_size, self.max_token_len], jnp.int32),

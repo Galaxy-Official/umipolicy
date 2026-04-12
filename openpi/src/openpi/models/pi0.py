@@ -66,6 +66,7 @@ def posemb_sincos(
 class Pi0(_model.BaseModel):
     def __init__(self, config: pi0_config.Pi0Config, rngs: nnx.Rngs):
         super().__init__(config.action_dim, config.action_horizon, config.max_token_len)
+        self.config = config
         self.pi05 = config.pi05
         paligemma_config = _gemma.get_config(config.paligemma_variant)
         action_expert_config = _gemma.get_config(config.action_expert_variant)
@@ -88,7 +89,24 @@ class Pi0(_model.BaseModel):
             )
         )
         img.lazy_init(next(iter(config.fake_obs().images.values())), train=False, rngs=rngs)
-        self.PaliGemma = nnx.Dict(llm=llm, img=img)
+        
+        if self.config.use_tactile:
+            logger.info("Using tactile encoder.")
+            tac = nnx_bridge.ToNNX(
+                _siglip.Module(
+                    num_classes=paligemma_config.width,
+                    variant="So400m/14",
+                    pool_type="none",
+                    scan=True,
+                    dtype_mm=config.dtype,
+                )
+            )
+            tac.lazy_init(next(iter(config.fake_obs().tactile_images.values())), train=True, rngs=rngs)
+            self.PaliGemma = nnx.Dict(llm=llm, img=img, tac=tac)
+        else:
+            logger.info("Not using tactile encoder.")
+            self.PaliGemma = nnx.Dict(llm=llm, img=img)
+
         self.action_in_proj = nnx.Linear(config.action_dim, action_expert_config.width, rngs=rngs)
         if config.pi05:
             self.time_mlp_in = nnx.Linear(action_expert_config.width, action_expert_config.width, rngs=rngs)
@@ -123,6 +141,20 @@ class Pi0(_model.BaseModel):
             )
             # image tokens attend to each other
             ar_mask += [False] * image_tokens.shape[1]
+
+        if self.config.use_tactile:
+            for name in obs.tactile_images:
+                tactile_image_tokens, _ = self.PaliGemma.tac(obs.tactile_images[name], train=False)
+                tokens.append(tactile_image_tokens)
+                input_mask.append(
+                    einops.repeat(
+                        obs.tactile_image_masks[name],
+                        "b -> b s",
+                        s=tactile_image_tokens.shape[1],
+                    )
+                )
+                # tactile image tokens attend to each other
+                ar_mask += [False] * tactile_image_tokens.shape[1]
 
         # add language (aka tokenized inputs)
         if obs.tokenized_prompt is not None:
