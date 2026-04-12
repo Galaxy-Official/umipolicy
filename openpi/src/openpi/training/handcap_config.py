@@ -3,6 +3,7 @@
 import dataclasses
 import pathlib
 from typing import TypeAlias
+from collections.abc import Sequence
 
 import flax.nnx as nnx
 from typing_extensions import override
