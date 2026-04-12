@@ -6,7 +6,6 @@ export CUDA_VISIBLE_DEVICES=0,1
 # OpenPI(JAX环境)不需要 accelerate，直接调用 python script 即可跑 DDP
 # conda activate umipolicy
 
-# 注意：OpenPI 中 batch_size 是全局(Global) Batch Size。
 # 若你之前单卡 64，2 张卡其实总归是 128；如果 4 卡则总计 256。
 # 此处我们设成全局 128 (对应原有2卡 * 64)。
 
