@@ -14,7 +14,7 @@ python scripts/train.py \
   --exp-name dp_simple_sorting_0409_handcap \
   --batch-size 128 \
   --num-train-steps 200000 \
-  --wandb-enabled true \
+  --wandb-enabled \
   --fsdp-devices 1 
   
 # 若开启 tactile 触觉传感器，可将上面的 config-name 替换为 pi0_simple_sorting_tactile

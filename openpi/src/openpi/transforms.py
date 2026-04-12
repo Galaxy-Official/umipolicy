@@ -102,6 +102,24 @@ class RepackTransform(DataTransformFn):
 
 
 @dataclasses.dataclass(frozen=True)
+class HandcapRepackTransform(DataTransformFn):
+    structure: at.PyTree[str]
+
+    def __call__(self, data: DataDict) -> DataDict:
+        structure = {
+                        'observation/wrist_image': 'observation.images.wrist', 
+                        'observation/left_tactile': 'observation.tactiles.left',
+                        'observation/right_tactile': 'observation.tactiles.right',
+                        'observation/state': 'observation.state', 
+                        'actions': 'actions',  
+                        'prompt': 'prompt'
+                    }
+        
+        flat_item = flatten_dict(data)
+        return jax.tree.map(lambda k: flat_item[k], structure)
+
+
+@dataclasses.dataclass(frozen=True)
 class InjectDefaultPrompt(DataTransformFn):
     prompt: str | None
 
