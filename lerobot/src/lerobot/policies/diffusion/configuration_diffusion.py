@@ -168,11 +168,6 @@ class DiffusionConfig(PreTrainedConfig):
 
     def __post_init__(self):
         super().__post_init__()
-        
-        if not getattr(self, "use_tactile", False):
-            tactile_keys = [k for k in self.image_features.keys() if "tactile" in k]
-            for k in tactile_keys:
-                self.image_features.pop(k, None)
 
         """Input validation (not exhaustive)."""
         if not self.vision_backbone.startswith("resnet"):
@@ -235,6 +230,15 @@ class DiffusionConfig(PreTrainedConfig):
         )
 
     def validate_features(self) -> None:
+        use_tac = getattr(self, "use_tactile", False)
+        if str(use_tac).lower() == "false":
+            use_tac = False
+            
+        if not use_tac:
+            tactile_keys = [k for k in self.input_features.keys() if "tactile" in k]
+            for k in tactile_keys:
+                self.input_features.pop(k, None)
+
         if len(self.image_features) == 0 and self.env_state_feature is None:
             raise ValueError("You must provide at least one image or the environment state among the inputs.")
 
