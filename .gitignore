@@ -21,3 +21,12 @@ lerobot/tests/artifacts/
 lerobot/src/Data
 lerobot/src/ckpt
 lerobot/src/outputs
+
+# openpi specific
+openpi/ckpt/
+openpi/checkpoints/
+openpi/logs/
+openpi/outputs/
+openpi/wandb/
+openpi/assets/
+openpi/data/

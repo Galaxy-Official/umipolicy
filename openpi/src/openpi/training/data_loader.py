@@ -8,6 +8,7 @@ from typing import Literal, Protocol, SupportsIndex, TypeVar
 import jax
 import jax.numpy as jnp
 import lerobot.common.datasets.lerobot_dataset as lerobot_dataset
+import lerobot.datasets.lerobot_dataset_handcap as lerobot_dataset_handcap
 import numpy as np
 import torch
 
@@ -137,13 +138,25 @@ def create_torch_dataset(
     if repo_id == "fake":
         return FakeDataset(model_config, num_samples=1024)
 
-    dataset_meta = lerobot_dataset.LeRobotDatasetMetadata(repo_id)
-    dataset = lerobot_dataset.LeRobotDataset(
-        data_config.repo_id,
-        delta_timestamps={
-            key: [t / dataset_meta.fps for t in range(action_horizon)] for key in data_config.action_sequence_keys
-        },
-    )
+    data_root = getattr(data_config, "data_root", None)
+    if getattr(data_config, "use_handcap", False):
+        dataset_meta = lerobot_dataset_handcap.LeRobotDatasetMetadataHandcap(repo_id, root=data_root)
+        dataset = lerobot_dataset_handcap.LeRobotDatasetHandcap(
+            data_config.repo_id,
+            root=data_root,
+            delta_timestamps={
+                key: [t / dataset_meta.fps for t in range(action_horizon)] for key in data_config.action_sequence_keys
+            },
+        )
+    else:
+        dataset_meta = lerobot_dataset.LeRobotDatasetMetadata(repo_id, root=data_root)
+        dataset = lerobot_dataset.LeRobotDataset(
+            data_config.repo_id,
+            root=data_root,
+            delta_timestamps={
+                key: [t / dataset_meta.fps for t in range(action_horizon)] for key in data_config.action_sequence_keys
+            },
+        )
 
     if data_config.prompt_from_task:
         dataset = TransformedDataset(dataset, [_transforms.PromptFromLeRobotTask(dataset_meta.tasks)])
