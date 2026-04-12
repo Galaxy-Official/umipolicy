@@ -168,6 +168,11 @@ class DiffusionConfig(PreTrainedConfig):
 
     def __post_init__(self):
         super().__post_init__()
+        
+        if not getattr(self, "use_tactile", False):
+            tactile_keys = [k for k in self.image_features.keys() if "tactile" in k]
+            for k in tactile_keys:
+                self.image_features.pop(k, None)
 
         """Input validation (not exhaustive)."""
         if not self.vision_backbone.startswith("resnet"):
