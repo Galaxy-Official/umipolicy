@@ -11,7 +11,7 @@ export CUDA_VISIBLE_DEVICES=0,1
 # 此处我们设成全局 128 (对应原有2卡 * 64)。
 
 python scripts/train.py \
-  --config-name pi0_simple_sorting \
+  pi0_simple_sorting \
   --exp-name dp_simple_sorting_0409_handcap \
   --batch-size 128 \
   --num-train-steps 200000 \
