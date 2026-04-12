@@ -14,6 +14,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import lerobot.datasets.lerobot_dataset as lerobot_dataset
 import lerobot.datasets.lerobot_dataset_handcap as lerobot_dataset_handcap
+import lerobot.datasets.dataset_metadata_handcap as dataset_metadata_handcap
 import numpy as np
 import torch
 
@@ -145,7 +146,7 @@ def create_torch_dataset(
 
     data_root = getattr(data_config, "data_root", None)
     if getattr(data_config, "use_handcap", False):
-        dataset_meta = lerobot_dataset_handcap.LeRobotDatasetMetadataHandcap(repo_id, root=data_root)
+        dataset_meta = dataset_metadata_handcap.LeRobotDatasetMetadataHandcap(repo_id, root=data_root)
         dataset = lerobot_dataset_handcap.LeRobotDatasetHandcap(
             data_config.repo_id,
             root=data_root,
