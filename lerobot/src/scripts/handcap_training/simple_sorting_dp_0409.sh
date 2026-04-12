@@ -4,9 +4,6 @@ export CUDA_VISIBLE_DEVICES=0,1
 # source /root/miniconda3/bin/activate
 # conda activate umipolicy
 
-# 1. 使用 accelerate launch 来启动分布式训练任务
-# 2. 指定 --num_processes 的数量（与你上面分配的显卡数量一致）
-# 3. 将原来的 train 替换为了 v3.0 中的 lerobot_train
 accelerate launch --multi_gpu --num_processes=2 --num_machines=1 --mixed_precision=no --dynamo_backend=no -m lerobot.scripts.lerobot_train \
   --dataset.repo_id=lihongcs/block_to_pot_handcap \
   --dataset.root=Data/handcap30 \
