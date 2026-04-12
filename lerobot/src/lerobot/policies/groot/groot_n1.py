@@ -173,7 +173,7 @@ N_COLOR_CHANNELS = 3
 
 
 # config
-@dataclass
+@dataclass(kw_only=True)
 class GR00TN15Config(PretrainedConfig):
     model_type = "gr00t_n1_5"
     backbone_cfg: dict = field(default_factory=dict, metadata={"help": "Backbone configuration."})
