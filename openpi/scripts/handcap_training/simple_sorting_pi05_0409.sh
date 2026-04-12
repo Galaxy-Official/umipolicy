@@ -10,7 +10,7 @@ export CUDA_VISIBLE_DEVICES=0,1
 # 若你之前单卡 64，2 张卡其实总归是 128；如果 4 卡则总计 256。
 # 此处我们设成全局 128 (对应原有2卡 * 64)。
 
-python ../train.py \
+python scripts/train.py \
   --config-name pi05_simple_sorting \
   --exp-name dp_simple_sorting_0409_handcap_pi05 \
   --batch-size 128 \
