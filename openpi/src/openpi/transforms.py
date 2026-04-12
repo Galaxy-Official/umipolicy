@@ -1,7 +1,7 @@
 from collections.abc import Callable, Mapping, Sequence
 import dataclasses
 import re
-from typing import Protocol, TypeAlias, TypeVar, runtime_checkable
+from typing import Protocol, TypeAlias, TypeVar, runtime_checkable, Any
 
 import flax.traverse_util as traverse_util
 import jax
@@ -329,14 +329,24 @@ class PromptFromLeRobotTask(DataTransformFn):
     """Extracts a prompt from the current LeRobot dataset task."""
 
     # Contains the LeRobot dataset tasks (dataset.meta.tasks).
-    tasks: dict[int, str]
+    tasks: dict[int, str] | Any
 
     def __call__(self, data: DataDict) -> DataDict:
         if "task_index" not in data:
             raise ValueError('Cannot extract prompt without "task_index"')
 
         task_index = int(data["task_index"])
-        if (prompt := self.tasks.get(task_index)) is None:
+        prompt = None
+
+        if hasattr(self.tasks, "index") and hasattr(self.tasks, "task_index"): # pandas DataFrame
+            # The index is the task string, and the column is 'task_index'
+            matches = self.tasks[self.tasks["task_index"] == task_index]
+            if len(matches) > 0:
+                prompt = str(matches.index[0])
+        elif isinstance(self.tasks, dict):
+            prompt = self.tasks.get(task_index)
+
+        if prompt is None:
             raise ValueError(f"{task_index=} not found in task mapping: {self.tasks}")
 
         return {**data, "prompt": prompt}
