@@ -30,3 +30,8 @@ openpi/outputs/
 openpi/wandb/
 openpi/assets/
 openpi/data/
+
+
+lingbot-va/Data
+lingbot-va/checkpoints
+lingbot-va/outputs

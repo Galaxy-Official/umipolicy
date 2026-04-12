@@ -7,8 +7,13 @@ from typing import Literal, Protocol, SupportsIndex, TypeVar
 
 import jax
 import jax.numpy as jnp
-import openpi.lerobot.datasets.lerobot_dataset as lerobot_dataset
-import openpi.lerobot.datasets.lerobot_dataset_handcap as lerobot_dataset_handcap
+import sys
+import pathlib
+# 将 openpi 模块所在目录加入系统路径，使内部通过 import lerobot 能够直接寻址到本地拷贝的 lerobot
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+
+import lerobot.datasets.lerobot_dataset as lerobot_dataset
+import lerobot.datasets.lerobot_dataset_handcap as lerobot_dataset_handcap
 import numpy as np
 import torch
 
