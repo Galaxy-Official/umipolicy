@@ -30,6 +30,9 @@ class LeRobotHandcapDataConfig(DataConfigFactory):
     # Exposing data_root here so the config instantiation knows about it
     data_root: str = tyro.MISSING
 
+    # Action sequences are stored as 'action' in handcap datasets
+    action_sequence_keys: Sequence[str] = ("action",)
+
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
         repack_transform = _transforms.Group(
@@ -40,7 +43,7 @@ class LeRobotHandcapDataConfig(DataConfigFactory):
                         "observation/left_tactile": "left_tactile",
                         "observation/right_tactile": "right_tactile",
                         "observation/state": "state",
-                        "actions": "actions",
+                        "actions": "action",
                         "prompt": "prompt",
                     }
                 )
@@ -65,6 +68,7 @@ class LeRobotHandcapDataConfig(DataConfigFactory):
             repack_transforms=repack_transform,
             data_transforms=data_transforms,
             model_transforms=model_transforms,
+            action_sequence_keys=self.action_sequence_keys,
         )
 
 

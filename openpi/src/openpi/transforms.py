@@ -111,7 +111,7 @@ class HandcapRepackTransform(DataTransformFn):
                         'observation/left_tactile': 'observation.tactiles.left',
                         'observation/right_tactile': 'observation.tactiles.right',
                         'observation/state': 'observation.state', 
-                        'actions': 'actions',  
+                        'actions': 'action',  
                         'prompt': 'prompt'
                     }
         
