@@ -68,6 +68,7 @@ class LeRobotDatasetMetadataHandcap:
         root: str | Path | None = None,
         revision: str | None = None,
         force_cache_sync: bool = False,
+        local_files_only: bool = True,
         metadata_buffer_size: int = 10,
     ):
         """Load or download metadata for an existing LeRobot dataset.
@@ -88,6 +89,7 @@ class LeRobotDatasetMetadataHandcap:
                 the current codebase version.
             force_cache_sync: If ``True``, re-download metadata from the Hub
                 even when local files exist.
+            local_files_only: If ``True``, entirely skips Hugging Face hub fetches and fails if files are missing.
             metadata_buffer_size: Number of episode metadata records to buffer
                 in memory before flushing to parquet.
         """
@@ -105,9 +107,11 @@ class LeRobotDatasetMetadataHandcap:
             if force_cache_sync or (
                 self._requested_root is None and has_legacy_hub_download_metadata(self.root)
             ):
-                raise FileNotFoundError
+                raise FileNotFoundError(f"Local files only is enabled but metadata is missing: {self.root}")
             self._load_metadata()
-        except (FileNotFoundError, NotADirectoryError):
+        except (FileNotFoundError, NotADirectoryError) as e:
+            if local_files_only:
+                raise FileNotFoundError(f"Missing local metadata file at {self.root / 'meta/info.json'}. \nHF fetching is disabled because 'local_files_only=True'.") from e
             if is_valid_version(self.revision):
                 self.revision = get_safe_version(self.repo_id, self.revision)
 
