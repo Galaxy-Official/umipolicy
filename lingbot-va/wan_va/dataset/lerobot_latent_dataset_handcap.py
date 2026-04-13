@@ -125,7 +125,6 @@ class LatentLeRobotDatasetHandcap(LeRobotDataset):
         if getattr(config, 'use_handcap', False):
             self.dataset = lerobot_dataset_handcap.LeRobotDatasetHandcap(repo_id=repo_id, root=Path(repo_id))
             self.meta = self.dataset.meta
-            self._hf_dataset = self.dataset.hf_dataset
             self.repo_id = repo_id
             self.root = Path(repo_id)
             self.episodes = None
@@ -154,6 +153,12 @@ class LatentLeRobotDatasetHandcap(LeRobotDataset):
                 output_all_columns=False
             )
         self.parse_meta()
+
+    @property
+    def hf_dataset(self):
+        if hasattr(self, 'dataset'):
+            return self.dataset.hf_dataset
+        return super().hf_dataset
 
     def parse_meta(self):
         out = []
