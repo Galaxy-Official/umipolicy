@@ -49,19 +49,24 @@ import gc
 
 class Trainer:
     def __init__(self, config):
-        if config.enable_wandb and config.rank == 0:
-            wandb.login(host=os.environ['WANDB_BASE_URL'], key=os.environ['WANDB_API_KEY'])
+        if config.enable_wandb and config.rank == 0 and os.environ.get("WANDB_MODE") != "disabled":
+            host = os.environ.get('WANDB_BASE_URL')
+            key = os.environ.get('WANDB_API_KEY')
+            if host and key:
+                wandb.login(host=host, key=key)
             self.wandb = wandb
             self.wandb.init(
-                entity=os.environ["WANDB_TEAM_NAME"],
+                entity=os.environ.get("WANDB_TEAM_NAME"),
                 project=os.getenv("WANDB_PROJECT", "va_robotwin"),
                 # dir=log_dir,
                 config=config,
-                mode="online",
+                mode=os.getenv("WANDB_MODE", "online"),
                 name='test_lln'
                 # name=os.path.basename(os.path.normpath(job_config.job.dump_folder))
             )
             logger.info("WandB logging enabled")
+        else:
+            config.enable_wandb = False
         self.step = 0
         self.config = config
         self.device = torch.device(f"cuda:{config.local_rank}")
