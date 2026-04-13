@@ -70,7 +70,12 @@ def main():
     else:
         # Fallback to parquet
         try:
-            episode_ds = load_dataset("parquet", data_files=os.path.join(args.dataset_path, "meta/episodes/*.parquet"), split="train")
+            import glob
+            parquet_files = glob.glob(os.path.join(args.dataset_path, "meta", "episodes", "**", "*.parquet"), recursive=True)
+            if len(parquet_files) == 0:
+                print("No parquet files found in meta/episodes directory!")
+                return
+            episode_ds = load_dataset("parquet", data_files=parquet_files, split="train")
             for item in episode_ds:
                 ep_map[item["episode_index"]] = item
         except Exception as e:
