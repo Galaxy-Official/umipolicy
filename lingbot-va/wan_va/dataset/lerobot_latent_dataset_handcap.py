@@ -1,7 +1,17 @@
 # Copyright 2024-2025 The Robbyant Team Authors. All rights reserved.
 from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
 import lerobot.datasets.lerobot_dataset_handcap as lerobot_dataset_handcap
-from lerobot.datasets.utils import get_episode_data_index
+def get_episode_data_index(meta_episodes, episodes=None):
+    ep_data_idx = {"from": [], "to": []}
+    meta_iterable = meta_episodes.values() if isinstance(meta_episodes, dict) else meta_episodes
+    for item in meta_iterable:
+        if "dataset_from_index" in item:
+            ep_data_idx["from"].append(item["dataset_from_index"])
+            ep_data_idx["to"].append(item["dataset_to_index"])
+        elif "from" in item:
+            ep_data_idx["from"].append(item["from"])
+            ep_data_idx["to"].append(item["to"])
+    return ep_data_idx
 from lerobot.datasets.compute_stats import aggregate_stats, compute_episode_stats
 import numpy as np
 from pathlib import Path
@@ -14,7 +24,7 @@ import torch
 from einops import rearrange
 from torch.utils.data import DataLoader
 from scipy.spatial.transform import Rotation as R
-from lerobot.constants import HF_LEROBOT_HOME
+from lerobot.utils.constants import HF_LEROBOT_HOME
 
 def recursive_find_file(directory, filename='info.json'):
     result = []
@@ -112,38 +122,15 @@ class LatentLeRobotDatasetHandcap(LeRobotDataset):
         repo_id,
         config=None,
     ):
-        self.repo_id = repo_id
-        self.root = HF_LEROBOT_HOME / repo_id
-        self.image_transforms = None
-        self.delta_timestamps = None
-        self.episodes = None
-        self.tolerance_s = 1e-4
-        self.revision = "v2.1"
-        self.video_backend = 'pyav'
-        self.delta_indices = None
-        self.batch_encoding_size = 1
-        self.episodes_since_last_encoding = 0
-        self.image_writer = None
-        self.episode_buffer = None
-        self.root.mkdir(exist_ok=True, parents=True)
         if getattr(config, 'use_handcap', False):
-            self.dataset = lerobot_dataset_handcap.LeRobotDatasetHandcap(self.repo_id, self.root, self.revision)
-            self.meta = lerobot_dataset_handcap.LeRobotDatasetMetadataHandcap(self.repo_id, self.root, self.revision, force_cache_sync=False)
+            self.dataset = lerobot_dataset_handcap.LeRobotDatasetHandcap(repo_id=repo_id, root=HF_LEROBOT_HOME / repo_id)
+            self.meta = self.dataset.meta
+            self.hf_dataset = self.dataset.hf_dataset
+            self.repo_id = repo_id
+            self.root = HF_LEROBOT_HOME / repo_id
+            self.episodes = None
         else:
-            self.meta = LeRobotDatasetMetadata(
-                self.repo_id, self.root, self.revision, force_cache_sync=False
-            )
-        if self.episodes is not None and self.meta._version >= packaging.version.parse("v2.1"):
-            episodes_stats = [self.meta.episodes_stats[ep_idx] for ep_idx in self.episodes]
-            self.stats = aggregate_stats(episodes_stats)
-        
-        try:
-            assert all((self.root / fpath).is_file() for fpath in self.get_episodes_file_paths())
-            self.hf_dataset = self.load_hf_dataset()
-        except (AssertionError, FileNotFoundError, NotADirectoryError):
-            self.revision = get_safe_version(self.repo_id, self.revision)
-            self.download_episodes(download_videos)
-            self.hf_dataset = self.load_hf_dataset()
+            super().__init__(repo_id, root=HF_LEROBOT_HOME / repo_id)
         self.episode_data_index = get_episode_data_index(self.meta.episodes, self.episodes)
         
         self.latent_path = Path(repo_id) / 'latents'
@@ -184,7 +171,13 @@ class LatentLeRobotDatasetHandcap(LeRobotDataset):
         self.new_metas = out
 
     def _check_meta(self, start_frame, end_frame, episode_index):
-        episode_chunk = self.meta.get_episode_chunk(episode_index)
+        if hasattr(self.meta, 'get_episode_chunk'):
+            episode_chunk = self.meta.get_episode_chunk(episode_index)
+        else:
+            try:
+                episode_chunk = self.meta.episodes[episode_index].get("meta/episodes/chunk_index", episode_index // 1000)
+            except (AttributeError, KeyError, IndexError):
+                episode_chunk = episode_index // 1000
         latent_path = Path(self.latent_path) / f"chunk-{episode_chunk:03d}"
         for key in self.used_video_keys:
             cur_path = latent_path / key
@@ -212,7 +205,13 @@ class LatentLeRobotDatasetHandcap(LeRobotDataset):
         return out
 
     def _get_range_latent_data(self, start_frame, end_frame, episode_index):
-        episode_chunk = self.meta.get_episode_chunk(episode_index)
+        if hasattr(self.meta, 'get_episode_chunk'):
+            episode_chunk = self.meta.get_episode_chunk(episode_index)
+        else:
+            try:
+                episode_chunk = self.meta.episodes[episode_index].get("meta/episodes/chunk_index", episode_index // 1000)
+            except (AttributeError, KeyError, IndexError):
+                episode_chunk = episode_index // 1000
         latent_path = Path(self.latent_path) / f"chunk-{episode_chunk:03d}"
         out = {}
         for key in self.used_video_keys:
