@@ -10,8 +10,9 @@ import torchvision.io
 from tqdm import tqdm
 from datasets import load_dataset
 
-# Add wan_va to path so we can import its modules
+# Add wan_va and its parent to path so we can import modules
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from modules.utils import load_vae, load_text_encoder, load_tokenizer, WanVAEStreamingWrapper
 
