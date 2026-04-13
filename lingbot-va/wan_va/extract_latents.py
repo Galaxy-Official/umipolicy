@@ -88,11 +88,13 @@ def main():
 
     # We use natively LeRobotDataset to abstract away the chunked video decodings!
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
-    print("Initializing LeRobotDataset to cleanly load frames... (this might take a few seconds)")
+    print("Initializing LeRobotDataset to cleanly load frames locally... (this might take a few seconds)")
     try:
+        # LeRobotDataset requires root to be the directory that CONTAINS meta/ and videos/, 
+        # i.e., exactly args.dataset_path. 
+        # We pass a dummy repo_id just so it doesn't complain, but it will load offline from root.
         repo_id = os.path.basename(os.path.normpath(args.dataset_path))
-        root_dir = os.path.dirname(os.path.normpath(args.dataset_path))
-        if not root_dir: root_dir = "."
+        root_dir = args.dataset_path
         ds = LeRobotDataset(repo_id=repo_id, root=root_dir)
     except Exception as e:
         print(f"Failed to init LeRobotDataset: {e}")
