@@ -188,6 +188,8 @@ class LatentLeRobotDatasetHandcap(LeRobotDataset):
 
                 if check_statu:
                     out.append(cur_meta)
+        if len(out) == 0:
+            print(f"[Latent Dataset Debug] WARNING: No valid episodes parsed! check_statu returned False for all episodes in {self.repo_id}.")
         self.new_metas = out
 
     def _check_meta(self, start_frame, end_frame, episode_index):
@@ -205,6 +207,7 @@ class LatentLeRobotDatasetHandcap(LeRobotDataset):
                 cur_path / f"episode_{episode_index:06d}_{start_frame}_{end_frame}.pth"
             )
             if not os.path.exists(latent_file):
+                print(f"[Latent Dataset Debug] Missing latent file: {latent_file}. Failing check for episode {episode_index}.")
                 return False
         return True
 
