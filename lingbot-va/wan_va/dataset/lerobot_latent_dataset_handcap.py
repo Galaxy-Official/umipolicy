@@ -134,6 +134,14 @@ class LatentLeRobotDatasetHandcap(LeRobotDataset):
         self.episode_data_index = get_episode_data_index(self.meta.episodes, self.episodes)
         
         self.latent_path = Path(repo_id) / 'latents'
+        if not os.path.exists(config.empty_emb_path):
+            fallback_path = Path(__file__).resolve().parent.parent.parent / 'empty_emb.pt'
+            if fallback_path.exists():
+                print(f"Loading empty_emb.pt from offline fallback: {fallback_path}")
+                config.empty_emb_path = str(fallback_path)
+            else:
+                raise FileNotFoundError(f"Could not find empty_emb.pt locally or at {config.empty_emb_path}. Please make sure you push it.")
+            
         self.empty_emb = torch.load(config.empty_emb_path, weights_only=False)
         self.config = config
         self.cfg_prob = config.cfg_prob
