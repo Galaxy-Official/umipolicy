@@ -29,7 +29,7 @@ openpi/logs/
 openpi/outputs/
 openpi/wandb/
 openpi/assets/
-openpi/data/
+openpi/Data/
 
 
 lingbot-va/Data
