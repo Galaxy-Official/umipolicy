@@ -123,14 +123,14 @@ class LatentLeRobotDatasetHandcap(LeRobotDataset):
         config=None,
     ):
         if getattr(config, 'use_handcap', False):
-            self.dataset = lerobot_dataset_handcap.LeRobotDatasetHandcap(repo_id=repo_id, root=HF_LEROBOT_HOME / repo_id)
+            self.dataset = lerobot_dataset_handcap.LeRobotDatasetHandcap(repo_id=repo_id, root=Path(repo_id))
             self.meta = self.dataset.meta
             self.hf_dataset = self.dataset.hf_dataset
             self.repo_id = repo_id
-            self.root = HF_LEROBOT_HOME / repo_id
+            self.root = Path(repo_id)
             self.episodes = None
         else:
-            super().__init__(repo_id, root=HF_LEROBOT_HOME / repo_id)
+            super().__init__(repo_id, root=Path(repo_id))
         self.episode_data_index = get_episode_data_index(self.meta.episodes, self.episodes)
         
         self.latent_path = Path(repo_id) / 'latents'
