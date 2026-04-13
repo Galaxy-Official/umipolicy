@@ -47,15 +47,27 @@ def main():
     text_len = 512
     
     print(f"Loading Episodes Metadata from {args.dataset_path}...")
+    ep_map = {}
     try:
         episode_ds = load_dataset("parquet", data_files=os.path.join(args.dataset_path, "meta/episodes/*.parquet"), split="train")
+        for item in episode_ds:
+            ep_map[item["episode_index"]] = item
     except Exception as e:
-        print(f"Failed to load episodes parquet: {e}")
-        return
+        print(f"Failed to load episodes parquet, falling back to episodes.jsonl... (Error: {e})")
+        import json
+        jsonl_path = os.path.join(args.dataset_path, "meta", "episodes.jsonl")
+        if os.path.exists(jsonl_path):
+            with open(jsonl_path, 'r') as f:
+                for line in f:
+                    item = json.loads(line)
+                    ep_map[item["episode_index"]] = item
+        else:
+            print("Both parquet and jsonl are missing! Cannot parse metadata.")
+            return
 
-    ep_map = {}
-    for item in episode_ds:
-        ep_map[item["episode_index"]] = item
+    if len(ep_map) == 0:
+        print("No metadata parsed, exiting.")
+        return
 
     videos_dir = Path(args.dataset_path) / "videos"
     latents_dir = Path(args.dataset_path) / "latents"
