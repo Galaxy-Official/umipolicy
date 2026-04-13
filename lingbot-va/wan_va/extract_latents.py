@@ -90,7 +90,10 @@ def main():
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     print("Initializing LeRobotDataset to cleanly load frames... (this might take a few seconds)")
     try:
-        ds = LeRobotDataset(args.dataset_path)
+        repo_id = os.path.basename(os.path.normpath(args.dataset_path))
+        root_dir = os.path.dirname(os.path.normpath(args.dataset_path))
+        if not root_dir: root_dir = "."
+        ds = LeRobotDataset(repo_id=repo_id, root=root_dir)
     except Exception as e:
         print(f"Failed to init LeRobotDataset: {e}")
         return
