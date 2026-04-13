@@ -1,0 +1,12 @@
+# [paper]
+
+# title = "Alpha-CLIP: A CLIP Model Focusing on Wherever You Want"
+# arxiv_url = "http://arxiv.org/abs/2312.03818"
+
+name = "alpha_clip"
+
+[path]
+
+model = "models/alpha_clip/ViT-L-14.pt"
+[path.checkpoint]
+    default = "models/alpha_clip/clip_l14_grit+mim_fultune_6xe.pth"

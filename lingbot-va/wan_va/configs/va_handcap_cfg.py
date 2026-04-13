@@ -8,7 +8,7 @@ va_handcap_cfg.update(va_shared_cfg)
 va_handcap_cfg.use_handcap = True
 va_handcap_cfg.use_tactile = True
 
-va_handcap_cfg.wan22_pretrained_model_name_or_path = "./ckpt"
+va_handcap_cfg.wan22_pretrained_model_name_or_path = "./ckpt/lingbot-va-base"
 
 va_handcap_cfg.attn_window = 72
 va_handcap_cfg.frame_chunk_size = 2

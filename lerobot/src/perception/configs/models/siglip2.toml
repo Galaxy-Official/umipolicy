@@ -1,0 +1,6 @@
+name = "siglip2"
+
+[path]
+
+# model = "models/google/siglip2-so400m-patch14-224"
+model = "models/google/siglip2-giant-opt-patch16-384"

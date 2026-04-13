@@ -1,0 +1,20 @@
+{
+    "wrist": {
+        "type": "webcam",
+        "camera_v4l_path": "/dev/v4l/by-id/Vimicro_Corp._HBVCAM_FHD_CAMERA",
+        "fps":20,
+        "resolution": [640, 480]
+    },
+    "left_tactile":{
+        "type": "webcamTactile",
+        "camera_id": "/dev/camera_tactile_left",
+        "fps":20,
+        "resolution": [640, 480]
+    },
+    "right_tactile":{
+        "type": "webcamTactile",
+        "camera_id": "/dev/camera_tactile_right",
+        "fps":20,
+        "resolution": [640, 480]
+    }
+}

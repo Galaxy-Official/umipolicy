@@ -1,0 +1,16 @@
+# title = "Sigmoid Loss for Language Image Pre-Training"
+# arxiv_url = "https://arxiv.org/abs/2303.15343"
+
+name = "siglip"
+
+[path]
+
+model = "models/timm/ViT-SO400M-14-SigLIP"
+
+    [path.checkpoint]
+    vaw = "output/siglip_vit_so400m_finetune/siglip_finetune_vaw_filter/pytorch_model.bin"
+    ocl = "output/siglip_vit_so400m_finetune/OpenCLIP_finetune_ocl_newprompt_lr5e-5_continue/pytorch_model.bin"
+    aff = "output/siglip_vit_so400m_finetune/OCL_attr_aff_filter_big/pytorch_model.bin"
+    aff1 = "output/siglip_vit_so400m_finetune/OCL_attr_aff_filter_big_0924/pytorch_model.bin"
+    desktop1 = "output/train_configs/siglip_so400m/siglip_finetune_rob_0412_2002/pytorch_model.bin"
+    desktop = "output/train_configs/siglip_so400m/pytorch_model-0724-all.bin"

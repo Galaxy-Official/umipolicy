@@ -1,0 +1,22 @@
+{
+    "head": {
+        "type": "realsense",
+        "sn": "135122074278"
+    },
+    "side": {
+        "type": "realsense",
+        "sn": "233522075695"
+    },
+    "wrist": {
+        "type": "realsense",
+        "sn": "233622078525"
+    },
+    "left_tactile":{
+        "type": "webcam",
+        "camera_index": 16
+    },
+    "right_tactile":{
+        "type": "webcam",
+        "camera_index": 14
+    }
+}
