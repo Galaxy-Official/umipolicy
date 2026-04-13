@@ -122,10 +122,13 @@ def main():
         
         # Get frame boundaries for this episode in the global dataset view
         try:
-            ep_start = ds.episode_data_index["from"][idx].item()
-            ep_end = ds.episode_data_index["to"][idx].item()
-        except:
-            print(f"Skipping episode {idx}: not found in episode_data_index")
+            meta_ep = ds.meta.episodes[idx]
+            ep_start = meta_ep.get("dataset_from_index", meta_ep.get("from"))
+            ep_end = meta_ep.get("dataset_to_index", meta_ep.get("to"))
+            if ep_start is None:
+                raise ValueError("Missing 'from'/'dataset_from_index'")
+        except Exception as e:
+            print(f"Skipping episode {idx}: failed to find start index - {e}")
             continue
 
         # For every segment
