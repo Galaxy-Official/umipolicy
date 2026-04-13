@@ -1,6 +1,16 @@
 # Copyright 2024-2025 The Robbyant Team Authors. All rights reserved.
 from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
-from lerobot.datasets.utils import get_episode_data_index
+def get_episode_data_index(meta_episodes, episodes=None):
+    ep_data_idx = {"from": [], "to": []}
+    meta_iterable = meta_episodes.values() if isinstance(meta_episodes, dict) else meta_episodes
+    for item in meta_iterable:
+        if "dataset_from_index" in item:
+            ep_data_idx["from"].append(item["dataset_from_index"])
+            ep_data_idx["to"].append(item["dataset_to_index"])
+        elif "from" in item:
+            ep_data_idx["from"].append(item["from"])
+            ep_data_idx["to"].append(item["to"])
+    return ep_data_idx
 from lerobot.datasets.compute_stats import aggregate_stats, compute_episode_stats
 import numpy as np
 from pathlib import Path
@@ -111,34 +121,7 @@ class LatentLeRobotDataset(LeRobotDataset):
         repo_id,
         config=None,
     ):
-        self.repo_id = repo_id
-        self.root = HF_LEROBOT_HOME / repo_id
-        self.image_transforms = None
-        self.delta_timestamps = None
-        self.episodes = None
-        self.tolerance_s = 1e-4
-        self.revision = "v2.1"
-        self.video_backend = 'pyav'
-        self.delta_indices = None
-        self.batch_encoding_size = 1
-        self.episodes_since_last_encoding = 0
-        self.image_writer = None
-        self.episode_buffer = None
-        self.root.mkdir(exist_ok=True, parents=True)
-        self.meta = LeRobotDatasetMetadata(
-            self.repo_id, self.root, self.revision, force_cache_sync=False
-        )
-        if self.episodes is not None and self.meta._version >= packaging.version.parse("v2.1"):
-            episodes_stats = [self.meta.episodes_stats[ep_idx] for ep_idx in self.episodes]
-            self.stats = aggregate_stats(episodes_stats)
-        
-        try:
-            assert all((self.root / fpath).is_file() for fpath in self.get_episodes_file_paths())
-            self.hf_dataset = self.load_hf_dataset()
-        except (AssertionError, FileNotFoundError, NotADirectoryError):
-            self.revision = get_safe_version(self.repo_id, self.revision)
-            self.download_episodes(download_videos)
-            self.hf_dataset = self.load_hf_dataset()
+        super().__init__(repo_id, root=HF_LEROBOT_HOME / repo_id)
         self.episode_data_index = get_episode_data_index(self.meta.episodes, self.episodes)
         
         self.latent_path = Path(repo_id) / 'latents'
