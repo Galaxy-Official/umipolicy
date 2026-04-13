@@ -23,7 +23,7 @@ import torch
 from einops import rearrange
 from torch.utils.data import DataLoader
 from scipy.spatial.transform import Rotation as R
-from lerobot.constants import HF_LEROBOT_HOME
+from lerobot.utils.constants import HF_LEROBOT_HOME
 
 def recursive_find_file(directory, filename='info.json'):
     result = []
