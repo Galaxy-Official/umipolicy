@@ -125,7 +125,7 @@ class LatentLeRobotDatasetHandcap(LeRobotDataset):
         if getattr(config, 'use_handcap', False):
             self.dataset = lerobot_dataset_handcap.LeRobotDatasetHandcap(repo_id=repo_id, root=Path(repo_id))
             self.meta = self.dataset.meta
-            self.hf_dataset = self.dataset.hf_dataset
+            self._hf_dataset = self.dataset.hf_dataset
             self.repo_id = repo_id
             self.root = Path(repo_id)
             self.episodes = None
