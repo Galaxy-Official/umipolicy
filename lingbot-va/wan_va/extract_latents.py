@@ -224,6 +224,14 @@ def main():
                     print(f"Error encoding {key} episode {idx}: {e}")
 
     print("Extraction complete!")
+    total_generated = list(latents_dir.rglob("*.pth"))
+    print(f"\n[DEBUG] Total .pth files found in latents directory: {len(total_generated)}")
+    if len(total_generated) > 0:
+        print(f"[DEBUG] Sample .pth file paths:")
+        for f in total_generated[:10]:
+            print(f"  - {f}")
+    else:
+        print(f"[ERROR] ABSOLUTELY NO .pth FILES WERE GENERATED!")
 
 if __name__ == "__main__":
     main()
