@@ -45,25 +45,17 @@ def main():
     
     # Pre-tokenize defaults
     text_len = 512
-    
     print(f"Loading Episodes Metadata from {args.dataset_path}...")
     ep_map = {}
     try:
-        episode_ds = load_dataset("parquet", data_files=os.path.join(args.dataset_path, "meta/episodes/*.parquet"), split="train")
-        for item in episode_ds:
+        from lerobot.datasets.dataset_metadata import DatasetMetadata
+        meta = DatasetMetadata(args.dataset_path)
+        meta_iterable = meta.episodes.values() if isinstance(meta.episodes, dict) else meta.episodes
+        for item in meta_iterable:
             ep_map[item["episode_index"]] = item
     except Exception as e:
-        print(f"Failed to load episodes parquet, falling back to episodes.jsonl... (Error: {e})")
-        import json
-        jsonl_path = os.path.join(args.dataset_path, "meta", "episodes.jsonl")
-        if os.path.exists(jsonl_path):
-            with open(jsonl_path, 'r') as f:
-                for line in f:
-                    item = json.loads(line)
-                    ep_map[item["episode_index"]] = item
-        else:
-            print("Both parquet and jsonl are missing! Cannot parse metadata.")
-            return
+        print(f"Failed to load dataset metadata natively: {e}")
+        return
 
     if len(ep_map) == 0:
         print("No metadata parsed, exiting.")
