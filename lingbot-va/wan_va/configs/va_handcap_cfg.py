@@ -19,8 +19,8 @@ va_handcap_cfg.width = 320
 va_handcap_cfg.action_dim = 30
 va_handcap_cfg.action_per_frame = 16
 va_handcap_cfg.obs_cam_keys = [
-    'observation.images.wrist_0_rgb', 'observation.images.left_tactile',
-    'observation.images.right_tactile'
+    'observation.images.wrist', 'observation.tactiles.left',
+    'observation.tactiles.right'
 ]
 va_handcap_cfg.guidance_scale = 5
 va_handcap_cfg.action_guidance_scale = 1
