@@ -6,7 +6,7 @@ import os
 va_handcap_train_cfg = EasyDict(__name__='Config: VA handcap train')
 va_handcap_train_cfg.update(va_handcap_cfg)
 
-va_handcap_train_cfg.dataset_path = '/path/to/your/dataset'
+va_handcap_train_cfg.dataset_path = 'Data/handcap_lingbot'
 va_handcap_train_cfg.empty_emb_path = os.path.join(va_handcap_train_cfg.dataset_path, 'empty_emb.pt')
 va_handcap_train_cfg.enable_wandb = True
 va_handcap_train_cfg.load_worker = 16
