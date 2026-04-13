@@ -148,7 +148,8 @@ class LatentLeRobotDataset(LeRobotDataset):
 
     def parse_meta(self):
         out = []
-        for key, value in self.meta.episodes.items():
+        meta_iterable = self.meta.episodes.values() if isinstance(self.meta.episodes, dict) else self.meta.episodes
+        for value in meta_iterable:
             episode_index = value["episode_index"]
             tasks = value["tasks"]
             action_config = value["action_config"]
