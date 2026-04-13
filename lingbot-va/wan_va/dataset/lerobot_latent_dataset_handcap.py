@@ -165,8 +165,14 @@ class LatentLeRobotDatasetHandcap(LeRobotDataset):
         meta_iterable = self.meta.episodes.values() if isinstance(self.meta.episodes, dict) else self.meta.episodes
         for value in meta_iterable:
             episode_index = value["episode_index"]
-            tasks = value["tasks"]
-            action_config = value["action_config"]
+            tasks = value.get("tasks", ["perform the manipulation task"])
+            action_config = value.get("action_config", [
+                {
+                    "start_frame": 0,
+                    "end_frame": value["length"],
+                    "action_text": tasks[0] if isinstance(tasks, list) and len(tasks)>0 else tasks,
+                }
+            ])
             for acfg in action_config:
                 cur_meta = {
                     "episode_index": episode_index,
