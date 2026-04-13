@@ -86,27 +86,25 @@ def main():
         print("No metadata parsed, exiting.")
         return
 
-    videos_dir = Path(args.dataset_path) / "videos"
+    # We use natively LeRobotDataset to abstract away the chunked video decodings!
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+    print("Initializing LeRobotDataset to cleanly load frames... (this might take a few seconds)")
+    try:
+        ds = LeRobotDataset(args.dataset_path)
+    except Exception as e:
+        print(f"Failed to init LeRobotDataset: {e}")
+        return
+
+    used_video_keys = [k for k in ds.meta.features if "observation.images" in k or "observation.tactiles" in k]
+    if len(used_video_keys) == 0:
+        print("No image/tactile keys found in dataset!")
+        return
+
     latents_dir = Path(args.dataset_path) / "latents"
+
+    print(f"Extracting latents for {len(ep_map)} episodes using {len(used_video_keys)} keys ...")
     
-    video_files = list(videos_dir.rglob("*.mp4"))
-    print(f"Found {len(video_files)} video files to process.")
-    
-    for vpath in tqdm(video_files):
-        # Extract episode index from filename: episode_{index:06d}.mp4
-        try:
-            # handle 'episode_000000.mp4' -> '000000' -> 0
-            idx_str = vpath.stem.split("_")[1]
-            idx = int(idx_str)
-        except Exception:
-            print(f"Skipping incorrectly formatted file: {vpath}")
-            continue
-            
-        if idx not in ep_map:
-            print(f"Episode {idx} not found in metadata! Skipping.")
-            continue
-            
-        meta_item = ep_map[idx]
+    for idx, meta_item in tqdm(ep_map.items(), desc="Episodes"):
         tasks = meta_item.get("tasks", ["perform the manipulation task"])
         
         action_config = meta_item.get("action_config", [
@@ -117,98 +115,108 @@ def main():
             }
         ])
         
-        # Determine all paths we need to generate without reading the video if they all exist
-        all_segments_exist = True
-        segment_paths = []
-        for acfg in action_config:
-            start_f = acfg["start_frame"]
-            end_f = acfg["end_frame"]
-            
-            rel_path = vpath.relative_to(videos_dir)
-            lat_parent = latents_dir / rel_path.parent
-            lat_parent.mkdir(parents=True, exist_ok=True)
-            out_path = lat_parent / f"episode_{idx:06d}_{start_f}_{end_f}.pth"
-            segment_paths.append((acfg, out_path))
-            
-            if not out_path.exists():
-                all_segments_exist = False
-                
-        if all_segments_exist:
+        # Get frame boundaries for this episode in the global dataset view
+        try:
+            ep_start = ds.episode_data_index["from"][idx].item()
+            ep_end = ds.episode_data_index["to"][idx].item()
+        except:
+            print(f"Skipping episode {idx}: not found in episode_data_index")
             continue
-            
-        # Read video just once per file
-        # Returns [T, H, W, C]
-        video_v, audio_v, info_v = torchvision.io.read_video(str(vpath), pts_unit='sec', output_format='TCHW')
-        fps_info = info_v.get('video_fps', 10)
-        
-        for acfg, out_path in segment_paths:
-            if out_path.exists():
-                continue
-                
+
+        # For every segment
+        for acfg in action_config:
             start_f = acfg["start_frame"]
             end_f = acfg["end_frame"]
             text = acfg["action_text"]
             if isinstance(text, list): text = text[0]
             
-            # Extract Segment
-            segment = video_v[start_f:end_f]
-            T_video = segment.shape[0]
-            if T_video == 0:
-                print(f"Warning: Segment {start_f}:{end_f} is empty for {vpath}")
-                continue
+            # Extract Segment for each camera
+            for key in used_video_keys:
+                try:
+                    # In lerobot metadata, the relative path to chunks is usually implicit.
+                    # We need to construct output path based on index / chunk logic.
+                    episode_chunk = meta_item.get("meta/episodes/chunk_index", idx // 1000)
+                    cur_path = latents_dir / f"chunk-{episode_chunk:03d}" / key
+                    cur_path.mkdir(parents=True, exist_ok=True)
+                    out_path = cur_path / f"episode_{idx:06d}_{start_f}_{end_f}.pth"
+                    
+                    if out_path.exists():
+                        continue
+                        
+                    # Preload all frames for this single segment sequentially using LeRobot
+                    # This gracefully handles `file-000.mp4` seeking in the background.
+                    # Note: we need to handle start/end properly based on ep_start
+                    global_frame_indices = range(ep_start + start_f, ep_start + end_f)
+                    
+                    frames = []
+                    for gi in global_frame_indices:
+                        frame = ds[gi][key] # [C, H, W] in [0.0, 1.0] scale theoretically, or uint8?
+                        frames.append(frame)
+                    
+                    if len(frames) == 0:
+                        continue
+                        
+                    segment = torch.stack(frames) # [T, C, H, W]
+                    
+                    # Convert lerobot frame standard if it's float [0,1] or uint8 [0,255]
+                    if segment.dtype == torch.uint8:
+                        segment = segment.float() / 255.0
+                    else:
+                        segment = segment.float()
+                        
+                    T_video, C, orig_H, orig_W = segment.shape
+                    
+                    # Resize -> [T, 3, 256, 320]
+                    segment = F.interpolate(segment, size=(args.height, args.width), mode='bilinear', align_corners=False)
+                    
+                    # Prepare for VAE: [B=1, C=3, F=T, H, W] and scale to [-1, 1]
+                    videos_chunk = segment.permute(1, 0, 2, 3).unsqueeze(0)
+                    videos_chunk = videos_chunk * 2.0 - 1.0
+                    videos_chunk = videos_chunk.to(device).to(dtype)
+                    
+                    streaming_vae.clear_cache()
+                    mu_list = []
+                    
+                    for i in range(0, T_video, args.chunk_size):
+                        vc = videos_chunk[:, :, i:i+args.chunk_size]
+                        enc_out = streaming_vae.encode_chunk(vc)
+                        mu, logvar = torch.chunk(enc_out, 2, dim=1)
+                        mu_norm = normalize_latents(mu, latents_mean, 1.0 / latents_std)
+                        mu_list.append(mu_norm)
+                        
+                    video_latent = torch.cat(mu_list, dim=2)
+                    B_lat, C_lat, F_lat, H_lat, W_lat = video_latent.shape
+                    video_latent_flat = video_latent.squeeze(0).permute(1, 2, 3, 0).reshape(-1, C_lat).cpu()
+                    
+                    # Encode Text
+                    inputs = tokenizer(text, return_tensors='pt', padding='max_length',
+                                       max_length=text_len, truncation=True)
+                    text_emb = text_encoder(inputs.input_ids.to(device))[0]
+                    text_emb = text_emb.squeeze(0).cpu() # [L, D]
+                    
+                    info_fps = meta_item.get("fps", 10)
+                    
+                    latent_dict = {
+                        "latent": video_latent_flat.to(dtype),
+                        "latent_num_frames": F_lat,
+                        "latent_height": H_lat,
+                        "latent_width": W_lat,
+                        "video_num_frames": T_video,
+                        "video_height": args.height,
+                        "video_width": args.width,
+                        "text_emb": text_emb.to(dtype),
+                        "text": text,
+                        "frame_ids": list(range(start_f, end_f)),
+                        "start_frame": start_f,
+                        "end_frame": end_f,
+                        "fps": info_fps,
+                        "ori_fps": info_fps
+                    }
+                    
+                    torch.save(latent_dict, out_path)
                 
-            # [T, C, H, W] => float => resize => scale to [-1, 1]
-            segment = segment.float()
-            segment = F.interpolate(segment, size=(args.height, args.width), mode='bilinear', align_corners=False)
-            
-            # Prepare for VAE: [B=1, C=3, F=T, H, W]
-            videos_chunk = segment.permute(1, 0, 2, 3).unsqueeze(0)
-            videos_chunk = videos_chunk / 255.0 * 2.0 - 1.0
-            videos_chunk = videos_chunk.to(device).to(dtype)
-            
-            streaming_vae.clear_cache()
-            mu_list = []
-            
-            for i in range(0, T_video, args.chunk_size):
-                vc = videos_chunk[:, :, i:i+args.chunk_size]
-                enc_out = streaming_vae.encode_chunk(vc)
-                mu, logvar = torch.chunk(enc_out, 2, dim=1)
-                mu_norm = normalize_latents(mu, latents_mean, 1.0 / latents_std)
-                mu_list.append(mu_norm)
-                
-            # Concatenate chunks along F dim
-            video_latent = torch.cat(mu_list, dim=2)
-            
-            # [B, C, F, H, W]
-            B_lat, C_lat, F_lat, H_lat, W_lat = video_latent.shape
-            
-            # Flatten to [N, C] (as prescribed in the README)
-            video_latent_flat = video_latent.squeeze(0).permute(1, 2, 3, 0).reshape(-1, C_lat).cpu()
-            
-            # Encode Text
-            inputs = tokenizer(text, return_tensors='pt', padding='max_length',
-                               max_length=text_len, truncation=True)
-            text_emb = text_encoder(inputs.input_ids.to(device))[0]
-            text_emb = text_emb.squeeze(0).cpu() # [L, D]
-            
-            latent_dict = {
-                "latent": video_latent_flat.to(dtype),
-                "latent_num_frames": F_lat,
-                "latent_height": H_lat,
-                "latent_width": W_lat,
-                "video_num_frames": T_video,
-                "video_height": args.height,
-                "video_width": args.width,
-                "text_emb": text_emb.to(dtype),
-                "text": text,
-                "frame_ids": list(range(start_f, end_f)),
-                "start_frame": start_f,
-                "end_frame": end_f,
-                "fps": fps_info,
-                "ori_fps": fps_info
-            }
-            
-            torch.save(latent_dict, out_path)
+                except Exception as e:
+                    print(f"Error encoding {key} episode {idx}: {e}")
 
     print("Extraction complete!")
 
