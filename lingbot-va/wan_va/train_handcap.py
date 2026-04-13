@@ -88,7 +88,7 @@ class Trainer:
 
         self.transformer = load_transformer(
             transformer_path,
-            torch_dtype=torch.float32,
+            torch_dtype=config.param_dtype, # Use config param dtype for mmap optimization
             torch_device='cpu',
         )
 
