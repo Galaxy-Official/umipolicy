@@ -48,9 +48,27 @@ def load_transformer(
         transformer_path,
         torch_dtype=torch_dtype,
         ignore_mismatched_sizes=True,
-        low_cpu_mem_usage=False,
         **kwargs
     )
+    
+    # Identify modules that have meta parameters (these were either mismatched or missing in checkpoint)
+    meta_modules = []
+    for name, module in model.named_modules():
+        if any(p.device.type == "meta" for p in module.parameters(recurse=False)):
+            meta_modules.append(module)
+            
+    # Move meta tensors back to CPU
+    model.to_empty(device="cpu")
+    
+    # Initialize the dropped/mismatched/new layers using their reset_parameters method
+    for module in meta_modules:
+        if hasattr(module, "reset_parameters"):
+            module.reset_parameters()
+        else:
+            # Fallback initialization for custom modules without reset_parameters
+            for p in module.parameters(recurse=False):
+                torch.nn.init.normal_(p, std=0.02)
+                
     return model.to(dtype=torch_dtype, device=torch_device)
 
 
