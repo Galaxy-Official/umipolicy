@@ -182,13 +182,12 @@ def main():
                     videos_chunk = videos_chunk * 2.0 - 1.0
                     videos_chunk = videos_chunk.to(device).to(dtype)
                     
-                    # Force chunk size to be safe for WanVAE temporal strides (multiple of 4, >= kernel size 3)
-                    safe_chunk_size = 16
+                    # Force chunk size back to args.chunk_size (WanVAE streaming relies on exact cache shapes)
+                    safe_chunk_size = args.chunk_size
                     
                     # Pad temporal dimension to multiple of safe_chunk_size
                     pad_T = (safe_chunk_size - (T_video % safe_chunk_size)) % safe_chunk_size
                     if pad_T > 0:
-                        # videos_chunk is [B, C, F, H, W]
                         videos_chunk = F.pad(videos_chunk, (0, 0, 0, 0, 0, pad_T), mode='replicate')
                     
                     padded_T_video = videos_chunk.shape[2]
@@ -210,9 +209,13 @@ def main():
                     
                     video_latent = torch.cat(mu_list, dim=2)
                     
-                    # Truncate to valid latent length: temporal downsample factor is 4.
-                    # so valid latent length is math.ceil(T_video / 4.0)
-                    valid_F_lat = math.ceil(T_video / 4.0)
+                    # If WanVAE temporally downsamples, usually by 4 for full video. 
+                    # If streaming with chunk=2 returns 1 output frame, then temporal ratio is chunk_size / output_chunk.
+                    # Typically, output F_lat = sum(output chunks). We simply take valid frames.
+                    # Since we pad to multiple of chunk sizes, we truncate the ratio correctly.
+                    temporal_ratio = padded_T_video // video_latent.shape[2]
+                    valid_F_lat = math.ceil(T_video / temporal_ratio) if temporal_ratio > 0 else video_latent.shape[2]
+                    
                     video_latent = video_latent[:, :, :valid_F_lat, :, :]
                     B_lat, C_lat, F_lat, H_lat, W_lat = video_latent.shape
                     video_latent_flat = video_latent.squeeze(0).permute(1, 2, 3, 0).reshape(-1, C_lat).cpu()
