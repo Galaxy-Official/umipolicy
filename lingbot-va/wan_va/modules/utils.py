@@ -48,6 +48,7 @@ def load_transformer(
         transformer_path,
         torch_dtype=torch_dtype,
         ignore_mismatched_sizes=True,
+        low_cpu_mem_usage=False,
         **kwargs
     )
     return model.to(dtype=torch_dtype, device=torch_device)
