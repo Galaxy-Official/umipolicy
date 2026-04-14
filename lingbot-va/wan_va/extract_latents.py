@@ -37,8 +37,8 @@ def main():
     print(f"Loading VAE from {args.ckpt_path}/vae on {device}...")
     vae = load_vae(os.path.join(args.ckpt_path, "vae"), dtype, device)
     streaming_vae = WanVAEStreamingWrapper(vae)
-    latents_mean = torch.tensor(vae.config.latents_mean).to(device)
-    latents_std = torch.tensor(vae.config.latents_std).to(device)
+    latents_mean = torch.tensor(vae.config.latents_mean).to(device).view(1, -1, 1, 1, 1)
+    latents_std = torch.tensor(vae.config.latents_std).to(device).view(1, -1, 1, 1, 1)
 
     print(f"Loading Text Encoder and Tokenizer from {args.ckpt_path}...")
     text_encoder = load_text_encoder(os.path.join(args.ckpt_path, "text_encoder"), dtype, device)
