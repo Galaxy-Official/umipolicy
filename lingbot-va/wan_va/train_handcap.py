@@ -93,6 +93,9 @@ class Trainer:
             action_dim=config.action_dim,
         )
 
+        # Ensure uniform dtype for all parameters (fixes newly initialized layers being float32)
+        self.transformer.to(self.dtype)
+
         logger.info("Setting up activation checkpointing ...")
         apply_ac(self.transformer)
 
