@@ -49,7 +49,7 @@ def load_transformer(
         torch_dtype=torch_dtype,
         **kwargs
     )
-    return model.to(torch_device)
+    return model.to(dtype=torch_dtype, device=torch_device)
 
 
 def patchify(x, patch_size):
