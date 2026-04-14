@@ -44,7 +44,6 @@ from lerobot.policies.utils import (
 from lerobot.utils.constants import ACTION, OBS_ENV_STATE, OBS_IMAGES, OBS_STATE
 
 from lerobot.policies.tactile_backbone.tactile_backbone import CLIPPretrainedTactileEncoderPooled
-from lerobot.policies.point_backbone.point_backbone import PointBERTEncoderPooled
 
 
 class DiffusionPolicy(PreTrainedPolicy):
@@ -198,24 +197,6 @@ class DiffusionModel(nn.Module):
         if getattr(self.config, "use_tactile", False):
             tactile_pretrained_ckpt = "ckpt/pretrained_tactile_encoder.pt"
             self.tac_backbone = CLIPPretrainedTactileEncoderPooled(tactile_pretrained_ckpt)
-            
-        # use_point
-        if getattr(self.config, "use_point", False):
-            pointbert_ckpt = getattr(self.config, "point_pretrained_ckpt", None)
-            pointbert_repo_root = getattr(self.config, "pointbert_repo_root", None)
-            point_use_rgb = getattr(self.config, "point_use_rgb", True)
-            point_encoder_output_dim = getattr(self.config, "point_encoder_output_dim", 64)
-            point_num_points = getattr(self.config, "point_num_points", 1024)
-
-            self.point_backbone = PointBERTEncoderPooled(
-                point_pretrained_ckpt=pointbert_ckpt,
-                pointbert_repo_root=pointbert_repo_root,
-                use_rgb=point_use_rgb,
-                output_dim=point_encoder_output_dim,
-                num_points=point_num_points,
-            )
-
-            global_cond_dim += self.point_backbone.feature_dim
 
         self.unet = DiffusionConditionalUnet1d(config, global_cond_dim=global_cond_dim * config.n_obs_steps)
 
@@ -304,8 +285,6 @@ class DiffusionModel(nn.Module):
         batch_size, n_obs_steps = batch[OBS_STATE].shape[:2]
         global_cond_feats = [batch[OBS_STATE]]
         ftvalign_loss = 0.0
-        
-        
 
         # Extract image features.
         if self.config.image_features:
@@ -366,32 +345,6 @@ class DiffusionModel(nn.Module):
                     img_features = torch.cat([img_features, tactile_features], dim=-1)
 
             global_cond_feats.append(img_features)
-            
-        # get point feature
-        if getattr(self.config, "use_point", False):
-            point_xyz_key = getattr(self.config, "point_xyz_key", "observation.points.phone_xyz")
-            point_rgb_key = getattr(self.config, "point_rgb_key", "observation.points.phone_rgb")
-            point_mask_key = getattr(self.config, "point_mask_key", "observation.points.phone_mask")
-
-            if point_xyz_key not in batch:
-                raise KeyError(
-                    f"Point input is enabled but '{point_xyz_key}' is missing from batch."
-                )
-
-            point_xyz = batch[point_xyz_key]                     # [B, S, N, 3] 或 [B, N, 3]
-            point_rgb = batch.get(point_rgb_key, None)          # optional
-            point_mask = batch.get(point_mask_key, None)        # optional
-
-            point_features = self.point_backbone(
-                xyz=point_xyz,
-                rgb=point_rgb,
-                mask=point_mask,
-            )                                                   # -> [B, S, D] 或 [B, D]
-
-            if point_features.ndim == 2:
-                point_features = point_features.unsqueeze(1).expand(-1, n_obs_steps, -1)
-
-            global_cond_feats.append(point_features)
 
         if self.config.env_state_feature:
             global_cond_feats.append(batch[OBS_ENV_STATE])
@@ -445,12 +398,7 @@ class DiffusionModel(nn.Module):
         """
         # Input validation.
         assert set(batch).issuperset({OBS_STATE, ACTION, "action_is_pad"})
-        
-        has_point = getattr(self.config, "use_point", False) and (
-            getattr(self.config, "point_xyz_key", "observation.points.phone_xyz") in batch
-        )
-        assert OBS_IMAGES in batch or OBS_ENV_STATE in batch or has_point
-        
+        assert OBS_IMAGES in batch or OBS_ENV_STATE in batch
         n_obs_steps = batch[OBS_STATE].shape[1]
         horizon = batch[ACTION].shape[1]
         assert horizon == self.config.horizon

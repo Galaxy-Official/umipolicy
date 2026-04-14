@@ -36,3 +36,6 @@ lingbot-va/Data
 lingbot-va/checkpoints
 lingbot-va/outputs
 lingbot-va/ckpt
+
+
+third_party/

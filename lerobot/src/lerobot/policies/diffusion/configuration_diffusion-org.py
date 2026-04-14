@@ -116,21 +116,6 @@ class DiffusionConfig(PreTrainedConfig):
             "ACTION": NormalizationMode.MIN_MAX,
         }
     )
-    
-    # point params
-    use_point: bool = False
-    point_backbone_name: str = "point_bert"
-    point_xyz_key: str = "observation.points.phone_xyz"
-    point_rgb_key: str = "observation.points.phone_rgb"
-    point_mask_key: str = "observation.points.phone_mask"
-    
-    point_pretrained_ckpt: str | None = None
-    pointbert_repo_root: str | None = None
-    point_use_rgb: bool = True
-    point_use_mask: bool = True
-    point_num_points: int = 1024
-    point_encoder_output_dim: int = 64
-    point_freeze_backbone: bool = True
 
     # The original implementation doesn't sample frames for the last 7 steps,
     # which avoids excessive padding and leads to improved training results.
@@ -253,18 +238,9 @@ class DiffusionConfig(PreTrainedConfig):
             tactile_keys = [k for k in self.input_features.keys() if "tactile" in k]
             for k in tactile_keys:
                 self.input_features.pop(k, None)
-                
-        # use_point
-        use_point = getattr(self, "use_point", False)
-        if str(use_point).lower() == "false":
-            use_point = False
 
-        has_point_xyz = getattr(self, "point_xyz_key", None) in self.input_features
-
-        if len(self.image_features) == 0 and self.env_state_feature is None and not (use_point and has_point_xyz):
-            raise ValueError(
-                "You must provide at least one image, the environment state, or point cloud xyz among the inputs."
-            )
+        if len(self.image_features) == 0 and self.env_state_feature is None:
+            raise ValueError("You must provide at least one image or the environment state among the inputs.")
 
         if self.resize_shape is None and self.crop_shape is not None:
             for key, image_ft in self.image_features.items():
@@ -282,38 +258,6 @@ class DiffusionConfig(PreTrainedConfig):
                     raise ValueError(
                         f"`{key}` does not match `{first_image_key}`, but we expect all image shapes to match."
                     )
-                    
-        # check point data
-        if use_point:
-            xyz_key = getattr(self, "point_xyz_key", None)
-            rgb_key = getattr(self, "point_rgb_key", None)
-            mask_key = getattr(self, "point_mask_key", None)
-
-            if xyz_key is None or xyz_key not in self.input_features:
-                raise ValueError(
-                    f"`use_point=True` requires `{xyz_key}` to be present in `input_features`."
-                )
-
-            xyz_ft = self.input_features[xyz_key]
-            if len(xyz_ft.shape) < 2 or xyz_ft.shape[-1] != 3:
-                raise ValueError(
-                    f"`{xyz_key}` should end with shape (..., 3). Got {xyz_ft.shape}."
-                )
-
-            if rgb_key in self.input_features:
-                rgb_ft = self.input_features[rgb_key]
-                if rgb_ft.shape != xyz_ft.shape:
-                    raise ValueError(
-                        f"`{rgb_key}` should match `{xyz_key}` shape. Got {rgb_ft.shape} vs {xyz_ft.shape}."
-                    )
-
-            if mask_key in self.input_features:
-                mask_ft = self.input_features[mask_key]
-                if tuple(mask_ft.shape) != tuple(xyz_ft.shape[:-1]):
-                    raise ValueError(
-                        f"`{mask_key}` should match `{xyz_key}` without the last xyz channel. "
-                        f"Got {mask_ft.shape} vs expected {xyz_ft.shape[:-1]}."
-                    )
 
     @property
     def observation_delta_indices(self) -> list:
@@ -326,14 +270,3 @@ class DiffusionConfig(PreTrainedConfig):
     @property
     def reward_delta_indices(self) -> None:
         return None
-    
-    @property
-    def point_feature_keys(self) -> list[str]:
-        keys = []
-        if getattr(self, "point_xyz_key", None) in self.input_features:
-            keys.append(self.point_xyz_key)
-        if getattr(self, "point_rgb_key", None) in self.input_features:
-            keys.append(self.point_rgb_key)
-        if getattr(self, "point_mask_key", None) in self.input_features:
-            keys.append(self.point_mask_key)
-        return keys
