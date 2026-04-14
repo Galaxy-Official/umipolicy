@@ -182,15 +182,38 @@ def main():
                     videos_chunk = videos_chunk * 2.0 - 1.0
                     videos_chunk = videos_chunk.to(device).to(dtype)
                     
+                    # Force chunk size to be safe for WanVAE temporal strides (multiple of 4, >= kernel size 3)
+                    safe_chunk_size = 16
+                    
+                    # Pad temporal dimension to multiple of safe_chunk_size
+                    pad_T = (safe_chunk_size - (T_video % safe_chunk_size)) % safe_chunk_size
+                    if pad_T > 0:
+                        # videos_chunk is [B, C, F, H, W]
+                        videos_chunk = F.pad(videos_chunk, (0, 0, 0, 0, 0, pad_T), mode='replicate')
+                    
+                    padded_T_video = videos_chunk.shape[2]
+                    
                     streaming_vae.clear_cache()
-                    try:
-                        enc_out = streaming_vae.encode_chunk(videos_chunk)
-                    except RuntimeError as re:
-                        print(f"VAE OOM or crash: {re}. Try padding or chunking.")
-                        raise re
+                    mu_list = []
+                    
+                    for i in range(0, padded_T_video, safe_chunk_size):
+                        vc = videos_chunk[:, :, i:i+safe_chunk_size]
+                        try:
+                            enc_out = streaming_vae.encode_chunk(vc)
+                        except Exception as e:
+                            print(f"VAE Error on chunk {i}: {e}")
+                            raise e
                         
-                    mu, logvar = torch.chunk(enc_out, 2, dim=1)
-                    video_latent = normalize_latents(mu, latents_mean, 1.0 / latents_std)
+                        mu, logvar = torch.chunk(enc_out, 2, dim=1)
+                        mu_norm = normalize_latents(mu, latents_mean, 1.0 / latents_std)
+                        mu_list.append(mu_norm)
+                    
+                    video_latent = torch.cat(mu_list, dim=2)
+                    
+                    # Truncate to valid latent length: temporal downsample factor is 4.
+                    # so valid latent length is math.ceil(T_video / 4.0)
+                    valid_F_lat = math.ceil(T_video / 4.0)
+                    video_latent = video_latent[:, :, :valid_F_lat, :, :]
                     B_lat, C_lat, F_lat, H_lat, W_lat = video_latent.shape
                     video_latent_flat = video_latent.squeeze(0).permute(1, 2, 3, 0).reshape(-1, C_lat).cpu()
                     
