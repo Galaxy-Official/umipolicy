@@ -23,6 +23,8 @@ def get_args():
     parser.add_argument("--chunk_size", type=int, default=2, help="VAE chunk size (num frames to encode at once)")
     parser.add_argument("--height", type=int, default=256, help="Target height for latents")
     parser.add_argument("--width", type=int, default=320, help="Target width for latents")
+    parser.add_argument("--shard_id", type=int, default=0, help="Shard ID for parallel extraction (0 to num_shards-1)")
+    parser.add_argument("--num_shards", type=int, default=1, help="Total number of shards for parallel extraction")
     return parser.parse_args()
 
 def normalize_latents(latents, mean, std):
@@ -109,7 +111,10 @@ def main():
 
     print(f"Extracting latents for {len(ep_map)} episodes using {len(used_video_keys)} keys ...")
     
-    for idx, meta_item in tqdm(ep_map.items(), desc="Episodes"):
+    for idx, meta_item in tqdm(ep_map.items(), desc=f"Episodes (Shard {args.shard_id}/{args.num_shards})"):
+        if idx % args.num_shards != args.shard_id:
+            continue
+            
         tasks = meta_item.get("tasks", ["perform the manipulation task"])
         
         action_config = meta_item.get("action_config", [
