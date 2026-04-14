@@ -182,10 +182,9 @@ def main():
                     videos_chunk = videos_chunk * 2.0 - 1.0
                     videos_chunk = videos_chunk.to(device).to(dtype)
                     
-                    # WanVAE has a positional embedding limit (likely 160 frames max), and its causal cache 
-                    # causes size shrinkage on successive chunks. By chunking at 120 frames and clearing 
-                    # the cache per chunk, we bypass both issues. 
-                    safe_chunk_size = 120
+                    # Bypassing the critically bugged WanVAEStreamingWrapper.
+                    # Instead, we rely on standard Diffusers VAE API and batch independently.
+                    safe_chunk_size = 80  # safe limit for VRAM
                     
                     pad_T = (safe_chunk_size - (T_video % safe_chunk_size)) % safe_chunk_size
                     if pad_T > 0:
@@ -196,21 +195,22 @@ def main():
                     
                     try:
                         for i in range(0, padded_T_video, safe_chunk_size):
-                            # Clear cache every iteration to reset causal zero-padding and avoid shrinkage
-                            streaming_vae.clear_cache()
                             vc = videos_chunk[:, :, i:i+safe_chunk_size]
-                            enc_out = streaming_vae.encode_chunk(vc)
-                            mu, logvar = torch.chunk(enc_out, 2, dim=1)
+                            # Using native Diffusers API directly
+                            dist = vae.encode(vc).latent_dist
+                            mu = dist.mean
                             mu_norm = normalize_latents(mu, latents_mean, 1.0 / latents_std)
                             mu_list.append(mu_norm)
                     except Exception as e:
-                        print(f"VAE Error on block {i}: {e}")
+                        print(f"VAE Native Encode Error on block {i}: {e}")
                         raise e
                     
                     video_latent = torch.cat(mu_list, dim=2)
                     
-                    # Truncate to valid latent length: temporal downsample factor is 4.
-                    valid_F_lat = math.ceil(T_video / 4.0)
+                    # Temporal downsampling relies on VAE config, usually 4.
+                    # We compute exact valid latent length:
+                    downsample_ratio = safe_chunk_size // mu_list[0].shape[2]
+                    valid_F_lat = math.ceil(T_video / downsample_ratio) if downsample_ratio > 0 else mu_list[0].shape[2]
                     video_latent = video_latent[:, :, :valid_F_lat, :, :]
                     B_lat, C_lat, F_lat, H_lat, W_lat = video_latent.shape
                     video_latent_flat = video_latent.squeeze(0).permute(1, 2, 3, 0).reshape(-1, C_lat).cpu()
