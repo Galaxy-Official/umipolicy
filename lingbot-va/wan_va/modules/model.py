@@ -700,10 +700,6 @@ class WanTransformer3DModel(ModelMixin, ConfigMixin):
         return temb, timestep_proj
 
     def forward_train(self, input_dict):
-        def check_nan(tensor, name):
-            if isinstance(tensor, torch.Tensor) and (~torch.isfinite(tensor)).any():
-                print(f"[DEBUG INF/NaN] {name} has {(~torch.isfinite(tensor)).sum()} invalid values / {tensor.numel()}!")
-                
         input_dict['latent_dict']['noisy_latents'] = input_dict['latent_dict']['noisy_latents'].to(torch.bfloat16)
         input_dict['latent_dict']['latent'] = input_dict['latent_dict']['latent'].to(torch.bfloat16)
         input_dict['latent_dict']['text_emb'] = input_dict['latent_dict']['text_emb'].to(torch.bfloat16)
@@ -728,11 +724,7 @@ class WanTransformer3DModel(ModelMixin, ConfigMixin):
                                    condition_latent_hidden_states,
                                    action_hidden_states, 
                                    condition_action_hidden_states], dim=1)
-        
-        check_nan(latent_hidden_states, "latent_hidden_states")
-        check_nan(action_hidden_states, "action_hidden_states")
-        check_nan(text_hidden_states, "text_hidden_states")
-        check_nan(hidden_states, "hidden_states_concat")
+
 
         latent_grid_id = latent_dict['grid_id'].permute(1, 0, 2).flatten(1)[None]
         action_grid_id = action_dict['grid_id'].permute(1, 0, 2).flatten(1)[None]
@@ -758,10 +750,6 @@ class WanTransformer3DModel(ModelMixin, ConfigMixin):
                         action_mode=True)
         temb = torch.cat([latent_temb, action_temb], dim=1)
         timestep_proj = torch.cat([latent_timestep_proj, action_timestep_proj], dim=1)
-
-        check_nan(temb, "temb")
-        check_nan(timestep_proj, "timestep_proj")
-        check_nan(rotary_emb.real, "rotary_emb_real")
 
         total_length = hidden_states.shape[1]
         padded_length = (128 - total_length % 128) % 128
@@ -791,8 +779,7 @@ class WanTransformer3DModel(ModelMixin, ConfigMixin):
                                          timestep_proj,
                                          rotary_emb,
                                          update_cache=False)
-            check_nan(hidden_states, f"hidden_states_after_block_{i}")
-            
+
         temb_scale_shift_table = self.scale_shift_table[None] + temb[:, :, None, ...]
         shift, scale = rearrange(temb_scale_shift_table,
                                  'b l n c -> b n l c').chunk(2, dim=1)

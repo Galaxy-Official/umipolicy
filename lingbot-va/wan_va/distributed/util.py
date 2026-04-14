@@ -27,7 +27,8 @@ def init_distributed(world_size, local_rank, rank):
     dist.init_process_group(backend="nccl",
                             init_method="env://",
                             rank=rank,
-                            world_size=world_size)
+                            world_size=world_size,
+                            device_id=torch.device(f"cuda:{local_rank}"))
 
 def dist_mean(local_tensor):
     if dist.is_initialized():
