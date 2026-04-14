@@ -7,7 +7,7 @@ import torch
 import numpy as np
 import multiprocessing as mp
 import scipy.interpolate as si
-from lerobot.umi.common.pose_util import *
+from lerobot.datasets.pose_utils import *
 import scipy.spatial.transform as st
 from lerobot.scripts.umi_realworld.flexiv import *
 from multiprocessing.managers import SharedMemoryManager

@@ -4,7 +4,7 @@ import cv2
 import time
 import torch
 import numpy as np
-from lerobot.umi.common.pose_util import *
+from lerobot.datasets.pose_utils import *
 
 from lerobot.umi.real_world.flexiv import *
 sys.path.append(os.path.join(os.path.dirname(__file__), "./../../lib_py"))
