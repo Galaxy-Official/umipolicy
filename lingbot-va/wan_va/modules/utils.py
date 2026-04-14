@@ -57,8 +57,9 @@ def load_transformer(
         if any(p.device.type == "meta" for p in module.parameters(recurse=False)):
             meta_modules.append(module)
             
-    # Move meta tensors back to CPU
-    model.to_empty(device="cpu")
+    # Move ONLY meta tensors back to CPU (BUG FIX: using model.to_empty clears ALL loaded weights!)
+    for module in meta_modules:
+        module.to_empty(device="cpu")
     
     # Initialize the dropped/mismatched/new layers using their reset_parameters method
     for module in meta_modules:

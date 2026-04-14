@@ -706,8 +706,10 @@ class WanTransformer3DModel(ModelMixin, ConfigMixin):
                 
         input_dict['latent_dict']['noisy_latents'] = input_dict['latent_dict']['noisy_latents'].to(torch.bfloat16)
         input_dict['latent_dict']['latent'] = input_dict['latent_dict']['latent'].to(torch.bfloat16)
+        input_dict['latent_dict']['text_emb'] = input_dict['latent_dict']['text_emb'].to(torch.bfloat16)
         input_dict['action_dict']['noisy_latents'] = input_dict['action_dict']['noisy_latents'].to(torch.bfloat16)
         input_dict['action_dict']['latent'] = input_dict['action_dict']['latent'].to(torch.bfloat16)
+        input_dict['action_dict']['text_emb'] = input_dict['action_dict']['text_emb'].to(torch.bfloat16)
 
         latent_dict = input_dict['latent_dict']
         action_dict = input_dict['action_dict']
