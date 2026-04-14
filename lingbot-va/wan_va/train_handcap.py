@@ -90,6 +90,7 @@ class Trainer:
             transformer_path,
             torch_dtype=config.param_dtype, # Use config param dtype for mmap optimization
             torch_device='cpu',
+            action_dim=config.action_dim,
         )
 
         logger.info("Setting up activation checkpointing ...")
