@@ -183,16 +183,14 @@ def main():
                     videos_chunk = videos_chunk.to(device).to(dtype)
                     
                     streaming_vae.clear_cache()
-                    mu_list = []
-                    
-                    for i in range(0, T_video, args.chunk_size):
-                        vc = videos_chunk[:, :, i:i+args.chunk_size]
-                        enc_out = streaming_vae.encode_chunk(vc)
-                        mu, logvar = torch.chunk(enc_out, 2, dim=1)
-                        mu_norm = normalize_latents(mu, latents_mean, 1.0 / latents_std)
-                        mu_list.append(mu_norm)
+                    try:
+                        enc_out = streaming_vae.encode_chunk(videos_chunk)
+                    except RuntimeError as re:
+                        print(f"VAE OOM or crash: {re}. Try padding or chunking.")
+                        raise re
                         
-                    video_latent = torch.cat(mu_list, dim=2)
+                    mu, logvar = torch.chunk(enc_out, 2, dim=1)
+                    video_latent = normalize_latents(mu, latents_mean, 1.0 / latents_std)
                     B_lat, C_lat, F_lat, H_lat, W_lat = video_latent.shape
                     video_latent_flat = video_latent.squeeze(0).permute(1, 2, 3, 0).reshape(-1, C_lat).cpu()
                     
