@@ -311,7 +311,23 @@ class Trainer:
         else:
             self.transformer.set_requires_gradient_sync(True)
 
+        for k in ['latent_dict', 'action_dict']:
+            if k in input_dict:
+                for sub_k, sub_v in input_dict[k].items():
+                    if isinstance(sub_v, torch.Tensor) and torch.isnan(sub_v).any():
+                        print(f"[FATAL NaN DETECTED] input_dict['{k}']['{sub_k}'] contains {torch.isnan(sub_v).sum()} NaNs out of {sub_v.numel()} elements! Values min: {torch.nanmin(sub_v)}, max: {torch.nanmax(sub_v)}")
+                        # Do not crash the entire process immediately, just print so the user can see it in logs, and optionally replace with zeros temporarily to see if network survives
+                        input_dict[k][sub_k] = torch.nan_to_num(sub_v, 0.0)
+
         output = self.transformer(input_dict, train_mode=True)
+        
+        # Check output for NaNs
+        if isinstance(output, tuple):
+            if torch.isnan(output[0]).any():
+                print(f"[FATAL NaN DETECTED] transformer output[0] (latent) contains {torch.isnan(output[0]).sum()} NaNs!")
+            if torch.isnan(output[1]).any():
+                print(f"[FATAL NaN DETECTED] transformer output[1] (action) contains {torch.isnan(output[1]).sum()} NaNs!")
+        
         latent_loss, action_loss = self.compute_loss(input_dict, output)
         loss = latent_loss + action_loss
 

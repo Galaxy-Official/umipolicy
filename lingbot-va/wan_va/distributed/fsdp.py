@@ -23,7 +23,7 @@ def shard_model(model,
         reduce_dtype=reduce_dtype,
         cast_forward_inputs=False,
     )
-    fsdp_config = {"mp_policy": mp_policy, "reshard_after_forward": True, "use_orig_params": True}
+    fsdp_config = {"mp_policy": mp_policy, "reshard_after_forward": True}
 
     for block in model.blocks:
         fully_shard(block.attn1, **fsdp_config)
@@ -31,6 +31,14 @@ def shard_model(model,
         fully_shard(block.ffn, **fsdp_config)
         fully_shard(block, **fsdp_config)
 
+    # Shard all explicit BF16 submodules to easily separate them from the root's managed FP32 parameters
+    if hasattr(model, 'patch_embedding_mlp'): fully_shard(model.patch_embedding_mlp, **fsdp_config)
+    if hasattr(model, 'action_embedder'): fully_shard(model.action_embedder, **fsdp_config)
+    if hasattr(model, 'condition_embedder'): fully_shard(model.condition_embedder, **fsdp_config)
+    if hasattr(model, 'condition_embedder_action'): fully_shard(model.condition_embedder_action, **fsdp_config)
+    if hasattr(model, 'proj_out'): fully_shard(model.proj_out, **fsdp_config)
+    if hasattr(model, 'action_proj_out'): fully_shard(model.action_proj_out, **fsdp_config)
+    
     fully_shard(model, **fsdp_config)
     return model
 
