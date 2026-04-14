@@ -226,3 +226,41 @@ def mat_to_certain_pose_type(mat, pose_type):
         return mat_to_rotvecpose(mat)
     else:
         raise NotImplementedError(pose_type)
+
+def rot6d_to_mat(d6):
+    a1, a2 = d6[..., :3], d6[..., 3:]
+    b1 = a1 / np.linalg.norm(a1, axis=-1, keepdims=True)
+    b2 = a2 - np.sum(b1 * a2, axis=-1, keepdims=True) * b1
+    b2 = b2 / np.linalg.norm(b2, axis=-1, keepdims=True)
+    b3 = np.cross(b1, b2, axis=-1)
+    return np.stack((b1, b2, b3), axis=-1)
+
+def pose10d_to_mat(d10):
+    pos = d10[..., :3]
+    rot_mat = rot6d_to_mat(d10[..., 3:])
+    shape = pos.shape[:-1]
+    mat = np.zeros(shape + (4, 4), dtype=pos.dtype)
+    mat[..., :3, 3] = pos
+    mat[..., :3, :3] = rot_mat
+    mat[..., 3, 3] = 1
+    return mat
+
+def quatpose_to_mat(quat_pose):
+    pos = quat_pose[..., :3]
+    rot = st.Rotation.from_quat(quat_pose[..., 3:])
+    return pos_rot_to_mat(pos, rot)
+
+def rotvecpose_to_mat(rotvec_pose):
+    return pose_to_mat(rotvec_pose)
+
+def certain_pose_type_to_mat(pose, pose_type):
+    if pose_type == "10d":
+        return pose10d_to_mat(pose)
+    elif pose_type == "quat":
+        return quatpose_to_mat(pose)
+    elif pose_type == "rotvec":
+        return rotvecpose_to_mat(pose)
+    elif pose_type == "se3":
+        raise NotImplementedError("se3_to_mat not implemented")
+    else:
+        raise NotImplementedError(pose_type)

@@ -7,7 +7,7 @@ from lerobot.scripts.umi_realworld.utils.pose_repr_util import (
     compute_relative_pose, 
     convert_pose_mat_rep
 )
-from lerobot.umi.common.pose_util import (
+from lerobot.datasets.pose_utils import (
     pose_to_mat, mat_to_pose, 
     certain_pose_type_to_mat, mat_to_certain_pose_type)
 
