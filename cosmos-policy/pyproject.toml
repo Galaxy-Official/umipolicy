@@ -287,3 +287,4 @@ exclude = [
 
 [tool.uv.extra-build-dependencies]
 flash-attn = ["torch"]
+natten = ["torch"]
