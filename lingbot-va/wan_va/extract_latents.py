@@ -182,23 +182,32 @@ def main():
                     videos_chunk = videos_chunk * 2.0 - 1.0
                     videos_chunk = videos_chunk.to(device).to(dtype)
                     
-                    # WanVAE mathematically expects input temporal lengths to be a multiple of its downsampling factor (4)
-                    # otherwise its ResNet skip connections crash with tensor size mismatches.
-                    pad_T = (4 - (T_video % 4)) % 4
+                    # WanVAE has a positional embedding limit (likely 160 frames max), and its causal cache 
+                    # causes size shrinkage on successive chunks. By chunking at 120 frames and clearing 
+                    # the cache per chunk, we bypass both issues. 
+                    safe_chunk_size = 120
+                    
+                    pad_T = (safe_chunk_size - (T_video % safe_chunk_size)) % safe_chunk_size
                     if pad_T > 0:
                         videos_chunk = F.pad(videos_chunk, (0, 0, 0, 0, 0, pad_T), mode='replicate')
                     
-                    streaming_vae.clear_cache()
+                    padded_T_video = videos_chunk.shape[2]
+                    mu_list = []
                     
                     try:
-                        enc_out = streaming_vae.encode_chunk(videos_chunk)
+                        for i in range(0, padded_T_video, safe_chunk_size):
+                            # Clear cache every iteration to reset causal zero-padding and avoid shrinkage
+                            streaming_vae.clear_cache()
+                            vc = videos_chunk[:, :, i:i+safe_chunk_size]
+                            enc_out = streaming_vae.encode_chunk(vc)
+                            mu, logvar = torch.chunk(enc_out, 2, dim=1)
+                            mu_norm = normalize_latents(mu, latents_mean, 1.0 / latents_std)
+                            mu_list.append(mu_norm)
                     except Exception as e:
-                        print(f"VAE Error on full video: {e}")
+                        print(f"VAE Error on block {i}: {e}")
                         raise e
                     
-                    mu, logvar = torch.chunk(enc_out, 2, dim=1)
-                    mu_norm = normalize_latents(mu, latents_mean, 1.0 / latents_std)
-                    video_latent = mu_norm
+                    video_latent = torch.cat(mu_list, dim=2)
                     
                     # Truncate to valid latent length: temporal downsample factor is 4.
                     valid_F_lat = math.ceil(T_video / 4.0)
