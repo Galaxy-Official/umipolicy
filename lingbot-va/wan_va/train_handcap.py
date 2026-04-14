@@ -317,8 +317,8 @@ class Trainer:
         for k in ['latent_dict', 'action_dict']:
             if k in input_dict:
                 for sub_k, sub_v in input_dict[k].items():
-                    if isinstance(sub_v, torch.Tensor) and torch.isnan(sub_v).any():
-                        print(f"[FATAL NaN DETECTED] input_dict['{k}']['{sub_k}'] contains {torch.isnan(sub_v).sum()} NaNs out of {sub_v.numel()} elements! Values min: {torch.nanmin(sub_v)}, max: {torch.nanmax(sub_v)}")
+                    if isinstance(sub_v, torch.Tensor) and (~torch.isfinite(sub_v)).any():
+                        print(f"[FATAL ValueError DETECTED] input_dict['{k}']['{sub_k}'] contains {(~torch.isfinite(sub_v)).sum()} INF/NaNs out of {sub_v.numel()} elements! Values min: {torch.nanmin(sub_v)}, max: {torch.nanmax(sub_v)}")
                         # Do not crash the entire process immediately, just print so the user can see it in logs, and optionally replace with zeros temporarily to see if network survives
                         input_dict[k][sub_k] = torch.nan_to_num(sub_v, 0.0)
 
