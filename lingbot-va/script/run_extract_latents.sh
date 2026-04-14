@@ -1,26 +1,30 @@
-#!/usr/bin/bash
+NUM_WORKERS_PER_GPU=8
+TOTAL_SHARDS=$(( NUM_WORKERS_PER_GPU * 2 ))
 
-# Configure GPU devices if needed (e.g. 0,1,2,3)
-export CUDA_VISIBLE_DEVICES=0
-python wan_va/extract_latents.py \
-    --dataset_path ./Data/handcap_lingbot \
-    --ckpt_path ./ckpt/lingbot-va-base \
-    --chunk_size 2 \
-    --height 256 \
-    --width 320 \
-    --shard_id 0 \
-    --num_shards 2 &
+echo "Launching $NUM_WORKERS_PER_GPU extractions on GPU 0..."
+for (( i=0; i<$NUM_WORKERS_PER_GPU; i++ )); do
+    CUDA_VISIBLE_DEVICES=0 python wan_va/extract_latents.py \
+        --dataset_path ./Data/handcap_lingbot \
+        --ckpt_path ./ckpt/lingbot-va-base \
+        --chunk_size 2 \
+        --height 256 \
+        --width 320 \
+        --shard_id $i \
+        --num_shards $TOTAL_SHARDS &
+done
 
-export CUDA_VISIBLE_DEVICES=1
-python wan_va/extract_latents.py \
-    --dataset_path ./Data/handcap_lingbot \
-    --ckpt_path ./ckpt/lingbot-va-base \
-    --chunk_size 2 \
-    --height 256 \
-    --width 320 \
-    --shard_id 1 \
-    --num_shards 2 &
+echo "Launching $NUM_WORKERS_PER_GPU extractions on GPU 1..."
+for (( i=$NUM_WORKERS_PER_GPU; i<$TOTAL_SHARDS; i++ )); do
+    CUDA_VISIBLE_DEVICES=1 python wan_va/extract_latents.py \
+        --dataset_path ./Data/handcap_lingbot \
+        --ckpt_path ./ckpt/lingbot-va-base \
+        --chunk_size 2 \
+        --height 256 \
+        --width 320 \
+        --shard_id $i \
+        --num_shards $TOTAL_SHARDS &
+done
 
-echo "Running on 2 GPUs... Waiting for both to finish..."
+echo "Running 16 parallel extractions on 2 H200 GPUs... Waiting for validation... (This will crush your CPUs/GPUs, please wait!)"
 wait
 echo "Extraction completed across all GPUs!"
