@@ -267,8 +267,18 @@ class LatentLeRobotDatasetHandcap(LeRobotDataset):
         if getattr(self.config, 'use_handcap', False) and self.config.env_type == 'handcap':
             if getattr(self.config, 'use_tactile', False) and len(latent_lst) >= 3:
                 # Wrist config with tactile: usually latent_lst[0]=wrist, [1]=left_tactile, [2]=right_tactile
-                wrist_latent = latent_lst[0]
-                tactile_latents = torch.cat(latent_lst[1:], dim=2)
+                wrist_latent = latent_lst[0]  # [f, h, w_w, c]
+                tactile_latents = torch.cat(latent_lst[1:], dim=2)  # [f, h, w_t, c]
+                # PAD wrist_latent if its width is smaller than the concatenated tactile latents
+                if wrist_latent.shape[2] < tactile_latents.shape[2]:
+                    pad_w = tactile_latents.shape[2] - wrist_latent.shape[2]
+                    pad_tensor = torch.zeros(*wrist_latent.shape[:2], pad_w, wrist_latent.shape[3], device=wrist_latent.device, dtype=wrist_latent.dtype)
+                    wrist_latent = torch.cat([wrist_latent, pad_tensor], dim=2)
+                elif tactile_latents.shape[2] < wrist_latent.shape[2]:
+                    pad_w = wrist_latent.shape[2] - tactile_latents.shape[2]
+                    pad_tensor = torch.zeros(*tactile_latents.shape[:2], pad_w, tactile_latents.shape[3], device=tactile_latents.device, dtype=tactile_latents.dtype)
+                    tactile_latents = torch.cat([tactile_latents, pad_tensor], dim=2)
+                    
                 cat_latent = torch.cat([wrist_latent, tactile_latents], dim=1)
             else:
                 cat_latent = torch.cat(latent_lst, dim=2)
