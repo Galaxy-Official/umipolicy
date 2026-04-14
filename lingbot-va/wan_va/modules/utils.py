@@ -69,7 +69,7 @@ def load_transformer(
             for p in module.parameters(recurse=False):
                 torch.nn.init.normal_(p, std=0.02)
                 
-    return model.to(dtype=torch_dtype, device=torch_device)
+    return model.to(device=torch_device)
 
 
 def patchify(x, patch_size):

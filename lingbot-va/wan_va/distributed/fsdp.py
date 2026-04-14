@@ -23,7 +23,7 @@ def shard_model(model,
         reduce_dtype=reduce_dtype,
         cast_forward_inputs=False,
     )
-    fsdp_config = {"mp_policy": mp_policy, "reshard_after_forward": True}
+    fsdp_config = {"mp_policy": mp_policy, "reshard_after_forward": True, "use_orig_params": True}
 
     for block in model.blocks:
         fully_shard(block.attn1, **fsdp_config)
