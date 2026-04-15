@@ -90,6 +90,10 @@ class MultiLatentLeRobotDatasetHandcap(torch.utils.data.Dataset):
         self.item_id_to_dataset_id, self.acc_dset_num = (
             self._get_item_id_to_dataset_id()
         )
+        if len(self) == 0:
+            raise ValueError(f"CRITICAL ERROR: The dataset loaded from '{config.dataset_path}' contains 0 valid episodes! "
+                             "This typically means either the dataset_path does not exist/is empty, OR you have not run the latent extraction script "
+                             "(run_extract_latents.sh) on this dataset yet. Lingbot-VA ONLY trains on extracted latents.")
 
     def __len__(
         self,

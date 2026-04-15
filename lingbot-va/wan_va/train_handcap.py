@@ -544,6 +544,11 @@ def run(args):
     if args.save_root is not None:
         config.save_root = args.save_root
 
+    if getattr(args, 'dataset_path', None) is not None:
+        config.dataset_path = args.dataset_path
+        # update empty_emb_path since it depends on dataset_path
+        config.empty_emb_path = os.path.join(config.dataset_path, 'empty_emb.pt')
+
     if rank == 0:
         logger.info(f"Using config: {args.config_name}")
         logger.info(f"World size: {world_size}, Local rank: {local_rank}")
@@ -566,6 +571,12 @@ def main():
         type=str,
         default=None,
         help="Root directory for saving checkpoints",
+    )
+    parser.add_argument(
+        "--dataset_path",
+        type=str,
+        default=None,
+        help="Override the dataset_path from config",
     )
 
     args = parser.parse_args()
