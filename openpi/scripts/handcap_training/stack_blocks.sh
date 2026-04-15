@@ -3,7 +3,7 @@ set -e
 
 
 # 修改为你要指定的显卡槽位 (例如使用 4 张卡则是 0,1,2,3)
-export CUDA_VISIBLE_DEVICES=0,1
+export CUDA_VISIBLE_DEVICES=2,3
 
 # OpenPI(JAX环境)不需要 accelerate，直接调用 python script 即可跑 DDP
 # conda activate umipolicy
