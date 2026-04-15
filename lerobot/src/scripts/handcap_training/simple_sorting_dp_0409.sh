@@ -6,7 +6,7 @@ export CUDA_VISIBLE_DEVICES=0,1
 
 accelerate launch --multi_gpu --num_processes=2 --num_machines=1 --mixed_precision=no --dynamo_backend=no -m lerobot.scripts.lerobot_train \
   --dataset.repo_id=lihongcs/simple_sorting_handcap \
-  --dataset.root=Data/simple_sorting_414 \
+  --dataset.root=Data/handcap_simple_sorting_409 \
   --policy.type=diffusion \
   --batch_size=256 \
   --policy.use_tactile=false \
