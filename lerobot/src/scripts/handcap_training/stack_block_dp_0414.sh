@@ -3,10 +3,10 @@ export CUDA_VISIBLE_DEVICES=2,3
 
 # source /root/miniconda3/bin/activate
 # conda activate umipolicy
-
+/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/lerobot/src/
 accelerate launch --multi_gpu --num_processes=2 --num_machines=1 --mixed_precision=no --dynamo_backend=no -m lerobot.scripts.lerobot_train \
   --dataset.repo_id=lihongcs/block_stack_handcap \
-  --dataset.root=Data/block_stack_0414 \
+  --dataset.root=Data/handcap_block_stack_0414 \
   --policy.type=diffusion \
   --batch_size=256 \
   --policy.use_tactile=false \
