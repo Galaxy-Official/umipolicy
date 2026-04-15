@@ -6,7 +6,7 @@ set -eo pipefail
 # ==========================================
 
 # 1. 配置默认参数 (可以通过环境变量覆盖)
-DATASET_PATH=${DATASET_PATH:-"Data/handcap_simple_sorting_phone_409"}
+DATASET_PATH=${DATASET_PATH:-"/Users/macbookpro/Desktop/handcap_simple_sorting_phone_409"}
 CKPT_PATH=${CKPT_PATH:-"./ckpt/lingbot-va-base"}
 CONFIG_NAME=${CONFIG_NAME:-"handcap_train"}
 NGPU=${NGPU:-"8"}
