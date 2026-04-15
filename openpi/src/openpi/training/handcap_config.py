@@ -167,7 +167,7 @@ def get_handcap_configs():
                 camera_keys=("wrist_0_rgb",),),
             data=LeRobotHandcapDataConfig(
                 repo_id="lihongcs/block_to_pot_handcap",
-                data_root="Data/handcap30",
+                data_root="Data/handcap_simple_sorting_409",
                 base_config=DataConfig(
                     prompt_from_task=True,
                     use_handcap=True,
