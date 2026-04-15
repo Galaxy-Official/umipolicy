@@ -28,7 +28,7 @@ else
     echo "⚠️ [拦截提示] 没有找到特征，或者特征目录为空: $LATENT_DIR"
     echo "🚀 [启动特征提取...] 正在调用 SD VAE 进行并行特征抽取..."
     
-    NUM_WORKERS_PER_GPU=8
+    NUM_WORKERS_PER_GPU=4
     TOTAL_SHARDS=$(( NUM_WORKERS_PER_GPU * 2 ))
 
     echo "Launching $NUM_WORKERS_PER_GPU extractions on GPU 0..."
