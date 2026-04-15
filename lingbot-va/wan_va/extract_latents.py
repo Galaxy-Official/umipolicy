@@ -102,7 +102,7 @@ def main():
         print(f"Failed to init LeRobotDataset: {e}")
         return
 
-    used_video_keys = [k for k in ds.meta.features if "observation.images" in k or "observation.tactiles" in k]
+    used_video_keys = [k for k in ds.meta.features if ("observation.images" in k or "observation.tactiles" in k) and "depth" not in k.lower()]
     if len(used_video_keys) == 0:
         print("No image/tactile keys found in dataset!")
         return
@@ -150,10 +150,13 @@ def main():
                     # We need to construct output path based on index / chunk logic.
                     episode_chunk = meta_item.get("meta/episodes/chunk_index", idx // 1000)
                     cur_path = latents_dir / f"chunk-{episode_chunk:03d}" / key
-                    cur_path.mkdir(parents=True, exist_ok=True)
-                    out_path = cur_path / f"episode_{idx:06d}_{start_f}_{end_f}.pth"
                     
-                    if out_path.exists():
+                    # Robust directory creation for slow NFS / network file systems
+                    os.makedirs(str(cur_path), exist_ok=True)
+                    
+                    out_path = str(cur_path / f"episode_{idx:06d}_{start_f}_{end_f}.pth")
+                    
+                    if os.path.exists(out_path):
                         continue
                         
                     # Preload all frames for this single segment sequentially using LeRobot
