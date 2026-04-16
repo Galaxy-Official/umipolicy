@@ -2,7 +2,7 @@
 
 # 获取目前所在的工作空间目录，并设置 PYTHONPATH
 # 将 lerobot/src 和 当前运行所在的根目录加入 PYTHONPATH
-export PYTHONPATH="$(pwd)/lerobot/src:$(pwd):$PYTHONPATH"
+export PYTHONPATH="$(pwd)/lerobot/src/lib_py:$(pwd)/lerobot/src:$(pwd):$PYTHONPATH"
 
 # 设定真实的机器人连接参数（安全保护下的初始归零点）
 export FLEXIV_ROBOT_IP="192.168.2.100"
