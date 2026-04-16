@@ -252,8 +252,17 @@ def main():
                         "ori_fps": info_fps
                     }
                     
-                    with open(out_path, "wb") as f_out:
-                        torch.save(latent_dict, f_out)
+                    # Bypassing PyTorch's internal JuiceFS bug: 
+                    # PyTorch explicitly checks hasattr(f, 'name') and runs os.path.exists on the dirname.
+                    # This fails on NFS/JuiceFS. We write locally to /tmp first, then move it.
+                    import tempfile
+                    import shutil
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pth") as tmp_f:
+                        torch.save(latent_dict, tmp_f.name)
+                        tmp_path = tmp_f.name
+                    
+                    # Safely move the file to the actual NFS network path
+                    shutil.move(tmp_path, out_path)
                 
                 except Exception as e:
                     print(f"Error encoding {key} episode {idx}: {e}")
