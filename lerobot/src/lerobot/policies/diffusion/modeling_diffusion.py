@@ -574,12 +574,17 @@ class DiffusionModel(nn.Module):
         assert horizon == self.config.horizon
         assert n_obs_steps == self.config.n_obs_steps
 
+        import time
+        _t_start = time.perf_counter()
+
         # Encode image features and concatenate them all together along with the state vector.
         if getattr(self.config, "policies_algo_type", "default") == "ftvalign":
             global_cond, ftvalign_loss = self._prepare_global_conditioning(batch, return_ftvalign_loss=True)
         else:
             global_cond = self._prepare_global_conditioning(batch)
             ftvalign_loss = 0.0
+            
+        _t_encoder = time.perf_counter()
 
         # Forward diffusion.
         trajectory = batch[ACTION]
@@ -596,7 +601,14 @@ class DiffusionModel(nn.Module):
         noisy_trajectory = self.noise_scheduler.add_noise(trajectory, eps, timesteps)
 
         # Run the denoising network (that might denoise the trajectory, or attempt to predict the noise).
+        _t_unet_start = time.perf_counter()
         pred = self.unet(noisy_trajectory, timesteps, global_cond=global_cond)
+        _t_unet_end = time.perf_counter()
+        
+        if not hasattr(self, "_did_log_internal_timing"):
+            import logging
+            logging.info(f">>> [Timing] Step 1 internal -> Encoder took: {_t_encoder - _t_start:.4f}s | UNET forward took: {_t_unet_end - _t_unet_start:.4f}s")
+            self._did_log_internal_timing = True
 
         # Compute the loss.
         # The target is either the original trajectory, or the noise.

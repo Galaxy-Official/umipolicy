@@ -452,11 +452,25 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
             f"Start offline training on a fixed dataset, with effective batch size: {effective_batch_size}"
         )
 
+    _time_last_50_steps = time.perf_counter()
+    _step_start_idx = step
+
     for _ in range(step, cfg.steps):
         start_time = time.perf_counter()
         batch = next(dl_iter)
         batch = preprocessor(batch)
-        train_tracker.dataloading_s = time.perf_counter() - start_time
+        _t_dl = time.perf_counter() - start_time
+        train_tracker.dataloading_s = _t_dl
+
+        if step == _step_start_idx and is_main_process:
+            _current_lr = optimizer.param_groups[0]['lr']
+            _effective_bs = cfg.batch_size * accelerator.num_processes
+            _epoch_steps = max(1, dataset.num_frames // _effective_bs)
+            logging.info(f"\n" + "="*45)
+            logging.info(f">>> [Training Setup] Current LR: {_current_lr:.3e}")
+            logging.info(f">>> [Training Setup] 1 Epoch = ~{_epoch_steps} steps (Total Frames: {dataset.num_frames} / Batch: {_effective_bs})")
+            logging.info(f"="*45)
+            logging.info(f">>> [Timing] Step 1 internal -> Data Loading & Preprocessing took: {_t_dl:.4f}s")
 
         train_tracker, output_dict = update_policy(
             train_tracker,
@@ -474,6 +488,13 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
         step += 1
         if is_main_process:
             progbar.update(1)
+            
+            if step % 50 == 0 and step > _step_start_idx:
+                _t_now = time.perf_counter()
+                _t_50_diff = _t_now - _time_last_50_steps
+                logging.info(f">>> [Timing] Past 50 steps took: {_t_50_diff:.4f}s (Average: {_t_50_diff/50:.4f}s/step)")
+                _time_last_50_steps = _t_now
+
         train_tracker.step()
         is_log_step = cfg.log_freq > 0 and step % cfg.log_freq == 0 and is_main_process
         is_saving_step = step % cfg.save_freq == 0 or step == cfg.steps

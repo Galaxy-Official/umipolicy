@@ -54,7 +54,7 @@ class TrainPipelineConfig(HubMixin):
     # This disables cudnn.benchmark and may reduce training speed by ~10-20 percent.
     cudnn_deterministic: bool = False
     # Number of workers for the dataloader.
-    num_workers: int = 4
+    num_workers: int = 16
     batch_size: int = 8
     steps: int = 100_000
     eval_freq: int = 20_000
@@ -62,7 +62,7 @@ class TrainPipelineConfig(HubMixin):
     tolerance_s: float = 1e-4
     save_checkpoint: bool = True
     # Checkpoint is saved every `save_freq` training iterations and after the last training step.
-    save_freq: int = 20_000
+    save_freq: int = 10_000
     use_policy_training_preset: bool = True
     optimizer: OptimizerConfig | None = None
     scheduler: LRSchedulerConfig | None = None
