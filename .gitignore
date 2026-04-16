@@ -41,3 +41,10 @@ lingbot-va/train_out
 
 
 third_party/
+
+# Cosmos Policy environment
+cosmos-policy/.venv/
+cosmos-policy/.venv
+cosmos-policy/__pycache__/
+*.mp4
+*.hdf5

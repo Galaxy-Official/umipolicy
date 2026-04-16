@@ -1,2 +1,9 @@
 /.cuda-name
 /build
+
+.venv/
+.venv
+__pycache__/
+*.mp4
+*.hdf5
+*.pkl
