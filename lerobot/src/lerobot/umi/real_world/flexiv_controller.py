@@ -23,6 +23,13 @@ sys.path.append(os.path.join(os.getcwd(), "flexiv_api/lib_py/"))
 
 try:
     import flexivrdk
+    print("================ DEBUG INFO ================")
+    print("Python Executable:", sys.executable)
+    print("Python Version:", sys.version)
+    print("Loaded flexivrdk from:", getattr(flexivrdk, "__file__", "UNKNOWN"))
+    print("Contains Log?:", hasattr(flexivrdk, "Log"))
+    print("sys.path:", sys.path)
+    print("============================================")
 except ModuleNotFoundError:
     import warnings
     warnings.warn("No module named 'flexivrdk', but continue anyway")
