@@ -48,3 +48,6 @@ cosmos-policy/.venv
 cosmos-policy/__pycache__/
 *.mp4
 *.hdf5
+cosmos-policy/.cuda-name
+cosmos-policy/build/
+*.pkl
