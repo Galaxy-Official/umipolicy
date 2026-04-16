@@ -12,7 +12,7 @@ sys.path.append("lib_py")
 import flexivrdk
 
 
-robot = FlexivInterface("192.168.2.100", "192.168.2.103", move_home=False, init_offset=None, init_qpos=None)
+robot = FlexivInterface("192.168.2.100", "192.168.2.102", move_home=False, init_offset=None, init_qpos=None)
 print(robot.get_ee_pose())
 print(robot.get_joint_positions())
 
