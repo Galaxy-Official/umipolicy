@@ -151,9 +151,13 @@ def main():
                     episode_chunk = meta_item.get("meta/episodes/chunk_index", idx // 1000)
                     cur_path = latents_dir / f"chunk-{episode_chunk:03d}" / key
                     
-                    # Robust directory creation for slow NFS / network file systems
+                    # Robust directory creation with retry for slow network file systems
                     os.makedirs(str(cur_path), exist_ok=True)
-                    
+                    import time
+                    for _ in range(5):
+                        if os.path.exists(str(cur_path)): break
+                        time.sleep(0.5)
+                        
                     out_path = str(cur_path / f"episode_{idx:06d}_{start_f}_{end_f}.pth")
                     
                     if os.path.exists(out_path):
@@ -248,7 +252,8 @@ def main():
                         "ori_fps": info_fps
                     }
                     
-                    torch.save(latent_dict, out_path)
+                    with open(out_path, "wb") as f_out:
+                        torch.save(latent_dict, f_out)
                 
                 except Exception as e:
                     print(f"Error encoding {key} episode {idx}: {e}")

@@ -4,7 +4,7 @@ TOTAL_SHARDS=$(( NUM_WORKERS_PER_GPU * 2 ))
 echo "Launching $NUM_WORKERS_PER_GPU extractions on GPU 0..."
 for (( i=0; i<$NUM_WORKERS_PER_GPU; i++ )); do
     CUDA_VISIBLE_DEVICES=0 python wan_va/extract_latents.py \
-        --dataset_path ./Data/handcap_simple_sorting_phone_409 \
+        --dataset_path /Users/macbookpro/Desktop/handcap_simple_sorting_phone_409 \
         --ckpt_path ./ckpt/lingbot-va-base \
         --chunk_size 2 \
         --height 256 \
@@ -16,7 +16,7 @@ done
 echo "Launching $NUM_WORKERS_PER_GPU extractions on GPU 1..."
 for (( i=$NUM_WORKERS_PER_GPU; i<$TOTAL_SHARDS; i++ )); do
     CUDA_VISIBLE_DEVICES=1 python wan_va/extract_latents.py \
-        --dataset_path ./Data/handcap_simple_sorting_phone_409 \
+        --dataset_path /Users/macbookpro/Desktop/handcap_simple_sorting_phone_409 \
         --ckpt_path ./ckpt/lingbot-va-base \
         --chunk_size 2 \
         --height 256 \
