@@ -11,7 +11,7 @@ accelerate launch --multi_gpu --num_processes=2 --num_machines=1 --mixed_precisi
   --batch_size=256 \
   --policy.use_tactile=false \
   --optimizer.type=adamw \
-  --output_dir=outputs/train/simple_sorting_0409 \
+  --output_dir=outputs/train/simple_sorting_0409_1 \
   --job_name=dp_simple_sorting_0409_handcap \
   --policy.device=cuda \
   --wandb.enable=true \

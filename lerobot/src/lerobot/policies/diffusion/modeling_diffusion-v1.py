@@ -44,11 +44,7 @@ from lerobot.policies.utils import (
 from lerobot.utils.constants import ACTION, OBS_ENV_STATE, OBS_IMAGES, OBS_STATE
 
 from lerobot.policies.tactile_backbone.tactile_backbone import CLIPPretrainedTactileEncoderPooled
-
-try:
-    from lerobot.policies.point_backbone.point_backbone import PointBERTEncoderPooled
-except Exception:
-    PointBERTEncoderPooled = None
+from lerobot.policies.point_backbone.point_backbone import PointBERTEncoderPooled
 
 
 class DiffusionPolicy(PreTrainedPolicy):
@@ -96,6 +92,12 @@ class DiffusionPolicy(PreTrainedPolicy):
             self._queues[OBS_IMAGES] = deque(maxlen=self.config.n_obs_steps)
         if self.config.env_state_feature:
             self._queues[OBS_ENV_STATE] = deque(maxlen=self.config.n_obs_steps)
+        if self.config.use_point:
+            self._queues[self.config.point_xyz_key] = deque(maxlen=self.config.n_obs_steps)
+            if self.config.point_rgb_key in self.config.input_features:
+                self._queues[self.config.point_rgb_key] = deque(maxlen=self.config.n_obs_steps)
+            if self.config.point_mask_key in self.config.input_features:
+                self._queues[self.config.point_mask_key] = deque(maxlen=self.config.n_obs_steps)
 
     @torch.no_grad()
     def predict_action_chunk(self, batch: dict[str, Tensor], noise: Tensor | None = None) -> Tensor:
@@ -202,23 +204,23 @@ class DiffusionModel(nn.Module):
         if getattr(self.config, "use_tactile", False):
             tactile_pretrained_ckpt = "ckpt/pretrained_tactile_encoder.pt"
             self.tac_backbone = CLIPPretrainedTactileEncoderPooled(tactile_pretrained_ckpt)
-
+            
+        # use_point
         if getattr(self.config, "use_point", False):
-            if PointBERTEncoderPooled is None:
-                raise ImportError(
-                    "`use_point=True` but PointBERTEncoderPooled could not be imported. "
-                    "Please make sure lerobot.policies.point_backbone.point_backbone is available."
-                )
+            pointbert_ckpt = getattr(self.config, "point_pretrained_ckpt", None)
+            pointbert_repo_root = getattr(self.config, "pointbert_repo_root", None)
+            point_use_rgb = getattr(self.config, "point_use_rgb", True)
+            point_encoder_output_dim = getattr(self.config, "point_encoder_output_dim", 64)
+            point_num_points = getattr(self.config, "point_num_points", 1024)
+
             self.point_backbone = PointBERTEncoderPooled(
-                point_pretrained_ckpt=getattr(self.config, "point_pretrained_ckpt", None),
-                pointbert_repo_root=getattr(self.config, "pointbert_repo_root", None),
-                use_rgb=getattr(self.config, "point_use_rgb", True),
-                output_dim=getattr(self.config, "point_encoder_output_dim", 64),
-                num_points=getattr(self.config, "point_num_points", 1024),
+                point_pretrained_ckpt=pointbert_ckpt,
+                pointbert_repo_root=pointbert_repo_root,
+                use_rgb=point_use_rgb,
+                output_dim=point_encoder_output_dim,
+                num_points=point_num_points,
             )
-            if getattr(self.config, "point_freeze_backbone", True):
-                for p in self.point_backbone.parameters():
-                    p.requires_grad = False
+
             global_cond_dim += self.point_backbone.feature_dim
 
         self.unet = DiffusionConditionalUnet1d(config, global_cond_dim=global_cond_dim * config.n_obs_steps)
@@ -281,138 +283,6 @@ class DiffusionModel(nn.Module):
 
         return sample
 
-    def _to_channel_first(self, tensor: Tensor) -> Tensor:
-        """Convert [B,S,H,W,C] or [B,H,W,C] to channel-first if needed."""
-        if tensor.ndim == 4:
-            if tensor.shape[-1] in (1, 3):
-                tensor = tensor.permute(0, 3, 1, 2)
-        elif tensor.ndim == 5:
-            if tensor.shape[-1] in (1, 3):
-                tensor = tensor.permute(0, 1, 4, 2, 3)
-        return tensor
-
-    def _decode_depth_to_meters(self, depth: Tensor) -> Tensor:
-        depth = depth.to(dtype=torch.float32)
-        unit = getattr(self.config, "point_depth_unit", "auto")
-        scale = float(getattr(self.config, "point_depth_scale", 1000.0))
-        if unit == "mm":
-            return depth / scale
-        if unit == "m":
-            return depth
-        # auto
-        if depth.numel() == 0:
-            return depth
-        if torch.is_floating_point(depth):
-            depth_max = float(depth.detach().amax().item())
-            if depth_max > 32.0:
-                return depth / scale
-            return depth
-        return depth / scale
-
-    def _sample_or_pad_points(self, xyz: Tensor, rgb: Tensor | None, num_points: int) -> tuple[Tensor, Tensor | None, Tensor]:
-        n = xyz.shape[0]
-        device = xyz.device
-        if n == 0:
-            xyz_out = torch.zeros((num_points, 3), dtype=xyz.dtype, device=device)
-            rgb_out = None if rgb is None else torch.zeros((num_points, 3), dtype=rgb.dtype, device=device)
-            mask_out = torch.zeros((num_points,), dtype=torch.bool, device=device)
-            return xyz_out, rgb_out, mask_out
-
-        if n >= num_points:
-            idx = torch.randperm(n, device=device)[:num_points]
-            return xyz[idx], (None if rgb is None else rgb[idx]), torch.ones((num_points,), dtype=torch.bool, device=device)
-
-        pad_idx = torch.randint(low=0, high=n, size=(num_points - n,), device=device)
-        full_idx = torch.cat([torch.arange(n, device=device), pad_idx], dim=0)
-        mask = torch.zeros((num_points,), dtype=torch.bool, device=device)
-        mask[:n] = True
-        return xyz[full_idx], (None if rgb is None else rgb[full_idx]), mask
-
-    def _build_online_phone_pointcloud(self, batch: dict[str, Tensor]) -> tuple[Tensor, Tensor | None, Tensor | None]:
-        rgb_key = getattr(self.config, "point_online_rgb_key", "observation.images.phone")
-        depth_key = getattr(self.config, "point_online_depth_key", "observation.images.phone_depth")
-        if rgb_key not in batch:
-            raise KeyError(f"`use_point=True` but `{rgb_key}` is missing from batch.")
-        if depth_key not in batch:
-            raise KeyError(f"`use_point=True` but `{depth_key}` is missing from batch.")
-
-        rgb = self._to_channel_first(batch[rgb_key])
-        depth = self._to_channel_first(batch[depth_key])
-
-        if rgb.ndim == 4:
-            rgb = rgb.unsqueeze(1)
-        if depth.ndim == 4:
-            depth = depth.unsqueeze(1)
-
-        if rgb.ndim != 5 or depth.ndim != 5:
-            raise ValueError(
-                f"Expected RGB/depth tensors with shape [B,S,C,H,W] or [B,C,H,W], got rgb={tuple(rgb.shape)}, depth={tuple(depth.shape)}"
-            )
-        if rgb.shape[0] != depth.shape[0] or rgb.shape[1] != depth.shape[1]:
-            raise ValueError(
-                f"RGB/depth batch mismatch: rgb={tuple(rgb.shape)}, depth={tuple(depth.shape)}"
-            )
-
-        if rgb.shape[-2:] != depth.shape[-2:]:
-            depth = F.interpolate(
-                depth.flatten(0, 1).to(dtype=torch.float32),
-                size=rgb.shape[-2:],
-                mode="nearest",
-            ).unflatten(0, (rgb.shape[0], rgb.shape[1]))
-
-        depth = self._decode_depth_to_meters(depth)
-        if depth.shape[2] != 1:
-            depth = depth[:, :, :1]
-        if rgb.shape[2] != 3:
-            rgb = rgb[:, :, :3]
-
-        B, S, _, H, W = rgb.shape
-        stride = int(getattr(self.config, "point_pixel_stride", 1))
-        fx = float(self.config.point_camera_fx)
-        fy = float(self.config.point_camera_fy)
-        cx = float(self.config.point_camera_cx)
-        cy = float(self.config.point_camera_cy)
-        depth_min = float(getattr(self.config, "point_depth_min_m", 1e-4))
-        depth_max = float(getattr(self.config, "point_depth_max_m", 5.0))
-        num_points = int(getattr(self.config, "point_num_points", 1024))
-
-        ys = torch.arange(0, H, stride, device=depth.device, dtype=torch.float32)
-        xs = torch.arange(0, W, stride, device=depth.device, dtype=torch.float32)
-        yy, xx = torch.meshgrid(ys, xs, indexing="ij")
-
-        depth_ds = depth[:, :, 0, ::stride, ::stride]
-        rgb_ds = rgb[:, :, :, ::stride, ::stride].permute(0, 1, 3, 4, 2).contiguous().to(torch.float32)
-        if rgb_ds.max() > 1.5:
-            rgb_ds = rgb_ds / 255.0
-
-        x = (xx.view(1, 1, *xx.shape) - cx) * depth_ds / fx
-        y = (yy.view(1, 1, *yy.shape) - cy) * depth_ds / fy
-        z = depth_ds
-        xyz = torch.stack([x, y, z], dim=-1)  # [B,S,Hd,Wd,3]
-
-        valid = torch.isfinite(z) & (z > depth_min) & (z < depth_max)
-
-        xyz_out, rgb_out, mask_out = [], [], []
-        for b in range(B):
-            xyz_b, rgb_b, mask_b = [], [], []
-            for s in range(S):
-                xyz_valid = xyz[b, s][valid[b, s]]
-                rgb_valid = rgb_ds[b, s][valid[b, s]] if getattr(self.config, "point_use_rgb", True) else None
-                xyz_sel, rgb_sel, mask_sel = self._sample_or_pad_points(xyz_valid, rgb_valid, num_points)
-                xyz_b.append(xyz_sel)
-                if getattr(self.config, "point_use_rgb", True):
-                    rgb_b.append(rgb_sel)
-                mask_b.append(mask_sel)
-            xyz_out.append(torch.stack(xyz_b, dim=0))
-            if getattr(self.config, "point_use_rgb", True):
-                rgb_out.append(torch.stack(rgb_b, dim=0))
-            mask_out.append(torch.stack(mask_b, dim=0))
-
-        xyz_out = torch.stack(xyz_out, dim=0)
-        rgb_out = torch.stack(rgb_out, dim=0) if getattr(self.config, "point_use_rgb", True) else None
-        mask_out = torch.stack(mask_out, dim=0) if getattr(self.config, "point_use_mask", True) else None
-        return xyz_out, rgb_out, mask_out
-
     def ftvalign(self, tactile_feature, visual_feature, force_feature):
         """
         Compute Contrative Loss between tactile and visual and force.
@@ -440,6 +310,8 @@ class DiffusionModel(nn.Module):
         batch_size, n_obs_steps = batch[OBS_STATE].shape[:2]
         global_cond_feats = [batch[OBS_STATE]]
         ftvalign_loss = 0.0
+        
+        
 
         # Extract image features.
         if self.config.image_features:
@@ -500,16 +372,31 @@ class DiffusionModel(nn.Module):
                     img_features = torch.cat([img_features, tactile_features], dim=-1)
 
             global_cond_feats.append(img_features)
-
+            
+        # get point feature
         if getattr(self.config, "use_point", False):
-            point_xyz, point_rgb, point_mask = self._build_online_phone_pointcloud(batch)
+            point_xyz_key = getattr(self.config, "point_xyz_key", "observation.points.phone_xyz")
+            point_rgb_key = getattr(self.config, "point_rgb_key", "observation.points.phone_rgb")
+            point_mask_key = getattr(self.config, "point_mask_key", "observation.points.phone_mask")
+
+            if point_xyz_key not in batch:
+                raise KeyError(
+                    f"Point input is enabled but '{point_xyz_key}' is missing from batch."
+                )
+
+            point_xyz = batch[point_xyz_key]                     # [B, S, N, 3] 或 [B, N, 3]
+            point_rgb = batch.get(point_rgb_key, None)          # optional
+            point_mask = batch.get(point_mask_key, None)        # optional
+
             point_features = self.point_backbone(
                 xyz=point_xyz,
                 rgb=point_rgb,
                 mask=point_mask,
-            )
+            )                                                   # -> [B, S, D] 或 [B, D]
+
             if point_features.ndim == 2:
                 point_features = point_features.unsqueeze(1).expand(-1, n_obs_steps, -1)
+
             global_cond_feats.append(point_features)
 
         if self.config.env_state_feature:
@@ -564,11 +451,12 @@ class DiffusionModel(nn.Module):
         """
         # Input validation.
         assert set(batch).issuperset({OBS_STATE, ACTION, "action_is_pad"})
-        has_point_inputs = bool(getattr(self.config, "use_point", False)) and (
-            getattr(self.config, "point_online_rgb_key", "observation.images.phone") in batch
-            and getattr(self.config, "point_online_depth_key", "observation.images.phone_depth") in batch
+        
+        has_point = getattr(self.config, "use_point", False) and (
+            getattr(self.config, "point_xyz_key", "observation.points.phone_xyz") in batch
         )
-        assert OBS_IMAGES in batch or OBS_ENV_STATE in batch or has_point_inputs
+        assert OBS_IMAGES in batch or OBS_ENV_STATE in batch or has_point
+        
         n_obs_steps = batch[OBS_STATE].shape[1]
         horizon = batch[ACTION].shape[1]
         assert horizon == self.config.horizon

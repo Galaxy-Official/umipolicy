@@ -109,38 +109,6 @@ class DiffusionConfig(PreTrainedConfig):
     use_tactile: bool = False
     use_handcap: bool = False
 
-    # Point cloud / Point-BERT.
-    # Minimal-change path: keep depth inside parquet and build point clouds online during training.
-    use_point: bool = False
-    point_backbone_name: str = "point_bert"
-    point_pretrained_ckpt: str | None = None
-    pointbert_repo_root: str | None = None
-    point_encoder_output_dim: int = 64
-    point_num_points: int = 1024
-    point_use_rgb: bool = True
-    point_use_mask: bool = True
-    point_freeze_backbone: bool = True
-
-    # Online point-cloud construction from RGB + depth already loaded by LeRobot.
-    point_source: str = "online_from_phone_depth"
-    point_online_rgb_key: str = "observation.images.phone"
-    point_online_depth_key: str = "observation.images.phone_depth"
-    point_online_mask_key: str | None = None
-    point_exclude_depth_from_rgb_encoder: bool = True
-
-    # Camera intrinsics for phone camera.
-    point_camera_fx: float | None = None
-    point_camera_fy: float | None = None
-    point_camera_cx: float | None = None
-    point_camera_cy: float | None = None
-
-    # Depth decoding / filtering.
-    point_depth_unit: str = "auto"   # one of {"auto", "mm", "m"}
-    point_depth_scale: float = 1000.0
-    point_depth_min_m: float = 1e-4
-    point_depth_max_m: float = 5.0
-    point_pixel_stride: int = 1
-
     normalization_mapping: dict[str, NormalizationMode] = field(
         default_factory=lambda: {
             "VISUAL": NormalizationMode.MEAN_STD,
@@ -148,6 +116,21 @@ class DiffusionConfig(PreTrainedConfig):
             "ACTION": NormalizationMode.MIN_MAX,
         }
     )
+    
+    # point params
+    use_point: bool = False
+    point_backbone_name: str = "point_bert"
+    point_xyz_key: str = "observation.points.phone_xyz"
+    point_rgb_key: str = "observation.points.phone_rgb"
+    point_mask_key: str = "observation.points.phone_mask"
+    
+    point_pretrained_ckpt: str | None = None
+    pointbert_repo_root: str | None = None
+    point_use_rgb: bool = True
+    point_use_mask: bool = True
+    point_num_points: int = 1024
+    point_encoder_output_dim: int = 64
+    point_freeze_backbone: bool = True
 
     # The original implementation doesn't sample frames for the last 7 steps,
     # which avoids excessive padding and leads to improved training results.
@@ -270,9 +253,18 @@ class DiffusionConfig(PreTrainedConfig):
             tactile_keys = [k for k in self.input_features.keys() if "tactile" in k]
             for k in tactile_keys:
                 self.input_features.pop(k, None)
+                
+        # use_point
+        use_point = getattr(self, "use_point", False)
+        if str(use_point).lower() == "false":
+            use_point = False
 
-        if len(self.image_features) == 0 and self.env_state_feature is None:
-            raise ValueError("You must provide at least one image or the environment state among the inputs.")
+        has_point_xyz = getattr(self, "point_xyz_key", None) in self.input_features
+
+        if len(self.image_features) == 0 and self.env_state_feature is None and not (use_point and has_point_xyz):
+            raise ValueError(
+                "You must provide at least one image, the environment state, or point cloud xyz among the inputs."
+            )
 
         if self.resize_shape is None and self.crop_shape is not None:
             for key, image_ft in self.image_features.items():
@@ -290,41 +282,38 @@ class DiffusionConfig(PreTrainedConfig):
                     raise ValueError(
                         f"`{key}` does not match `{first_image_key}`, but we expect all image shapes to match."
                     )
+                    
+        # check point data
+        if use_point:
+            xyz_key = getattr(self, "point_xyz_key", None)
+            rgb_key = getattr(self, "point_rgb_key", None)
+            mask_key = getattr(self, "point_mask_key", None)
 
-    @property
-    def image_features(self) -> dict:
-        """Image features that should go through the RGB encoder.
+            if xyz_key is None or xyz_key not in self.input_features:
+                raise ValueError(
+                    f"`use_point=True` requires `{xyz_key}` to be present in `input_features`."
+                )
 
-        Keep the original behavior for normal visual inputs, but when online point-cloud
-        construction is enabled, exclude the depth key from the RGB branch so it is consumed
-        only by the point branch.
-        """
-        visual_keys = {}
+            xyz_ft = self.input_features[xyz_key]
+            if len(xyz_ft.shape) < 2 or xyz_ft.shape[-1] != 3:
+                raise ValueError(
+                    f"`{xyz_key}` should end with shape (..., 3). Got {xyz_ft.shape}."
+                )
 
-        for key, ft in self.input_features.items():
-            dtype = getattr(ft, "type", None)
+            if rgb_key in self.input_features:
+                rgb_ft = self.input_features[rgb_key]
+                if rgb_ft.shape != xyz_ft.shape:
+                    raise ValueError(
+                        f"`{rgb_key}` should match `{xyz_key}` shape. Got {rgb_ft.shape} vs {xyz_ft.shape}."
+                    )
 
-            # Be robust to enum / string / object representations like:
-            #   VISUAL
-            #   FeatureType.VISUAL
-            #   PolicyFeatureType.VISUAL
-            dtype_name = getattr(dtype, "name", None)
-            if dtype_name is None:
-                dtype_name = str(dtype).split(".")[-1] if dtype is not None else ""
-
-            if str(dtype_name).upper() != "VISUAL":
-                continue
-
-            if (
-                getattr(self, "use_point", False)
-                and getattr(self, "point_exclude_depth_from_rgb_encoder", True)
-                and key == getattr(self, "point_online_depth_key", "observation.images.phone_depth")
-            ):
-                continue
-
-            visual_keys[key] = ft
-
-        return visual_keys
+            if mask_key in self.input_features:
+                mask_ft = self.input_features[mask_key]
+                if tuple(mask_ft.shape) != tuple(xyz_ft.shape[:-1]):
+                    raise ValueError(
+                        f"`{mask_key}` should match `{xyz_key}` without the last xyz channel. "
+                        f"Got {mask_ft.shape} vs expected {xyz_ft.shape[:-1]}."
+                    )
 
     @property
     def observation_delta_indices(self) -> list:
@@ -337,3 +326,14 @@ class DiffusionConfig(PreTrainedConfig):
     @property
     def reward_delta_indices(self) -> None:
         return None
+    
+    @property
+    def point_feature_keys(self) -> list[str]:
+        keys = []
+        if getattr(self, "point_xyz_key", None) in self.input_features:
+            keys.append(self.point_xyz_key)
+        if getattr(self, "point_rgb_key", None) in self.input_features:
+            keys.append(self.point_rgb_key)
+        if getattr(self, "point_mask_key", None) in self.input_features:
+            keys.append(self.point_mask_key)
+        return keys

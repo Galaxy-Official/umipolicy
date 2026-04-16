@@ -15,7 +15,7 @@ accelerate launch --multi_gpu --num_processes=2 --num_machines=1 --mixed_precisi
   --batch_size=256 \
   --policy.use_tactile=false \
   --optimizer.type=adamw \
-  --output_dir=outputs/train/tool_to_cups_0415 \
+  --output_dir=outputs/train/tool_to_cups_0415_1  \
   --job_name=dp_tool_to_cups_0415_handcap \
   --policy.device=cuda \
   --wandb.enable=false \
