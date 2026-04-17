@@ -31,8 +31,18 @@ if [ -d "$OUTPUT_DIR/checkpoints" ]; then
         echo "🔄 准备重新开始全新训练（原有存档可能被覆盖）..."
     fi
 else
-    echo "🆕 未检测到历史存档，自动开始全新训练..."
+    echo "🆕 未检测到历史存档（或者历史存档未保存成功），自动开始全新训练..."
     RESUME_PARAM="--resume=false"
+fi
+
+# ==========================================
+# LeRobot 防止覆盖保护的自动擦除机制
+# ==========================================
+# 如果最终决定重新开始（resume=false），但该文件夹已经存在（比如上次在第一步崩溃了残留了 config），
+# LeRobot 底层会强制报错 FileExistsError。为了让你能跑起来，我们在这里把旧的残骸删掉：
+if [ "$RESUME_PARAM" == "--resume=false" ] && [ -d "$OUTPUT_DIR" ]; then
+    echo "⚠️ 检测到空壳残骸文件夹，为了顺利重新开始，已自动清理过期文件结构：$OUTPUT_DIR"
+    rm -rf "$OUTPUT_DIR"
 fi
 echo "=========================================="
 
