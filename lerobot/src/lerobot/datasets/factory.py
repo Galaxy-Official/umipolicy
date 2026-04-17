@@ -164,12 +164,12 @@ def make_handcap_dataset(cfg: TrainPipelineConfig) -> LeRobotDatasetHandcap | Mu
                 ds_meta.features.pop(k, None)
                 
         if not getattr(cfg.policy, "use_force", False):
-            keys_to_remove = [k for k in list(ds_meta.features.keys()) if "wrist" in k or "forces" in k]
+            keys_to_remove = [k for k in list(ds_meta.features.keys()) if "forces" in k]
             for k in keys_to_remove:
                 ds_meta.features.pop(k, None)
                 
         if not getattr(cfg.policy, "use_point", False):
-            keys_to_remove = [k for k in list(ds_meta.features.keys()) if "phone" in k or "depth" in k]
+            keys_to_remove = [k for k in list(ds_meta.features.keys()) if "phone" in k or "depth" in k or "point" in k]
             for k in keys_to_remove:
                 ds_meta.features.pop(k, None)
                 

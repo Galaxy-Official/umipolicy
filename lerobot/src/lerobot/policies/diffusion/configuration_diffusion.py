@@ -277,8 +277,17 @@ class DiffusionConfig(PreTrainedConfig):
             use_force = False
             
         if not use_force:
-            force_keys = [k for k in list(self.input_features.keys()) if "wrist" in k or "forces" in k]
+            force_keys = [k for k in list(self.input_features.keys()) if "forces" in k]
             for k in force_keys:
+                self.input_features.pop(k, None)
+
+        use_point = getattr(self, "use_point", False)
+        if str(use_point).lower() == "false":
+            use_point = False
+            
+        if not use_point:
+            point_keys = [k for k in list(self.input_features.keys()) if "phone" in k or "depth" in k or "point" in k]
+            for k in point_keys:
                 self.input_features.pop(k, None)
 
         if len(self.image_features) == 0 and self.env_state_feature is None:
