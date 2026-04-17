@@ -54,6 +54,7 @@ accelerate launch --multi_gpu --num_processes=2 --num_machines=1 --mixed_precisi
   --batch_size=256 \
   --num_workers=10 \
   --policy.use_tactile=false \
+  --policy.use_force=false \
   --optimizer.type=adamw \
   --output_dir=${OUTPUT_DIR}  \
   --job_name=dp_tool_to_cups_0415_handcap \

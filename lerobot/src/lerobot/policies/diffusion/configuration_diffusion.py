@@ -107,6 +107,7 @@ class DiffusionConfig(PreTrainedConfig):
 
     policies_algo_type: str = "default"
     use_tactile: bool = False
+    use_force: bool = False
     use_handcap: bool = False
 
     # Point cloud / Point-BERT.
@@ -267,8 +268,17 @@ class DiffusionConfig(PreTrainedConfig):
             use_tac = False
             
         if not use_tac:
-            tactile_keys = [k for k in self.input_features.keys() if "tactile" in k]
+            tactile_keys = [k for k in list(self.input_features.keys()) if "tactile" in k]
             for k in tactile_keys:
+                self.input_features.pop(k, None)
+
+        use_force = getattr(self, "use_force", False)
+        if str(use_force).lower() == "false":
+            use_force = False
+            
+        if not use_force:
+            force_keys = [k for k in list(self.input_features.keys()) if "wrist" in k or "forces" in k]
+            for k in force_keys:
                 self.input_features.pop(k, None)
 
         if len(self.image_features) == 0 and self.env_state_feature is None:
