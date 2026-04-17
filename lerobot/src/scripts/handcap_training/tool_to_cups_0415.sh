@@ -17,16 +17,21 @@ export PYTHONWARNINGS="ignore"
 # 2. --batch_size=128：2 张显卡组成双卡并行则总 Global Batch Size 为 256，保障扩散模型最好的收敛速度与稳定度。
 # 3. --training.num_workers=20：压榨你的 80 核 CPU 和 200内存，保证 GPU 高速读图不掉速。
 # ==========================================
-# 交互式训练控制逻辑：断点续训 (Resume)
+# 交互式训练控制逻辑：只有发现旧存档时才提示断点续训 (Resume)
 # ==========================================
-read -p "🤔 是否从上一个断点恢复训练？[输入 r 继续训练(Resume) / 直接回车重新开始]: " choice < /dev/tty
+RESUME_PARAM="--resume=false"
+OUTPUT_DIR="outputs/train/tool_to_cups_0415_1"
 
-RESUME_PARAM=""
-if [[ "$choice" == "r" || "$choice" == "R" ]]; then
-    echo "▶️ 准备从断点继续训练 (Resume)..."
-    RESUME_PARAM="--resume=true"
+if [ -d "$OUTPUT_DIR/checkpoints" ]; then
+    read -p "🤔 发现曾经的训练存档！是否从上一个断点恢复训练？[输入 r 继续训练(Resume) / 直接回车重新开始并且覆盖旧档案]: " choice < /dev/tty
+    if [[ "$choice" == "r" || "$choice" == "R" ]]; then
+        echo "▶️ 准备从断点继续训练 (Resume)..."
+        RESUME_PARAM="--resume=true"
+    else
+        echo "🔄 准备重新开始全新训练（原有存档可能被覆盖）..."
+    fi
 else
-    echo "🔄 准备重新开始全新训练..."
+    echo "🆕 未检测到历史存档，自动开始全新训练..."
     RESUME_PARAM="--resume=false"
 fi
 echo "=========================================="
@@ -40,7 +45,7 @@ accelerate launch --multi_gpu --num_processes=2 --num_machines=1 --mixed_precisi
   --num_workers=20 \
   --policy.use_tactile=false \
   --optimizer.type=adamw \
-  --output_dir=outputs/train/tool_to_cups_0415_1  \
+  --output_dir=${OUTPUT_DIR}  \
   --job_name=dp_tool_to_cups_0415_handcap \
   --policy.device=cuda \
   --wandb.enable=true \
