@@ -282,7 +282,7 @@ class DiffusionConfig(PreTrainedConfig):
                 self.input_features.pop(k, None)
 
         if len(self.image_features) == 0 and self.env_state_feature is None:
-            raise ValueError("You must provide at least one image or the environment state among the inputs.")
+            raise ValueError(f"You must provide at least one image or the environment state among the inputs. Current input_features: {list(self.input_features.keys())}, image_features: {list(self.image_features.keys())}")
 
         if self.resize_shape is None and self.crop_shape is not None:
             for key, image_ft in self.image_features.items():
