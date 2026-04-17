@@ -16,24 +16,42 @@ export PYTHONWARNINGS="ignore"
 # 1. --mixed_precision=bf16 针对 Hopper 架构开启更快的 bfloat16 半精度加速计算。
 # 2. --batch_size=128：2 张显卡组成双卡并行则总 Global Batch Size 为 256，保障扩散模型最好的收敛速度与稳定度。
 # 3. --training.num_workers=20：压榨你的 80 核 CPU 和 200内存，保证 GPU 高速读图不掉速。
+# ==========================================
+# 交互式训练控制逻辑：断点续训 (Resume)
+# ==========================================
+read -p "🤔 是否从上一个断点恢复训练？[输入 r 继续训练(Resume) / 直接回车重新开始]: " choice < /dev/tty
+
+RESUME_PARAM=""
+if [[ "$choice" == "r" || "$choice" == "R" ]]; then
+    echo "▶️ 准备从断点继续训练 (Resume)..."
+    RESUME_PARAM="--resume=true"
+else
+    echo "🔄 准备重新开始全新训练..."
+    RESUME_PARAM="--resume=false"
+fi
+echo "=========================================="
 
 accelerate launch --multi_gpu --num_processes=2 --num_machines=1 --mixed_precision=bf16 --dynamo_backend=inductor -m lerobot.scripts.lerobot_train \
   --dataset.repo_id=lihongcs/tool_to_cups_0415 \
   --dataset.root=Data/tool_to_cups_0415 \
   --dataset.video_backend=pyav \
   --policy.type=diffusion \
-  --batch_size=128 \
+  --batch_size=256 \
   --num_workers=20 \
   --policy.use_tactile=false \
   --optimizer.type=adamw \
   --output_dir=outputs/train/tool_to_cups_0415_1  \
   --job_name=dp_tool_to_cups_0415_handcap \
   --policy.device=cuda \
-  --wandb.enable=false \
+  --wandb.enable=true \
   --use_handcap=true \
-  --steps=200000 \
+  --steps=100000 \
+  --save_freq=10000 \
+  --eval_freq=10000 \
+  --log_freq=100 \
   --wandb.mode="offline" \
-  --policy.repo_id=tool_to_cups_0415/dp
+  --policy.repo_id=tool_to_cups_0415/dp \
+  ${RESUME_PARAM}
 
 # 注意: 上面的 --batch_size=128 代表 "单卡 Batch Size"。
 # LeRobot 3.0 中的总有效 Batch Size = batch_size * num_processes。
