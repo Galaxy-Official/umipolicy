@@ -732,9 +732,23 @@ class DiffusionRgbEncoder(nn.Module):
             self.do_crop = False
 
         # Set up backbone.
-        backbone_model = getattr(torchvision.models, config.vision_backbone)(
-            weights=config.pretrained_backbone_weights
-        )
+        import os
+        import logging
+        weights_arg = config.pretrained_backbone_weights
+        
+        # [Offline loading support] If the weights_arg is a local file, initialize without weights and load state dict natively.
+        if weights_arg is not None and os.path.isfile(weights_arg):
+            backbone_model = getattr(torchvision.models, config.vision_backbone)(weights=None)
+            state_dict = torch.load(weights_arg, map_location="cpu", weights_only=False)
+            # Handle possible key differences or nested state dicts
+            if "state_dict" in state_dict:
+                state_dict = state_dict["state_dict"]
+            backbone_model.load_state_dict(state_dict)
+            logging.info(f"Loaded local pre-trained backbone '{config.vision_backbone}' from: {weights_arg}")
+        else:
+            backbone_model = getattr(torchvision.models, config.vision_backbone)(
+                weights=weights_arg
+            )
         # Note: This assumes that the layer4 feature map is children()[-3]
         # TODO(alexander-soare): Use a safer alternative.
         self.backbone = nn.Sequential(*(list(backbone_model.children())[:-2]))

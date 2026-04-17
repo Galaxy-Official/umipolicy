@@ -53,6 +53,9 @@ accelerate launch \
   --policy.use_tactile=false \
   --policy.use_force=false \
   --policy.use_point=true \
+  --policy.vision_backbone=resnet18 \
+  --policy.pretrained_backbone_weights="ckpt/resnet18-f37072fd.pth" \
+  --policy.use_group_norm=false \
   --policy.point_camera_fx=420  \
   --policy.point_camera_fy=420  \
   --policy.point_camera_cx=320  \

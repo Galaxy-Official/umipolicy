@@ -42,6 +42,9 @@ accelerate launch --multi_gpu --num_processes=2 --num_machines=1 --mixed_precisi
   --num_workers=10 \
   --policy.use_tactile=false \
   --policy.use_force=false \
+  --policy.vision_backbone=resnet18 \
+  --policy.pretrained_backbone_weights="ckpt/resnet18-f37072fd.pth" \
+  --policy.use_group_norm=false \
   --optimizer.type=adamw \
   --output_dir=${OUTPUT_DIR} \
   --job_name=dp_simple_sorting_0409_handcap \
