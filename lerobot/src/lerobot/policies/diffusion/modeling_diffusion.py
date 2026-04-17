@@ -744,11 +744,17 @@ class DiffusionRgbEncoder(nn.Module):
             if "state_dict" in state_dict:
                 state_dict = state_dict["state_dict"]
             backbone_model.load_state_dict(state_dict)
-            logging.info(f"Loaded local pre-trained backbone '{config.vision_backbone}' from: {weights_arg}")
+            print(f"\n====================================")
+            print(f"😎 [Vision Encoder] 成功加载预训练主视觉权重 '{config.vision_backbone}' 自离线文件: {weights_arg}")
+            print(f"====================================\n")
         else:
             backbone_model = getattr(torchvision.models, config.vision_backbone)(
                 weights=weights_arg
             )
+            if weights_arg is not None:
+                print(f"😎 [Vision Encoder] 成功加载在线/自带预训练主视觉权重 '{config.vision_backbone}': {weights_arg}")
+            else:
+                print(f"🌀 [Vision Encoder] 未指定预训练权重，主视觉 '{config.vision_backbone}' 为随机初始化(From Scratch)!")
         # Note: This assumes that the layer4 feature map is children()[-3]
         # TODO(alexander-soare): Use a safer alternative.
         self.backbone = nn.Sequential(*(list(backbone_model.children())[:-2]))
