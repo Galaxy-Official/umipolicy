@@ -1,6 +1,10 @@
 # 修改为你要指定的显卡槽位 (目前针对你的配置：2 张 H200 则设为 0,1)
 export CUDA_VISIBLE_DEVICES=0,1
 
+# 屏蔽烦人的 torchvision pyav 弃用警告刷屏问题
+export PYTHONWARNINGS="ignore"
+
+
 # # 强制 Hugging Face 进入离线模式，不联网检查数据集
 # export HF_HUB_OFFLINE=1
 # # 强制读取本地文件，不尝试在线下载
