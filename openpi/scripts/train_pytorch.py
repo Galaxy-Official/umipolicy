@@ -506,26 +506,48 @@ def train_loop(config: _config.TrainConfig):
         else None
     )
 
+    # Timer initialization
+    profile_log_interval = 10
+    profile_accum_count = 0
+    acc_time_data_load = 0.0
+    acc_time_data_prep = 0.0
+    acc_time_forward = 0.0
+    acc_time_backward = 0.0
+    acc_time_optim = 0.0
+    acc_step_time_start = time.perf_counter()
+    profiler_log_path = config.checkpoint_dir / "train_profile.md"
+    if is_main and not profiler_log_path.exists():
+        with open(profiler_log_path, "w") as f:
+            f.write("| Step | LR | Data Proc | FWD | Backward | Optim | Total/Step | ETA |\n")
+            f.write("|---|---|---|---|---|---|---|---|\n")
+
+    last_loop_end = time.perf_counter()
+
     while global_step < config.num_train_steps:
         # Set epoch for distributed training
         if use_ddp and hasattr(loader, "set_epoch"):
             loader.set_epoch(global_step // len(loader))
 
         for observation, actions in loader:
+            acc_time_data_load += (time.perf_counter() - last_loop_end)
+            
             # Check if we've reached the target number of steps
             if global_step >= config.num_train_steps:
                 break
 
+            t_prep_start = time.perf_counter()
             # The unified data loader returns (observation, actions) tuple
             observation = jax.tree.map(lambda x: x.to(device), observation)  # noqa: PLW2901
             actions = actions.to(torch.float32)  # noqa: PLW2901
             actions = actions.to(device)  # noqa: PLW2901
+            acc_time_data_prep += (time.perf_counter() - t_prep_start)
 
             # Update LR
             for pg in optim.param_groups:
                 pg["lr"] = lr_schedule(global_step)
 
             # Forward pass
+            t_fwd_start = time.perf_counter()
             losses = model(observation, actions)
             # Ensure losses is a tensor and handle different return types
             if isinstance(losses, list | tuple):
@@ -534,15 +556,19 @@ def train_loop(config: _config.TrainConfig):
                 losses = torch.tensor(losses, device=device, dtype=torch.float32)
 
             loss = losses.mean()
+            acc_time_forward += (time.perf_counter() - t_fwd_start)
 
             # Backward pass
+            t_bwd_start = time.perf_counter()
             loss.backward()
+            acc_time_backward += (time.perf_counter() - t_bwd_start)
 
             # Log memory usage after backward pass
             if global_step < 5 and is_main and torch.cuda.is_available():
                 log_memory_usage(device, global_step, "after_backward")
 
             # Gradient clipping
+            t_opt_start = time.perf_counter()
             grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=config.optimizer.clip_gradient_norm)
 
             # Optimizer step
@@ -554,6 +580,7 @@ def train_loop(config: _config.TrainConfig):
                 if param.grad is not None:
                     param.grad.detach_()
                     param.grad = None
+            acc_time_optim += (time.perf_counter() - t_opt_start)
 
             # Collect stats
             if is_main:
@@ -599,6 +626,37 @@ def train_loop(config: _config.TrainConfig):
 
                 start_time = time.time()
                 infos = []  # Reset stats collection
+                
+            if is_main:
+                profile_accum_count += 1
+                if profile_accum_count >= profile_log_interval:
+                    step_time_total = (time.perf_counter() - acc_step_time_start) / profile_log_interval
+                    total_data_time = (acc_time_data_load + acc_time_data_prep) / profile_log_interval
+                    avg_time_forward = acc_time_forward / profile_log_interval
+                    avg_time_backward = acc_time_backward / profile_log_interval
+                    avg_time_optim = acc_time_optim / profile_log_interval
+                    
+                    eta_seconds = (config.num_train_steps - global_step - 1) * step_time_total
+                    eta_str = f"{int(eta_seconds // 3600)}h {int((eta_seconds % 3600) // 60)}m"
+
+                    log_line = (f"| {global_step:<6} | {optim.param_groups[0]['lr']:<8.2e} | "
+                                f"{total_data_time:<8.2f}s | "
+                                f"{avg_time_forward:<10.2f}s | "
+                                f"{avg_time_backward:<7.2f}s | "
+                                f"{avg_time_optim:<8.2f}s | "
+                                f"{step_time_total:<9.2f}s | "
+                                f"{eta_str} |\n")
+                    with open(profiler_log_path, "a") as f:
+                        f.write(log_line)
+                    
+                    # Reset timers
+                    acc_time_data_load = 0.0
+                    acc_time_data_prep = 0.0
+                    acc_time_forward = 0.0
+                    acc_time_backward = 0.0
+                    acc_time_optim = 0.0
+                    acc_step_time_start = time.perf_counter()
+                    profile_accum_count = 0
 
             global_step += 1
             # Save checkpoint using the new mechanism
@@ -610,6 +668,8 @@ def train_loop(config: _config.TrainConfig):
                 pbar.set_postfix(
                     {"loss": f"{loss.item():.4f}", "lr": f"{optim.param_groups[0]['lr']:.2e}", "step": global_step}
                 )
+                
+            last_loop_end = time.perf_counter()
 
     # Close progress bar
     if pbar is not None:
