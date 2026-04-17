@@ -4,7 +4,7 @@ import os
 import sys
 from pathlib import Path
 import wandb
-
+import time
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
@@ -147,9 +147,15 @@ class Trainer:
         self.train_scheduler_latent.set_timesteps(1000, training=True)
         self.train_scheduler_action = FlowMatchScheduler(shift=self.config.action_snr_shift, sigma_min=0.0, extra_one_step=True)
         self.train_scheduler_action.set_timesteps(1000, training=True)
-
         self.save_dir = Path(config.save_root) / "checkpoints"
         self.save_dir.mkdir(parents=True, exist_ok=True)
+
+        if config.rank == 0:
+            self.profile_log_path = Path(config.save_root) / "train_profile.md"
+            if not self.profile_log_path.exists():
+                with open(self.profile_log_path, "w") as f:
+                    f.write("| Step | LR | Data Proc | Encoder/FWD | Backward | Optim | Total/Step | ETA |\n")
+                    f.write("|---|---|---|---|---|---|---|---|\n")
 
         self.gradient_accumulation_steps = getattr(config, 'gradient_accumulation_steps', 1)
         self.train_loader_iter = None
@@ -462,15 +468,34 @@ class Trainer:
         accumulated_action_losses = []
         step_in_accumulation = 0
 
+        # Timers tracking
+        profile_log_interval = 10
+        profile_accum_count = 0
+        acc_time_data_load = 0.0
+        acc_time_data_prep = 0.0
+        acc_time_forward = 0.0
+        acc_time_backward = 0.0
+        acc_time_optim = 0.0
+        import time
+        acc_step_time_start = time.perf_counter()
+
         while self.step < self.config.num_steps:
             # Get next batch (handles epoch reset automatically)
+            t_load_start = time.perf_counter()
             batch = self._get_next_batch()
+            acc_time_data_load += time.perf_counter() - t_load_start
             
             losses = self._train_step(batch, step_in_accumulation)
             
             # Accumulate losses for logging
             accumulated_latent_losses.append(losses['latent_loss'])
             accumulated_action_losses.append(losses['action_loss'])
+            
+            acc_time_data_prep += losses.get('time_data_prep', 0.0)
+            acc_time_forward += losses.get('time_forward', 0.0)
+            acc_time_backward += losses.get('time_backward', 0.0)
+            acc_time_optim += losses.get('time_optim', 0.0)
+            
             step_in_accumulation += 1
 
             # Log and checkpoint when optimizer steps
@@ -503,6 +528,37 @@ class Trainer:
                         'grad_norm': f'{total_norm.item():.2f}',
                         'lr': f'{lr:.2e}'
                     })
+                    
+                    # Profiling Logger
+                    profile_accum_count += 1
+                    if profile_accum_count >= profile_log_interval:
+                        step_time_total = (time.perf_counter() - acc_step_time_start) / profile_log_interval
+                        total_data_time = (acc_time_data_load + acc_time_data_prep) / profile_log_interval
+                        avg_time_forward = acc_time_forward / profile_log_interval
+                        avg_time_backward = acc_time_backward / profile_log_interval
+                        avg_time_optim = acc_time_optim / profile_log_interval
+                        
+                        eta_seconds = (self.config.num_steps - self.step - 1) * step_time_total
+                        eta_str = f"{int(eta_seconds // 3600)}h {int((eta_seconds % 3600) // 60)}m"
+
+                        log_line = (f"| {self.step:<6} | {lr:<8.2e} | "
+                                    f"{total_data_time:<8.2f}s | "
+                                    f"{avg_time_forward:<10.2f}s | "
+                                    f"{avg_time_backward:<7.2f}s | "
+                                    f"{avg_time_optim:<8.2f}s | "
+                                    f"{step_time_total:<9.2f}s | "
+                                    f"{eta_str} |\n")
+                        with open(self.profile_log_path, "a") as f:
+                            f.write(log_line)
+                        
+                        # Reset timers
+                        acc_time_data_load = 0.0
+                        acc_time_data_prep = 0.0
+                        acc_time_forward = 0.0
+                        acc_time_backward = 0.0
+                        acc_time_optim = 0.0
+                        acc_step_time_start = time.perf_counter()
+                        profile_accum_count = 0
                     if self.config.enable_wandb:
                         self.wandb.log({
                             'loss_metrics/global_avg_video_loss': latent_loss_show,
