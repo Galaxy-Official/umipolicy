@@ -16,6 +16,8 @@ export CUDA_VISIBLE_DEVICES=0,1
 accelerate launch --multi_gpu --num_processes=2 --num_machines=1 --mixed_precision=bf16 --dynamo_backend=inductor -m lerobot.scripts.lerobot_train \
   --dataset.repo_id=lihongcs/tool_to_cups_0415 \
   --dataset.root=Data/tool_to_cups_0415 \
+  --dataset.video_backend=pyav \
+  --policy.video_backend=pyav \
   --policy.type=diffusion \
   --batch_size=128 \
   --num_workers=20 \
