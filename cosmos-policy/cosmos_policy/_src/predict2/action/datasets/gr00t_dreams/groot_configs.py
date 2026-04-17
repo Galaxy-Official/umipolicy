@@ -33,7 +33,7 @@ from cosmos_policy._src.predict2.action.datasets.gr00t_dreams.data.transform.vid
 )
 
 
-def construct_modality_config_and_transforms(num_frames, embodiment, downscaled_res=False):
+def construct_modality_config_and_transforms(num_frames, embodiment, downscaled_res=False, use_tactile=False, use_force=False, use_point=False):
     if embodiment == "gr1":
         timestep_interval = 2
         delta_indices = list(range(0, num_frames * timestep_interval, timestep_interval))
@@ -126,9 +126,34 @@ def construct_modality_config_and_transforms(num_frames, embodiment, downscaled_
                     "action.robot_velocity",
                 ],
             ),
+            ),
         }
 
-    video_modality, state_modality, action_modality = config["video"], config["state"], config["action"]
+    # [Memory & I/O Optimization] Dynamically drop unneeded sensory features
+    if not use_tactile:
+        config["video"].modality_keys = [k for k in config["video"].modality_keys if "tactile" not in k]
+        if "state" in config:
+            config["state"].modality_keys = [k for k in config["state"].modality_keys if "tactile" not in k]
+        if "action" in config:
+            config["action"].modality_keys = [k for k in config["action"].modality_keys if "tactile" not in k]
+
+    if not use_force:
+        config["video"].modality_keys = [k for k in config["video"].modality_keys if "forces" not in k]
+        if "state" in config:
+            config["state"].modality_keys = [k for k in config["state"].modality_keys if "forces" not in k]
+        if "action" in config:
+            config["action"].modality_keys = [k for k in config["action"].modality_keys if "forces" not in k]
+
+    if not use_point:
+        config["video"].modality_keys = [k for k in config["video"].modality_keys if "phone" not in k and "depth" not in k and "point" not in k]
+        if "state" in config:
+            config["state"].modality_keys = [k for k in config["state"].modality_keys if "phone" not in k and "depth" not in k and "point" not in k]
+        if "action" in config:
+            config["action"].modality_keys = [k for k in config["action"].modality_keys if "phone" not in k and "depth" not in k and "point" not in k]
+
+    video_modality = config.get("video", None)
+    state_modality = config.get("state", None)
+    action_modality = config.get("action", None)
     if embodiment == "gr1" or embodiment == "gr1_video_only":
         width = 832 if not downscaled_res else 256
         height = 480 if not downscaled_res else 256

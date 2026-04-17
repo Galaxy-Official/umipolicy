@@ -156,6 +156,25 @@ def make_handcap_dataset(cfg: TrainPipelineConfig) -> LeRobotDatasetHandcap | Mu
         ds_meta = LeRobotDatasetMetadataHandcap(
             cfg.dataset.repo_id, root=cfg.dataset.root, revision=cfg.dataset.revision
         )
+        
+        # [Memory & I/O Optimization] Dynamically drop unneeded sensory features from the dataset loader
+        if not getattr(cfg.policy, "use_tactile", False):
+            keys_to_remove = [k for k in list(ds_meta.features.keys()) if "tactile" in k]
+            for k in keys_to_remove:
+                ds_meta.features.pop(k, None)
+                
+        if not getattr(cfg.policy, "use_force", False):
+            keys_to_remove = [k for k in list(ds_meta.features.keys()) if "forces" in k]
+            for k in keys_to_remove:
+                ds_meta.features.pop(k, None)
+                
+        if not getattr(cfg.policy, "use_point", False):
+            keys_to_remove = [k for k in list(ds_meta.features.keys()) if "phone" in k or "depth" in k or "point" in k]
+            for k in keys_to_remove:
+                ds_meta.features.pop(k, None)
+
+        logging.info(f"😎 [Dataset Loader Optimization] 成功过滤! 实际喂入缓存池的数据流 Features(参数)为: {list(ds_meta.features.keys())}")
+
         delta_timestamps = resolve_delta_timestamps(cfg.policy, ds_meta)
         if not cfg.dataset.streaming:
             dataset = LeRobotDatasetHandcap(

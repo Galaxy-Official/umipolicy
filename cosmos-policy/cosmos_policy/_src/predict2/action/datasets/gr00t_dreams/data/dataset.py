@@ -1019,9 +1019,11 @@ class LeRobotDataset(torch.utils.data.Dataset):
         repeat=1,
         args=None,
         dataset_path=None,
-        data_split="train",
         embodiment=None,
         downscaled_res=False,
+        use_tactile=False,
+        use_force=False,
+        use_point=False,
     ):
         if args is not None:
             # height = args.height
@@ -1031,8 +1033,11 @@ class LeRobotDataset(torch.utils.data.Dataset):
             data_file_keys = args.data_file_keys.split(",")
             repeat = args.dataset_repeat
             dataset_path = args.dataset_path
-            embodiment = args.embodiment
-            downscaled_res = args.downscaled_res
+            embodiment = getattr(args, 'embodiment', embodiment)
+            downscaled_res = getattr(args, 'downscaled_res', downscaled_res)
+            use_tactile = getattr(args, 'use_tactile', use_tactile)
+            use_force = getattr(args, 'use_force', use_force)
+            use_point = getattr(args, 'use_point', use_point)
 
         self.num_frames = num_frames
         self.time_division_factor = time_division_factor
@@ -1066,7 +1071,8 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self.lerobot_datasets = []
         for p in self.dataset_path:
             config, train_transform, test_transform = construct_modality_config_and_transforms(
-                num_frames=(num_frames + 1), embodiment=embodiment, downscaled_res=downscaled_res
+                num_frames=(num_frames + 1), embodiment=embodiment, downscaled_res=downscaled_res,
+                use_tactile=use_tactile, use_force=use_force, use_point=use_point
             )  # Add an additional prefix frame as baseline to compute delta actions
             self.lerobot_datasets.append(
                 WrappedLeRobotSingleDataset(

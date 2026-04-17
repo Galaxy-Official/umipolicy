@@ -107,7 +107,9 @@ class DiffusionConfig(PreTrainedConfig):
 
     policies_algo_type: str = "default"
     use_tactile: bool = False
+    use_force: bool = False
     use_handcap: bool = False
+    use_point: bool = False
 
     normalization_mapping: dict[str, NormalizationMode] = field(
         default_factory=lambda: {
@@ -235,8 +237,26 @@ class DiffusionConfig(PreTrainedConfig):
             use_tac = False
             
         if not use_tac:
-            tactile_keys = [k for k in self.input_features.keys() if "tactile" in k]
+            tactile_keys = [k for k in list(self.input_features.keys()) if "tactile" in k]
             for k in tactile_keys:
+                self.input_features.pop(k, None)
+
+        use_force = getattr(self, "use_force", False)
+        if str(use_force).lower() == "false":
+            use_force = False
+            
+        if not use_force:
+            force_keys = [k for k in list(self.input_features.keys()) if "forces" in k]
+            for k in force_keys:
+                self.input_features.pop(k, None)
+
+        use_point = getattr(self, "use_point", False)
+        if str(use_point).lower() == "false":
+            use_point = False
+            
+        if not use_point:
+            point_keys = [k for k in list(self.input_features.keys()) if "phone" in k or "depth" in k or "point" in k]
+            for k in point_keys:
                 self.input_features.pop(k, None)
 
         if len(self.image_features) == 0 and self.env_state_feature is None:
