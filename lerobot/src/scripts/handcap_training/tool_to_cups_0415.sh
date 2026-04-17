@@ -52,7 +52,7 @@ accelerate launch --multi_gpu --num_processes=2 --num_machines=1 --mixed_precisi
   --dataset.video_backend=pyav \
   --policy.type=diffusion \
   --batch_size=256 \
-  --num_workers=16 \
+  --num_workers=10 \
   --policy.use_tactile=false \
   --policy.use_force=false \
   --optimizer.type=adamw \
