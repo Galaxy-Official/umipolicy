@@ -130,6 +130,10 @@ def get_history_indices(curr_step_index: int, num_history_indices: int, spacing_
     # Convert to tuple and return
     return tuple(indices.tolist())
 
+def _default_t5_embedding_factory():
+    import torch
+    return torch.zeros((1, 512, 1024), dtype=torch.bfloat16)
+
 
 class UMIDataset(Dataset):
     def __init__(
@@ -380,11 +384,9 @@ class UMIDataset(Dataset):
                 self.t5_text_embeddings = pickle.load(file)
         else:
             import collections
-            import torch
             # Fallback to zero-embeddings for single-task scenarios where T5 is unneeded
-            self.t5_text_embeddings = collections.defaultdict(
-                lambda: torch.zeros((1, 512, 1024), dtype=torch.bfloat16)
-            )
+            # Using top-level factory to avoid multiprocessing lambda PicklingError
+            self.t5_text_embeddings = collections.defaultdict(_default_t5_embedding_factory)
 
         # Calculate dataset statistics if the stats file doesn't exist
         self.dataset_stats = load_or_compute_dataset_statistics(

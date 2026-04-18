@@ -490,7 +490,7 @@ def register_configs():
 # *** Handcap Dataset Configuration ***
 aloha_cosmos_policy_dataset_handcap = L(UMIDataset)(
     data_dir=os.path.join(BASE_DATASETS_DIR),  # Directly points to handcapcosmos
-    t5_text_embeddings_path="", 
+    t5_text_embeddings_path=os.path.join(BASE_DATASETS_DIR, "t5_embeddings.pkl"), 
     chunk_size=50,
     use_image_aug=True,
     use_stronger_image_aug=True,
