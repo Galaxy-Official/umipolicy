@@ -101,4 +101,5 @@ python -m torch.distributed.run --nproc_per_node=${NUM_GPUS} --master_port=${MAS
   --config=cosmos_policy/config/config.py -- \
   experiment="${EXPERIMENT_NAME}" \
   dataloader_train.dataset.default_command="${TASK_PROMPT}" \
+  job.wandb_mode="offline" \
   dataloader_train.dataset.t5_text_embeddings_path="${BASE_DATASETS_DIR}/t5_embeddings.pkl"
