@@ -370,6 +370,30 @@ def main(args):
                     elif isinstance(v, torch.Tensor):
                         observation[k] = v.to(device).unsqueeze(0).to(torch.float32)
 
+                # Resize images to match expected training resolution from config
+                if hasattr(policy.config, "image_features") and policy.config.image_features:
+                    for img_key, img_feat in policy.config.image_features.items():
+                        if img_key in observation:
+                            expected_shape = img_feat.shape  # (C, H, W)
+                            expected_h, expected_w = expected_shape[1], expected_shape[2]
+                            actual_h, actual_w = observation[img_key].shape[-2], observation[img_key].shape[-1]
+                            if current_step == 0:
+                                logger.info(f"[Shape Debug] '{img_key}': config expects ({expected_shape}), actual tensor shape = {tuple(observation[img_key].shape)}, image HxW = {actual_h}x{actual_w}")
+                            if actual_h != expected_h or actual_w != expected_w:
+                                if current_step == 0:
+                                    logger.info(f"[Shape Debug] Resizing '{img_key}' from {actual_h}x{actual_w} -> {expected_h}x{expected_w}")
+                                # Reshape for F.interpolate: merge batch+sequence dims -> (N, C, H, W)
+                                orig_shape = observation[img_key].shape  # (B, S, C, H, W) or (B, C, H, W)
+                                if observation[img_key].ndim == 5:
+                                    B, S, C, H, W = orig_shape
+                                    flat = observation[img_key].reshape(B * S, C, H, W)
+                                    flat = torch.nn.functional.interpolate(flat, size=(expected_h, expected_w), mode='bilinear', align_corners=False)
+                                    observation[img_key] = flat.reshape(B, S, C, expected_h, expected_w)
+                                elif observation[img_key].ndim == 4:
+                                    observation[img_key] = torch.nn.functional.interpolate(
+                                        observation[img_key], size=(expected_h, expected_w), mode='bilinear', align_corners=False
+                                    )
+
                 # Execute Dataset Stat Normalizations
                 observation = preprocessor(observation)
                 
@@ -390,6 +414,7 @@ def main(args):
                 except Exception as eval_e:
                     logger.error(f"Error when processing model generation: {str(eval_e)}\n{traceback.format_exc()}")
                     signal_handler(None, None)
+
 
 
             # Handcap backwards logic: Action back to Original Absolute Coordinates
