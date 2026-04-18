@@ -259,7 +259,9 @@ def main(args):
     policy_config = PreTrainedConfig.from_pretrained(args.pretrained_model_name_or_path, cli_overrides=cli_overrides)
     policy_config.pretrained_path = args.pretrained_model_name_or_path
     
-    policy = make_policy(policy_config)
+    from lerobot.policies.factory import get_policy_class
+    policy_cls = get_policy_class(policy_config.type)
+    policy = policy_cls.from_pretrained(args.pretrained_model_name_or_path, config=policy_config)
     preprocessor, postprocessor = make_pre_post_processors(
         policy_cfg=policy_config,
         pretrained_path=policy_config.pretrained_path,
