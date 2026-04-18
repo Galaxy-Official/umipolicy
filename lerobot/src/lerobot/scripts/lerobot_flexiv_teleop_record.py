@@ -169,8 +169,13 @@ class ObservationThread(threading.Thread):
     def run(self):
         while self.running:
             cam_state, wrist_img, cam_cap_time = self.cam_wrist.read()
-            left_tactile_img, _ = self.cam_tactile_left.get_data()
-            right_tactile_img, _ = self.cam_tactile_right.get_data()
+            
+            left_tactile_img = None
+            right_tactile_img = None
+            if self.cam_tactile_left is not None:
+                left_tactile_img, _ = self.cam_tactile_left.get_data()
+            if self.cam_tactile_right is not None:
+                right_tactile_img, _ = self.cam_tactile_right.get_data()
             
             eepose = self.env.robot.get_ee_pose()
             gripper_width = self.env.robot.get_gripper_width()
@@ -178,8 +183,8 @@ class ObservationThread(threading.Thread):
             with self.lock:
                 self.queue.append({
                     'wrist_img': wrist_img.copy() if wrist_img is not None else wrist_img,
-                    'left_tactile_img': left_tactile_img.copy() if left_tactile_img is not None else left_tactile_img,
-                    'right_tactile_img': right_tactile_img.copy() if right_tactile_img is not None else right_tactile_img,
+                    'left_tactile_img': left_tactile_img.copy() if left_tactile_img is not None else None,
+                    'right_tactile_img': right_tactile_img.copy() if right_tactile_img is not None else None,
                     'cam_cap_time': cam_cap_time,
                     'eepose': eepose,
                     'gripper_width': gripper_width
@@ -245,10 +250,12 @@ def main(args):
     signal_module.signal(signal_module.SIGINT, signal_handler)
 
     # 1. Init Cameras
-    # Try multiple possible camera config paths
+    # 1. Init Cameras (MVS only or with tactile depending on flag)
+    logger.info(f"Initializing cameras (use_tactile={args.use_tactile})...")
+    cam_cfg_name = "handcap_camera.json" if args.use_tactile else "handcap_camera_no_tactile.json"
     possible_cam_paths = [
-        Path(__file__).resolve().parent.parent.parent / "perception/configs/camera/handcap_camera.json",
-        Path(__file__).resolve().parent.parent.parent.parent.parent / "Mini-Tele/perception/configs/camera/handcap_camera.json",
+        Path(__file__).resolve().parent.parent.parent / f"perception/configs/camera/{cam_cfg_name}",
+        Path(__file__).resolve().parent.parent.parent.parent.parent / f"Mini-Tele/perception/configs/camera/{cam_cfg_name}",
     ]
     handcap_camera_cfg = None
     for p in possible_cam_paths:
@@ -256,15 +263,15 @@ def main(args):
             handcap_camera_cfg = p
             break
     
+    cam_wrist, cam_tactile_left, cam_tactile_right = None, None, None
     if handcap_camera_cfg is not None:
         logger.info(f"Using camera config: {handcap_camera_cfg}")
         cam_dict = BaseCamera.create_cameras_from_config(config_path=str(handcap_camera_cfg))
         cam_wrist = cam_dict["wrist"]
-        cam_tactile_left = cam_dict["left_tactile"]
-        cam_tactile_right = cam_dict["right_tactile"]
+        cam_tactile_left = cam_dict.get("left_tactile")
+        cam_tactile_right = cam_dict.get("right_tactile")
     else:
         logger.warning(f"Camera config not found at any of: {possible_cam_paths}, falling back to None!")
-        cam_wrist, cam_tactile_left, cam_tactile_right = None, None, None
     
     # 2. Init Follower (Flexiv via RDK 0.9)
     robot_ip = os.environ.get("FLEXIV_ROBOT_IP", "192.168.2.100")
@@ -304,16 +311,6 @@ def main(args):
             "shape": (480, 640, 3),
             "names": ["height", "width", "channel"],
         },
-        "observation.tactiles.left": {
-            "dtype": "video",
-            "shape": (480, 640, 3),
-            "names": ["height", "width", "channel"],
-        },
-        "observation.tactiles.right": {
-            "dtype": "video",
-            "shape": (480, 640, 3),
-            "names": ["height", "width", "channel"],
-        },
         "observation.state": {
             "dtype": "float32",
             "shape": (8,), # 7 pos/quat + 1 gripper width
@@ -323,6 +320,17 @@ def main(args):
             "shape": (8,),
         }
     }
+    if args.use_tactile:
+        features["observation.tactiles.left"] = {
+            "dtype": "video",
+            "shape": (480, 640, 3),
+            "names": ["height", "width", "channel"],
+        }
+        features["observation.tactiles.right"] = {
+            "dtype": "video",
+            "shape": (480, 640, 3),
+            "names": ["height", "width", "channel"],
+        }
     
     dataset = LeRobotDataset.create(
         repo_id=args.repo_id,
@@ -354,23 +362,13 @@ def main(args):
             if cam_wrist is not None:
                 frame_data = obs_thread.get_obs(1)[0]
                 wrist_img = frame_data['wrist_img']
-                left_img = frame_data['left_tactile_img']
-                right_img = frame_data['right_tactile_img']
                 eepose = frame_data['eepose']
                 obs_gripper = frame_data['gripper_width']
             else:
                 wrist_img = np.zeros((480, 640, 3), dtype=np.uint8)
-                left_img = np.zeros((480, 640, 3), dtype=np.uint8)
-                right_img = np.zeros((480, 640, 3), dtype=np.uint8)
-                eepose = env.get_ee_pose()
-                obs_gripper = env.get_gripper_width()
+                eepose = env.robot.get_ee_pose()
+                obs_gripper = env.robot.get_gripper_width()
 
-            # Ensure eepose matches 7 elements: [x,y,z, rvx, rvy, rvz] requires shape padding? Wait. 
-            # In umi_tip_pose it's 6 or 7? (mat_to_pose converts to position + rotvec = 6 elements) - sorry, we need 7 (pos + quat? Wait. 6!)
-            # But the features are 8: eepose(7?) + gripper(1)
-            # Update: mat_to_pose in LeRobot umi is typically pos (3) + rotvec (3) = 6? Let's assume 7 (quaternion) based on previous code.
-            
-            # Since earlier code converted FK output to quaternion: target_pos(3), target_orn(4) -> length 7
             curr_state = np.zeros((8,), dtype=np.float32)
             
             # --- 2. Action from Teleop
@@ -391,13 +389,17 @@ def main(args):
             env.exec_action(tip_pose=np.concatenate([target_pos, target_orn]), target_width=_t_gripper)
 
             # --- 3. Save to Dataset properly (v3.0 standard)
-            dataset.add_frame({
+            frame_dict = {
                 "observation.images.wrist": cv2.cvtColor(wrist_img, cv2.COLOR_BGR2RGB),
-                "observation.tactiles.left": cv2.cvtColor(left_img, cv2.COLOR_BGR2RGB),
-                "observation.tactiles.right": cv2.cvtColor(right_img, cv2.COLOR_BGR2RGB),
                 "observation.state": torch.from_numpy(curr_state.astype(np.float32)),
                 "action": torch.from_numpy(action_pose.astype(np.float32)),
-            })
+            }
+            if args.use_tactile:
+                left_img = frame_data.get('left_tactile_img') if cam_wrist is not None else None
+                right_img = frame_data.get('right_tactile_img') if cam_wrist is not None else None
+                frame_dict["observation.tactiles.left"] = cv2.cvtColor(left_img, cv2.COLOR_BGR2RGB) if left_img is not None else np.zeros((480, 640, 3), dtype=np.uint8)
+                frame_dict["observation.tactiles.right"] = cv2.cvtColor(right_img, cv2.COLOR_BGR2RGB) if right_img is not None else np.zeros((480, 640, 3), dtype=np.uint8)
+            dataset.add_frame(frame_dict)
             
             dt = time.perf_counter() - t0
             if dt < (1.0 / args.fps):
@@ -426,6 +428,7 @@ if __name__ == "__main__":
     parser.add_argument("--single-task", type=str, default="default task")
     parser.add_argument("--teleop", type=str, choices=["koch", "so100"], default="koch")
     parser.add_argument("--teleop_port", type=str, default="/dev/tty.usbserial-110")
+    parser.add_argument("--use_tactile", action="store_true", help="Enable tactile cameras")
     
     args = parser.parse_args()
     main(args)
