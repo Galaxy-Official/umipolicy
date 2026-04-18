@@ -99,25 +99,21 @@ class LeaderFKResolver:
         self.follow_arm = pb.loadURDF(
             flexiv_urdf_path,
             basePosition=[0.0, 0.0, 0.0],
-            baseOrientation=[0, 0, 0, 1],  # Remove the 90-deg rotation legacy of flexiv_leap
+            baseOrientation=[0, 0, 0.7071068, 0.7071068],
             useFixedBase=True,
         )
-        self.initialized = False
 
     def get_target_joints(self, dynamixel_joints, current_flexiv_joints=None):
         """Calculates IK to return 7 joint angles for Rizon 4."""
         if self.robot_type == "koch":
             # Joint mapping conversion for Koch
-            # LeRobot 3.0 calibrations already center angles (upright = 0).
-            # The older Mini-Tele reader fetched uncalibrated absolute degrees (upright = 90), 
-            # which is why it used `90 - joint`. 
-            # Applying 90 offsets to already zeroed calibrations bends the PyBullet arm 90 degrees sideways!
+            # Reverting back to Mini-Tele exactly blindly as requested
             data = [
-                -dynamixel_joints[0],  # Pan might need negative due to base flip
-                dynamixel_joints[1], 
-                dynamixel_joints[2],
-                dynamixel_joints[3],
-                dynamixel_joints[4],
+                -dynamixel_joints[0],
+                90 - dynamixel_joints[1],
+                dynamixel_joints[2] - 90,
+                dynamixel_joints[3] - 90,
+                90 - dynamixel_joints[4],
                 dynamixel_joints[5],
             ]
             data = [angle * np.pi / 180 for angle in data]
@@ -129,7 +125,7 @@ class LeaderFKResolver:
             new_eef_orn = pb.getLinkState(self.robot_pb, 4)[1]
             
             raw_gripper = -data[-1]  # Radians
-            gripper_normalized = max(0.0, min(1.0, abs(raw_gripper) / (np.pi/2)))
+            gripper_normalized = max(0.0, min(1.0, (np.pi/2 - abs(raw_gripper)) / (np.pi/2)))
             gripper = gripper_normalized * 0.1
 
         elif self.robot_type == "so100":
@@ -200,13 +196,8 @@ class LeaderFKResolver:
         # VERY IMPORTANT: Synchronize PyBullet ONLY ONCE!
         # If we synchronize it every single frame, the solver loses its gradient memory
         # and randomly jumps into other null-space branches (e.g. elbow falls downwards).
-        if current_flexiv_joints is not None and not self.initialized:
-            for i, joint in enumerate(current_flexiv_joints):
-                pb.resetJointState(self.follow_arm, i, float(joint))
-            self.initialized = True
-                
-        # For flexiv_rizon4.urdf, flange link is index 7.
-        target_link_index = 7
+        # Reverting to EXACT Mini-Tele calculation parameters
+        target_link_index = 8
         joints_tuple = pb.calculateInverseKinematics(
             self.follow_arm, target_link_index, eef_pos, new_eef_orn
         )
