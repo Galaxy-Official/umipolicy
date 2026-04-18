@@ -247,6 +247,7 @@ def main(config: _config.TrainConfig):
         donate_argnums=(1,),
     )
 
+    import time
     start_step = int(train_state.step)
     pbar = tqdm.tqdm(
         range(start_step, config.num_train_steps),
@@ -256,18 +257,41 @@ def main(config: _config.TrainConfig):
     )
 
     infos = []
+    data_times = []
+    step_times = []
     for step in pbar:
         with sharding.set_mesh(mesh):
+            t_model_start = time.time()
             train_state, info = ptrain_step(train_rng, train_state, batch)
+            info = jax.tree.map(lambda x: x.block_until_ready(), info)
+            step_times.append(time.time() - t_model_start)
+        
         infos.append(info)
+        
         if step % config.log_interval == 0:
             stacked_infos = common_utils.stack_forest(infos)
             reduced_info = jax.device_get(jax.tree.map(jnp.mean, stacked_infos))
+            
+            avg_data = float(np.mean(data_times)) if data_times else 0.0
+            avg_step = float(np.mean(step_times)) if step_times else 0.0
+            time_str = f"[Avg over {len(step_times)} steps] Data: {avg_data:.3f}s | Model: {avg_step:.3f}s | Total: {avg_data+avg_step:.3f}s"
             info_str = ", ".join(f"{k}={v:.4f}" for k, v in reduced_info.items())
-            pbar.write(f"Step {step}: {info_str}")
+            final_log = f"Step {step:06d}: {time_str} || {info_str}"
+            
+            pbar.write(final_log)
+            
+            log_file = config.checkpoint_dir / "training_metrics.log"
+            with open(log_file, "a") as f:
+                f.write(final_log + "\n")
+            
             wandb.log(reduced_info, step=step)
             infos = []
+            data_times = []
+            step_times = []
+            
+        t_data_start = time.time()
         batch = next(data_iter)
+        data_times.append(time.time() - t_data_start)
 
         if (step % config.save_interval == 0 and step > start_step) or step == config.num_train_steps - 1:
             _checkpoints.save_state(checkpoint_manager, train_state, data_loader, step)

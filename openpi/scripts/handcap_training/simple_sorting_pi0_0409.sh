@@ -18,9 +18,12 @@ python scripts/train.py \
   pi0_simple_sorting \
   --exp-name dp_simple_sorting_0409_handcap \
   --batch-size 128 \
-  --num-train-steps 200000 \
+  --num-train-steps 100000 \
+  --save-interval 10000 \
+  --num-workers 20 \
   --no-wandb-enabled \
-  --fsdp-devices 1 
+  --fsdp-devices 1 \
+  --overwrite
   
 # 若开启 tactile 触觉传感器，可将上面的 config-name 替换为 pi0_simple_sorting_tactile
 # 若开启大规模 FSDP 训练节省显存，可修改 --fsdp-devices 到你的显卡数量 (例如 2)
