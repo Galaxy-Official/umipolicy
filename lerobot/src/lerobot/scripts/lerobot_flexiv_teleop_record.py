@@ -425,6 +425,7 @@ def main(args):
                 "observation.images.wrist": cv2.cvtColor(wrist_img, cv2.COLOR_BGR2RGB),
                 "observation.state": torch.from_numpy(curr_state.astype(np.float32)),
                 "action": torch.from_numpy(action_pose.astype(np.float32)),
+                "task": args.single_task,
             }
             if args.use_tactile:
                 left_img = frame_data.get('left_tactile_img') if cam_wrist is not None else None
