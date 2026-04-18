@@ -403,17 +403,14 @@ def main(args):
                     observation['observation.images'] = torch.stack([observation[key] for key in policy.config.image_features], dim=-4)
 
                 try:
-                    # Generate action chunk overriding standard `select_action` and `predict_action` abstractions
-                    action_chunk = policy.diffusion.generate_actions(observation)
-                    
-                    # Un-normalize using Action Postprocessor
-                    action_chunk_dict = {"action": action_chunk}
-                    action_chunk_dict = postprocessor(action_chunk_dict)
-                    
-                    raw_action = action_chunk_dict["action"].squeeze(0).cpu().numpy()
+                    # Direct inference matching robopolicy pattern:
+                    # policy.select_action handles internal normalization/un-normalization
+                    raw_action = policy.select_action(observation)
+                    raw_action = raw_action.squeeze(0).cpu().numpy()
                 except Exception as eval_e:
                     logger.error(f"Error when processing model generation: {str(eval_e)}\n{traceback.format_exc()}")
                     signal_handler(None, None)
+
 
 
 
