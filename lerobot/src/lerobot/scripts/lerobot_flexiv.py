@@ -146,93 +146,31 @@ def self_exam(log):
 # ---------------------------------------------------------------------
 # NewFlexivEnv (New RDK 1.8 API)
 # ---------------------------------------------------------------------
+from lerobot.umi.real_world.flexiv_controller import FlexivInterface
+
 class NewFlexivEnv:
-    tx_flange_tip = np.identity(4)
-    tx_flange_tip[:3, 3] = np.array([0, 0, 0.185])  # measured physically matching legacy
-    tx_tip_flange = np.linalg.inv(tx_flange_tip)
-
-    @staticmethod
-    def tip_to_flange_pose(tip_pose):
-        return mat_to_pose(pose_to_mat(tip_pose) @ NewFlexivEnv.tx_tip_flange)
-
     def __init__(self, init_qpos, obs_horizon=2, robot_ip="192.168.2.100", local_ip="192.168.2.102", use_gripper_width_mapping=False, pose_type="rotvec"):
         self.obs_horizon = obs_horizon
         self.pose_type = pose_type
+        self.init_qpos = init_qpos
         
-        # New RDK Setup
-        self.robot = flexivrdk.Robot(robot_ip, local_ip)
-        self.model = flexivrdk.Model(self.robot)
-        self.gripper = flexivrdk.Gripper(self.robot)
-        self.mode = flexivrdk.Mode
-        
-        # Clear faults and enable
-        if self.robot.fault():
-            self.robot.ClearFault()
-            time.sleep(2)
-        self.robot.Enable()
-        while not self.robot.operational():
-            time.sleep(1)
-            
-        # Initial Gripper
-        self.gripper.Move(0.12, 0.1, 10)
-                
-        # Switch to Joint Position Mode
-        self.robot.SwitchMode(self.mode.NRT_JOINT_POSITION)
-        
-        # Define constraints
-        self.target_vel = [0.0] * self.robot.info().DoF
-        self.max_vel = [0.5] * self.robot.info().DoF # Slower, safer max vel for inference
-        self.max_acc = [2.0] * self.robot.info().DoF
-        
-        if init_qpos is not None:
-            self.robot.SendJointPosition(init_qpos, self.target_vel, self.max_vel, self.max_acc)
-            time.sleep(3)
+        # New RDK Setup -> Legacy v0.9 Wrapper (Directly maps to SimpleFlexivEnv)
+        self.robot = FlexivInterface(
+            robot_ip=robot_ip, 
+            local_ip=local_ip, 
+            move_home=False, 
+            init_offset=None, 
+            init_qpos=None,  # Handled in reset() 
+            use_gripper_width_mapping=use_gripper_width_mapping
+        )
+        self.robot.send_gripper_state(0.12, 0.1, 10)
         time.sleep(1)
 
     def reset(self):
-        pass # Optional resetting logic internally
-
-    class _MockRobot:
-        def __init__(self, parent):
-            self.parent = parent
-        def get_ee_pose(self):
-            return self.parent.get_ee_pose()
-        def get_gripper_width(self):
-            return self.parent.get_gripper_width()
-
-    @property
-    def robot_mock(self):
-        # We supply this property so `self.env.robot.get_ee_pose()` backwards-compatibility continues to work
-        if not hasattr(self, "_robot_inst"):
-            self._robot_inst = self._MockRobot(self)
-        return self._robot_inst
-    
-    # Reroute property to alias back properly to `env.robot.xxx` downstream
-    def __getattr__(self, name):
-        if name == "robot_mock":
-            return self.robot_mock
-        if name == "robot" and not hasattr(self.__dict__, "robot"):
-            return self.robot_mock
-        return self.__dict__.get(name) or super().__getattribute__(name)
-
-    def get_ee_pose(self):
-        # Flange pose natively reported from RDK
-        flange_pose_raw = self.robot.states().tcp_pose.copy()
-        
-        pos = flange_pose_raw[:3]
-        # Flexiv native TCP pose returned is [x, y, z, qw, qx, qy, qz]
-        qw, qx, qy, qz = flange_pose_raw[3:]
-        rot = st.Rotation.from_quat([qx, qy, qz, qw])
-        
-        # We need to add the offset manually to output the expected tooltip pose (like legacy FlexivInterface)
-        tip_pose_mat = pos_rot_to_mat(np.array(pos), rot) @ NewFlexivEnv.tx_flange_tip
-        umi_tip_pose = mat_to_pose(tip_pose_mat)
-        return umi_tip_pose
-
-    def get_gripper_width(self):
-        states = flexivrdk.GripperStates()
-        self.gripper.GetGripperStates(states)
-        return states.width
+        logger.info("Resetting robot to initial joint positions...")
+        self.robot.send_joint_position(self.init_qpos)
+        self.robot.send_gripper_state(0.12, 0.1, 10)
+        time.sleep(10) # Reduced from 15 to 10 for inference
 
     def exec_actions(self, actions, timestamps):
         receive_time = time.time()
@@ -244,29 +182,12 @@ class NewFlexivEnv:
             tip_pose = new_actions[i, 0:6]
             target_width = new_actions[i, 6]
             
-            # Convert tooltip pose back to flange pose
-            flange_pose = NewFlexivEnv.tip_to_flange_pose(tip_pose)
-            pos, rot = pose_to_pos_rot(flange_pose)
-            quat_xyzw = rot.as_quat(scalar_first=False)
+            # Use original FlexivInterface methods
+            flange_pose = FlexivInterface.tip_to_flange_pose(tip_pose)
+            self.robot.send_flange_pose(flange_pose)
             
-            # Convert to Flexiv convention [x, y, z, qw, qx, qy, qz]
-            flexiv_target_pose = [
-                pos[0], pos[1], pos[2],
-                quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]
-            ]
-            
-            # Use new model IK to find joints
-            current_q = self.robot.states().q.copy()
-            reachable, target_q = self.model.reachable(flexiv_target_pose, current_q, True)
-            
-            if reachable:
-                self.robot.SendJointPosition(target_q, self.target_vel, self.max_vel, self.max_acc)
-            else:
-                logger.warning(f"Target pose {flexiv_target_pose} is unreachable!")
-            
-            # move gripper
-            # Account for Gripper offset identically to legacy
-            self.gripper.Move(max(target_width - 0.01, 0.005), 0.1, 10)
+            # Follow robopolicy gripper method
+            self.robot.send_gripper_state(max(target_width - 0.01, 0.005), 0.1, 10)
             
             dt = new_timestamps[i] - time.time()
             if dt > 0:
@@ -327,7 +248,6 @@ def main(args):
     init_qpos = eval(os.environ.get("FLEXIV_INIT_POSE", "[-0.0, -0.698, -0.0, 1.571, -0.0, 0.698, -0.0]"))  # Give a safe default
     
     env = NewFlexivEnv(init_qpos, obs_horizon=obs_horizon, robot_ip=robot_ip, local_ip=local_ip, use_gripper_width_mapping=False, pose_type="rotvec")
-    env.robot = env.robot_mock # Patch up observation thread calls
 
     
     # Check robot fault
