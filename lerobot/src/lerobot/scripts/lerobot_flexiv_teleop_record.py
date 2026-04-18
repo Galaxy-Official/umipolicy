@@ -52,7 +52,7 @@ class LeaderFKResolver:
         pb.connect(pb.DIRECT)
         
         # Determine the relative URDF path
-        repo_root = Path(__file__).resolve().parent.parent.parent.parent.parent / "Mini-Tele"
+        repo_root = Path(__file__).resolve().parent.parent.parent
         urdf_path = str(repo_root / self.URDF_DICT.get(self.robot_type, self.URDF_DICT["koch"]))
         
         if not os.path.exists(urdf_path):
