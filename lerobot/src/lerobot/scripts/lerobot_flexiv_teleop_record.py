@@ -99,7 +99,7 @@ class LeaderFKResolver:
         self.follow_arm = pb.loadURDF(
             flexiv_urdf_path,
             basePosition=[0.0, 0.0, 0.0],
-            baseOrientation=[0, 0, 0.7071068, 0.7071068],
+            baseOrientation=[0, 0, 0, 1],  # Remove the 90-deg rotation legacy of flexiv_leap
             useFixedBase=True,
         )
         self.initialized = False
