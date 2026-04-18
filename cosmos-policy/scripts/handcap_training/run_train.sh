@@ -25,17 +25,23 @@ echo "🧪 加载的配置卡: $EXPERIMENT_NAME"
 echo "================================================================================"
 
 # 5. 解决 Transformer Engine 在非 Docker 环境下的 ldconfig -p 报错bug
-NVRTC_PATH=$(find $PWD/.venv/lib -name "libnvrtc.so*" | grep -v "stubs" | head -n 1)
+echo "正在搜索最佳的 libnvrtc.so 路径以修复 TransformerEngine..."
+NVRTC_PATH=$(find $PWD/.venv/lib -name "libnvrtc.so*" | grep -v "stubs" | grep -v "builtins" | sort -r | head -n 1)
 if [[ -z "$NVRTC_PATH" ]]; then
-    NVRTC_PATH=$(find /usr/local/cuda*/lib64 -name "libnvrtc.so*" | grep -v "stubs" | head -n 1)
+    NVRTC_PATH=$(find /usr/local/cuda*/lib64 -name "libnvrtc.so*" | grep -v "stubs" | grep -v "builtins" | sort -r | head -n 1)
 fi
+echo "✅ 最终选定的 NVRTC_PATH: $NVRTC_PATH"
+
 if [[ -n "$NVRTC_PATH" ]]; then
+    export LD_LIBRARY_PATH="$(dirname $NVRTC_PATH):$LD_LIBRARY_PATH"
+    export LD_PRELOAD="$NVRTC_PATH"
     mkdir -p .tmp_bin
     cat << EOF > .tmp_bin/ldconfig
 #!/bin/bash
 if [[ "\$*" == *"-p"* ]]; then
     /sbin/ldconfig -p 2>/dev/null
     echo "	libnvrtc.so.11.2 (libc6,x86-64) => \$NVRTC_PATH"
+    echo "	libnvrtc.so.12 (libc6,x86-64) => \$NVRTC_PATH"
     echo "	libnvrtc.so (libc6,x86-64) => \$NVRTC_PATH"
     exit 0
 fi
