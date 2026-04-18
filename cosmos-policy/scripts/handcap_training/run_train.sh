@@ -75,7 +75,11 @@ export NCCL_IB_DISABLE=1
 export NCCL_BLOCKING_WAIT=1  # 强制使死锁崩溃而不是干等30分钟
 export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 
-# 8. 离线预处理文本指令的 T5 嵌入 (防止在训练主进程中多开导致极高的 CUDA OOM)
+# 8. 彻底禁用 Wandb 联网登录 (防止 Rank 0 卡在输入 API Key 环节导致另一个卡等待 30 分钟)
+export WANDB_MODE=offline
+echo "✅ 已强制设定 WandB 离线模式"
+
+# 9. 离线预处理文本指令的 T5 嵌入 (防止在训练主进程中多开导致极高的 CUDA OOM)
 T5_CKPT_DIR="ckpt/google-t5/t5-11b"
 echo "正在检查是否存在离线 T5 特征 ${BASE_DATASETS_DIR}/t5_embeddings.pkl ..."
 if [[ ! -f "${BASE_DATASETS_DIR}/t5_embeddings.pkl" ]]; then
