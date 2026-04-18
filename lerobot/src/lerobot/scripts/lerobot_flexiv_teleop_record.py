@@ -377,16 +377,20 @@ def main(args):
             leader_jnts = [leader_action_dict[f"{m}.pos"] for m in motors]
             
             # FK Resolution
-            target_pos, target_orn, _t_gripper = fk_resolver.get_eef_pose(leader_jnts)
+            # FK Resolution
+            target_pos, target_orn_quat, _t_gripper = fk_resolver.get_eef_pose(leader_jnts)
+            
+            import scipy.spatial.transform as st
+            target_orn_rotvec = st.Rotation.from_quat(target_orn_quat).as_rotvec()
             
             scale_factor = 4.2
             target_pos = np.array(target_pos) * scale_factor
             
-            action_pose = np.concatenate([target_pos, target_orn, np.array([_t_gripper])])
+            action_pose = np.concatenate([target_pos, target_orn_rotvec, np.array([_t_gripper])])
             curr_state = np.concatenate([np.zeros(7,), np.array([obs_gripper])]) # dummy
             
             # Exec Flexiv IK
-            env.exec_action(tip_pose=np.concatenate([target_pos, target_orn]), target_width=_t_gripper)
+            env.exec_action(tip_pose=np.concatenate([target_pos, target_orn_rotvec]), target_width=_t_gripper)
 
             # --- 3. Save to Dataset properly (v3.0 standard)
             frame_dict = {
