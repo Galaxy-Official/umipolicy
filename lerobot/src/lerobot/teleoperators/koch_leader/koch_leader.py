@@ -86,7 +86,12 @@ class KochLeader(Teleoperator):
         return self.bus.is_calibrated
 
     def calibrate(self) -> None:
-        self.bus.disable_torque()
+        try:
+            self.bus.disable_torque()
+        except RuntimeError as e:
+            # The Koch arm often runs on over-voltage (triggering Hardware Error), 
+            # but we only need it to be passive. Ignore the fail.
+            pass
         if self.calibration:
             # Calibration file exists, ask user whether to use it or run new calibration
             user_input = input(
