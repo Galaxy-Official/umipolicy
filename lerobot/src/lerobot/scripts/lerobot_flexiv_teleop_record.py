@@ -333,14 +333,37 @@ def main(args):
         }
     
     dataset_path = Path(args.root) / args.repo_id
+    if dataset_path.exists():
+        logger.warning(f"\n"
+                       f"=========================================\n"
+                       f"⚠️ Dataset already exists at: {dataset_path}\n"
+                       f"=========================================\n")
+        while True:
+            choice = input("Do you want to [D]elete, [A]ppend, or [Q]uit? (D/A/Q): ").strip().lower()
+            if choice == 'd':
+                import shutil
+                logger.info(f"Deleting dataset at {dataset_path}...")
+                shutil.rmtree(dataset_path, ignore_errors=True)
+                break
+            elif choice == 'a':
+                logger.info("Proceeding to append to the existing dataset...")
+                break
+            elif choice == 'q':
+                logger.info("Exiting pipeline at user request.")
+                sys.exit(0)
+            else:
+                print("Invalid choice. Please enter D, A, or Q.")
+                
     if dataset_path.exists() and (dataset_path / "meta" / "info.json").exists():
-        logger.info(f"Dataset already exists at {dataset_path}, loading it to append...")
-        dataset = LeRobotDataset(repo_id=args.repo_id, root=args.root)
+        dataset = LeRobotDataset(repo_id=args.repo_id, root=str(dataset_path))
     else:
+        # Fallback delete just in case it exists but has no meta/info.json (corrupted)
+        import shutil
+        shutil.rmtree(dataset_path, ignore_errors=True)
         dataset = LeRobotDataset.create(
             repo_id=args.repo_id,
             fps=args.fps,
-            root=args.root,
+            root=str(dataset_path),
             robot_type="handcap_flexiv",
             features=features,
             use_videos=True,
