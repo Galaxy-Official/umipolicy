@@ -95,7 +95,7 @@ class LeaderFKResolver:
             useFixedBase=True,
         )
 
-        flexiv_urdf_path = os.path.join(os.path.dirname(__file__), "../flexiv_api/assets/flexiv_rizon4.urdf")
+        flexiv_urdf_path = "urdf/assets/leap_hand/flexiv_leap.urdf"
         self.follow_arm = pb.loadURDF(
             flexiv_urdf_path,
             basePosition=[0.0, 0.0, 0.0],
