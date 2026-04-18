@@ -30,7 +30,7 @@ echo "====================================================="
 echo ""
 
 # 调用刚编写好的Python脚本
-python ${SCRIPT_DIR}/../lerobot/scripts/lerobot_flexiv_teleop_record.py \
+python ${SCRIPT_DIR}/../../lerobot/scripts/lerobot_flexiv_teleop_record.py \
     --repo-id "${REPO_ID}" \
     --teleop "${TELEOP_TYPE}" \
     --teleop_port "${TELEOP_PORT}" \
