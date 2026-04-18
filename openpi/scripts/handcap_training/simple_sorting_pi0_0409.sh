@@ -20,7 +20,7 @@ python scripts/train.py \
   --batch-size 128 \
   --num-train-steps 100000 \
   --save-interval 10000 \
-  --num-workers 20 \
+  --num-workers 8 \
   --no-wandb-enabled \
   --fsdp-devices 1 \
   --overwrite
