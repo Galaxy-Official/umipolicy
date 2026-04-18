@@ -1078,7 +1078,7 @@ class SerialMotorsBus(MotorsBusBase):
         int_value = self._encode_sign(data_name, {id_: int_value})[id_]
 
         err_msg = f"Failed to write '{data_name}' on {id_=} with '{int_value}' after {num_retry + 1} tries."
-        self._write(addr, length, id_, int_value, num_retry=num_retry, raise_on_error=True, err_msg=err_msg)
+        self._write(addr, length, id_, int_value, num_retry=num_retry, raise_on_error=False, err_msg=err_msg)
 
     def _write(
         self,
@@ -1104,7 +1104,9 @@ class SerialMotorsBus(MotorsBusBase):
         if not self._is_comm_success(comm) and raise_on_error:
             raise ConnectionError(f"{err_msg} {self.packet_handler.getTxRxResult(comm)}")
         elif self._is_error(error) and raise_on_error:
-            raise RuntimeError(f"{err_msg} {self.packet_handler.getRxPacketError(error)}")
+            import logging
+            logging.warning(f"IGNORING HARDWARE ERROR (Mini-Tele Mode): {self.packet_handler.getRxPacketError(error)}")
+            # raise RuntimeError(f"{err_msg} {self.packet_handler.getRxPacketError(error)}")
 
         return comm, error
 
