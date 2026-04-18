@@ -75,7 +75,7 @@ T5_CKPT_DIR="ckpt/google-t5/t5-11b"
 echo "正在检查是否存在离线 T5 特征 ${BASE_DATASETS_DIR}/t5_embeddings.pkl ..."
 if [[ ! -f "${BASE_DATASETS_DIR}/t5_embeddings.pkl" ]]; then
     echo "未检测到 T5 离线缓存，即将为您生成。请确保 ${T5_CKPT_DIR} 下存放了 t5-11b 权重!"
-    python scripts/handcap_training/precompute_t5.py \
+    PYTHONPATH=. python scripts/handcap_training/precompute_t5.py \
         --prompt "$TASK_PROMPT" \
         --data_dir "$BASE_DATASETS_DIR" \
         --model_name "$T5_CKPT_DIR"
