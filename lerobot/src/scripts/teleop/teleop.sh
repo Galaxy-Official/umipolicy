@@ -6,6 +6,10 @@ set -e
 
 # 获取脚本所在的目录 (支持从任何路径执行)
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+SRC_DIR="${SCRIPT_DIR}/../.."
+
+# 设置 PYTHONPATH，确保 lerobot 可被 import
+export PYTHONPATH="${SRC_DIR}:${PYTHONPATH}"
 
 # --- 环境变量配置 ---
 export FLEXIV_ROBOT_IP="192.168.2.100"
@@ -29,8 +33,9 @@ echo " Configuration: ${EPISODES} episodes x ${EPISODE_TIME_S} sec @ ${FPS} Hz"
 echo "====================================================="
 echo ""
 
-# 调用刚编写好的Python脚本
-python ${SCRIPT_DIR}/../../lerobot/scripts/lerobot_flexiv_teleop_record.py \
+# 使用 python -m 模块调用方式（与推理脚本保持一致）
+cd "${SRC_DIR}"
+python -m lerobot.scripts.lerobot_flexiv_teleop_record \
     --repo-id "${REPO_ID}" \
     --teleop "${TELEOP_TYPE}" \
     --teleop_port "${TELEOP_PORT}" \
