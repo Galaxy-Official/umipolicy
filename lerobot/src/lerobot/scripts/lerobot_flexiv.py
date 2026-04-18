@@ -397,21 +397,25 @@ def main(args):
                 # Execute Dataset Stat Normalizations
                 observation = preprocessor(observation)
                 
-                # Perform OBS_IMAGES stacking required by diffusion model
+                # Build OBS_IMAGES with correct shape: (B, S, N, C, H, W)
+                # where N=num_cameras. generate_actions uses einops "b s n ... -> (b s n) ..."
+                # which flattens to (B*S*N, C, H, W) for the CNN backbone.
                 if hasattr(policy.config, "image_features") and policy.config.image_features:
-                    # dim=-4 stacks cameras so shape matches -> (Batch, ObsHorizon, num_cams, C, H, W)
-                    observation['observation.images'] = torch.stack([observation[key] for key in policy.config.image_features], dim=-4)
+                    img_list = [observation[key] for key in policy.config.image_features]
+                    # Each img is (B=1, S=2, C, H, W) = 5D. Stack at dim=2 to add camera dim N.
+                    observation['observation.images'] = torch.stack(img_list, dim=2)
+                    if current_step == 0:
+                        logger.info(f"[Shape Debug] OBS_IMAGES shape: {observation['observation.images'].shape}")
+                        logger.info(f"[Shape Debug] OBS_STATE shape: {observation['observation.state'].shape}")
 
                 try:
-                    # Direct inference matching robopolicy pattern:
-                    # policy.select_action handles internal normalization/un-normalization
-                    raw_action = policy.select_action(observation)
-                    raw_action = raw_action.squeeze(0).cpu().numpy()
+                    # Direct generate_actions call - bypasses select_action queue mechanism
+                    # which expects single-timestep input. Matches robopolicy pattern.
+                    action_chunk = policy.diffusion.generate_actions(observation)
+                    raw_action = action_chunk.squeeze(0).cpu().numpy()
                 except Exception as eval_e:
                     logger.error(f"Error when processing model generation: {str(eval_e)}\n{traceback.format_exc()}")
                     signal_handler(None, None)
-
-
 
 
             # Handcap backwards logic: Action back to Original Absolute Coordinates
