@@ -354,11 +354,14 @@ def main(args):
                 
                 # Assemble unified LeRobot dictionary observation
                 observation = {
-                    "observation.state": to_torch(np.concatenate([rel_obs_pose, obs_data['robot0_gripper_width']], axis=-1)),
-                    "observation.images.wrist": to_torch(obs_data["observation.images.wrist"]),
-                    "observation.tactiles.left": to_torch(obs_data['observation.tactiles.left']),
-                    "observation.tactiles.right": to_torch(obs_data['observation.tactiles.right']),
+                    "observation.state": np.concatenate([rel_obs_pose, obs_data['robot0_gripper_width']], axis=-1).astype(np.float32),
+                    "observation.images.wrist": obs_data["observation.images.wrist"],
                 }
+                if 'observation.tactiles.left' in obs_data:
+                    observation["observation.tactiles.left"] = obs_data['observation.tactiles.left']
+                if 'observation.tactiles.right' in obs_data:
+                    observation["observation.tactiles.right"] = obs_data['observation.tactiles.right']
+
 
                 # LeRobot Action Prediction Hook
                 # Note: `action_values_dict` mapping heavily depends on LeRobot's architecture. 
@@ -421,9 +424,12 @@ def main(args):
     finally:
         logger.info("\nProgram finished normally, saving data...")
         obs_thread.stop()
-        wrist_video.release()
-        tactile_left_video.release()
-        tactile_right_video.release()
+        if wrist_video is not None:
+            wrist_video.release()
+        if tactile_left_video is not None:
+            tactile_left_video.release()
+        if tactile_right_video is not None:
+            tactile_right_video.release()
         
         if states_data and output_dir:
             import pandas as pd
