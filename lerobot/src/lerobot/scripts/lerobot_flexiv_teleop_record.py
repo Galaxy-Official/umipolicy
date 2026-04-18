@@ -108,12 +108,16 @@ class LeaderFKResolver:
         """Calculates IK to return 7 joint angles for Rizon 4."""
         if self.robot_type == "koch":
             # Joint mapping conversion for Koch
+            # LeRobot 3.0 calibrations already center angles (upright = 0).
+            # The older Mini-Tele reader fetched uncalibrated absolute degrees (upright = 90), 
+            # which is why it used `90 - joint`. 
+            # Applying 90 offsets to already zeroed calibrations bends the PyBullet arm 90 degrees sideways!
             data = [
-                -dynamixel_joints[0],
-                90 - dynamixel_joints[1],
-                dynamixel_joints[2] - 90,
-                dynamixel_joints[3] - 90,
-                90 - dynamixel_joints[4],
+                -dynamixel_joints[0],  # Pan might need negative due to base flip
+                dynamixel_joints[1], 
+                dynamixel_joints[2],
+                dynamixel_joints[3],
+                dynamixel_joints[4],
                 dynamixel_joints[5],
             ]
             data = [angle * np.pi / 180 for angle in data]
