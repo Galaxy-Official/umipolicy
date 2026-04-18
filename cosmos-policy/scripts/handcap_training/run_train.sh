@@ -51,7 +51,19 @@ EOF
     export PATH="$PWD/.tmp_bin:$PATH"
 fi
 
-# 6. 直接拉起 torchrun (因为您已经在 cosmos-policy 的 conda 环境中了)
+# 6. 修复 Triton 编译时缺失 Python.h (No such file or directory) 的问题
+echo "正在搜寻 Python.h 头文件路径用于 Triton 编译..."
+PYTHON_INCLUDE_DIR=$(python -c "import sysconfig; print(sysconfig.get_path('include'))")
+if [[ ! -f "$PYTHON_INCLUDE_DIR/Python.h" ]]; then
+    PYTHON_INCLUDE_DIR=$(find /root/miniforge3/envs /opt/conda -name "Python.h" 2>/dev/null | grep "python3" | head -n 1 | xargs dirname)
+fi
+if [[ -n "$PYTHON_INCLUDE_DIR" ]]; then
+    export C_INCLUDE_PATH="$PYTHON_INCLUDE_DIR:$C_INCLUDE_PATH"
+    export CPLUS_INCLUDE_PATH="$PYTHON_INCLUDE_DIR:$CPLUS_INCLUDE_PATH"
+    echo "✅ 已注入 C_INCLUDE_PATH=$PYTHON_INCLUDE_DIR"
+fi
+
+# 7. 直接拉起 torchrun (因为您已经在 cosmos-policy 的 conda 环境中了)
 python -m torch.distributed.run --nproc_per_node=${NUM_GPUS} --master_port=${MASTER_PORT} \
   -m cosmos_policy.scripts.train \
   --config=cosmos_policy/config/config.py -- \
