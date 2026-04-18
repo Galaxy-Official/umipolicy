@@ -147,6 +147,7 @@ class UMIDataset(Dataset):
         debug: bool = False,
         debug2: bool = False,
         use_proprio: bool = False,
+        use_handcap: bool = False,
         num_history_indices: int = 8,
         history_spacing_factor: int = 12,
         num_duplicates_per_image: int = 8,
@@ -206,6 +207,7 @@ class UMIDataset(Dataset):
         self.use_stronger_image_aug = use_stronger_image_aug
         self.debug = debug
         self.debug2 = debug2
+        self.use_handcap = use_handcap
         self.use_proprio = use_proprio
         self.num_history_indices = num_history_indices
         self.history_spacing_factor = history_spacing_factor
