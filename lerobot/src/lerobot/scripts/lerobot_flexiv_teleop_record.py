@@ -28,6 +28,7 @@ import flexivrdk
 import scipy.spatial.transform as st
 # using perception and umi utilities
 from lerobot.datasets.pose_utils import *
+from lerobot.scripts.umi_realworld.flexiv_controller import FlexivInterface
 from perception.cameras.base_camera import BaseCamera
 
 # Leader
@@ -195,100 +196,38 @@ class ObservationThread(threading.Thread):
 
 
 # ---------------------------------------------------------------------
-# NewFlexivEnv
+# NewFlexivEnv (RDK 0.9 via FlexivInterface - matching inference script)
 # ---------------------------------------------------------------------
 class NewFlexivEnv:
-    tx_flange_tip = np.identity(4)
-    tx_flange_tip[:3, 3] = np.array([0, 0, 0.185])
-    tx_tip_flange = np.linalg.inv(tx_flange_tip)
-
-    @staticmethod
-    def tip_to_flange_pose(tip_pose):
-        return mat_to_pose(pose_to_mat(tip_pose) @ NewFlexivEnv.tx_tip_flange)
-
-    def __init__(self, init_qpos=None, robot_ip="192.168.2.100"):
-        self.robot = flexivrdk.Robot(robot_ip, robot_ip)
-        self.model = flexivrdk.Model(self.robot)
-        self.gripper = flexivrdk.Gripper(self.robot)
-        self.mode = flexivrdk.Mode
+    def __init__(self, init_qpos=None, robot_ip="192.168.2.100", local_ip="192.168.2.102"):
+        self.init_qpos = init_qpos
         
-        if self.robot.isFault():
-            self.robot.clearFault()
-            time.sleep(2)
-        self.robot.enable()
-        while not self.robot.isOperational():
-            time.sleep(1)
-            
-        self.gripper.move(0.12, 0.1, 10)
-        self.robot.setMode(self.mode.NRT_JOINT_POSITION)
-        
-        self.target_vel = [0.0] * self.robot.info().DoF
-        self.max_vel = [0.5] * self.robot.info().DoF
-        self.max_acc = [2.0] * self.robot.info().DoF
+        # RDK 0.9 Wrapper via FlexivInterface
+        self.robot = FlexivInterface(
+            robot_ip=robot_ip,
+            local_ip=local_ip,
+            move_home=False,
+            init_offset=None,
+            init_qpos=None,
+            use_gripper_width_mapping=False
+        )
+        self.robot.send_gripper_state(0.12, 0.1, 10)
+        time.sleep(1)
         
         if init_qpos is not None:
-            self.robot.sendJointPosition(init_qpos, self.target_vel, self.target_vel, self.max_vel, self.max_acc)
+            self.robot.send_joint_position(init_qpos)
             time.sleep(3)
-        time.sleep(1)
 
-    class _MockRobot:
-        def __init__(self, parent):
-            self.parent = parent
-        def get_ee_pose(self):
-            return self.parent.get_ee_pose()
-        def get_gripper_width(self):
-            return self.parent.get_gripper_width()
-
-    @property
-    def robot_mock(self):
-        if not hasattr(self, "_robot_inst"):
-            self._robot_inst = self._MockRobot(self)
-        return self._robot_inst
-    
-    def __getattr__(self, name):
-        if name == "robot_mock":
-            return self.robot_mock
-        if name == "robot" and not hasattr(self.__dict__, "robot"):
-            return self.robot_mock
-        return self.__dict__.get(name) or super().__getattribute__(name)
-
-    def get_ee_pose(self):
-        states = flexivrdk.RobotStates()
-        self.robot.getRobotStates(states)
-        flange_pose_raw = np.array(states.tcpPose)
-        
-        pos = flange_pose_raw[:3]
-        qw, qx, qy, qz = flange_pose_raw[3:]
-        rot = st.Rotation.from_quat([qx, qy, qz, qw])
-        tip_pose_mat = pos_rot_to_mat(np.array(pos), rot) @ NewFlexivEnv.tx_flange_tip
-        umi_tip_pose = mat_to_pose(tip_pose_mat)
-        return umi_tip_pose
-
-    def get_gripper_width(self):
-        states = flexivrdk.GripperStates()
-        self.gripper.getGripperStates(states)
-        return states.width
+    def reset(self):
+        if self.init_qpos is not None:
+            self.robot.send_joint_position(self.init_qpos)
+            self.robot.send_gripper_state(0.12, 0.1, 10)
+            time.sleep(5)
 
     def exec_action(self, tip_pose, target_width):
-        flange_pose = NewFlexivEnv.tip_to_flange_pose(tip_pose)
-        pos, rot = pose_to_pos_rot(flange_pose)
-        quat_xyzw = rot.as_quat(scalar_first=False)
-        
-        flexiv_target_pose = [
-            pos[0], pos[1], pos[2],
-            quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]
-        ]
-        
-        states = flexivrdk.RobotStates()
-        self.robot.getRobotStates(states)
-        current_q = list(states.q)
-        
-        reachable, target_q = self.model.reachable(flexiv_target_pose, current_q, True)
-        
-        if reachable:
-            self.robot.sendJointPosition(target_q, self.target_vel, self.target_vel, self.max_vel, self.max_acc)
-        
-        self.gripper.move(max(target_width - 0.01, 0.005), 0.1, 10)
+        flange_pose = FlexivInterface.tip_to_flange_pose(tip_pose)
+        self.robot.send_flange_pose(flange_pose)
+        self.robot.send_gripper_state(max(target_width - 0.01, 0.005), 0.1, 10)
 
 
 # ---------------------------------------------------------------------
@@ -306,21 +245,32 @@ def main(args):
     signal_module.signal(signal_module.SIGINT, signal_handler)
 
     # 1. Init Cameras
-    handcap_camera_cfg = Path(__file__).resolve().parent.parent.parent.parent.parent / "Mini-Tele/perception/configs/camera/handcap_camera.json"
-    if os.path.exists(str(handcap_camera_cfg)):
+    # Try multiple possible camera config paths
+    possible_cam_paths = [
+        Path(__file__).resolve().parent.parent.parent / "perception/configs/camera/handcap_camera.json",
+        Path(__file__).resolve().parent.parent.parent.parent.parent / "Mini-Tele/perception/configs/camera/handcap_camera.json",
+    ]
+    handcap_camera_cfg = None
+    for p in possible_cam_paths:
+        if p.exists():
+            handcap_camera_cfg = p
+            break
+    
+    if handcap_camera_cfg is not None:
+        logger.info(f"Using camera config: {handcap_camera_cfg}")
         cam_dict = BaseCamera.create_cameras_from_config(config_path=str(handcap_camera_cfg))
         cam_wrist = cam_dict["wrist"]
         cam_tactile_left = cam_dict["left_tactile"]
         cam_tactile_right = cam_dict["right_tactile"]
     else:
-        logger.warning("Camera config not found, falling back to None!")
+        logger.warning(f"Camera config not found at any of: {possible_cam_paths}, falling back to None!")
         cam_wrist, cam_tactile_left, cam_tactile_right = None, None, None
     
-    # 2. Init Follower (Flexiv)
+    # 2. Init Follower (Flexiv via RDK 0.9)
     robot_ip = os.environ.get("FLEXIV_ROBOT_IP", "192.168.2.100")
+    local_ip = os.environ.get("FLEXIV_LOCAL_IP", "192.168.2.102")
     init_qpos = eval(os.environ.get("FLEXIV_INIT_POSE", "[-0.0, -0.698, -0.0, 1.571, -0.0, 0.698, -0.0]"))
-    env = NewFlexivEnv(init_qpos, robot_ip=robot_ip)
-    env.robot = env.robot_mock
+    env = NewFlexivEnv(init_qpos, robot_ip=robot_ip, local_ip=local_ip)
     
     # 3. Init Leader Configuration
     if args.teleop == "koch":
