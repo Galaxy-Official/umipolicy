@@ -148,6 +148,7 @@ class UMIDataset(Dataset):
         debug2: bool = False,
         use_proprio: bool = False,
         use_handcap: bool = False,
+        default_command: str = "",
         num_history_indices: int = 8,
         history_spacing_factor: int = 12,
         num_duplicates_per_image: int = 8,
@@ -208,6 +209,7 @@ class UMIDataset(Dataset):
         self.debug = debug
         self.debug2 = debug2
         self.use_handcap = use_handcap
+        self.default_command = default_command
         self.use_proprio = use_proprio
         self.num_history_indices = num_history_indices
         self.history_spacing_factor = history_spacing_factor
@@ -310,7 +312,12 @@ class UMIDataset(Dataset):
                 # NOTE: We just hardcode based on the file path for now. Ideally, the demo files would
                 #       contain the task description as a string that we extract.
                 raw_file_string = file.split("/")[-3]
-                if "fold_shirt" in raw_file_string:
+                if self.use_handcap:
+                    if self.default_command:
+                        raw_file_string = self.default_command
+                    else:
+                        pass
+                elif "fold_shirt" in raw_file_string:
                     raw_file_string = "fold_shirt"
                 elif "candies_in_bowl" in raw_file_string:
                     raw_file_string = "put_candies_in_bowl"

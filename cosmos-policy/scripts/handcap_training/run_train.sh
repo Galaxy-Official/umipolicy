@@ -14,7 +14,11 @@ export BASE_DATASETS_DIR="data/handcap_cosmos"
 # 我们创建了新的 cosmos_predict2_handcap 用于处理类似 ALOHA HDF5 结构的 handcapcosmos:
 EXPERIMENT_NAME="cosmos_predict2_handcap"
 
-# 4. 指定开放的内部主节点通讯端口 (防止与其他训练任务冲突)
+# 4. 指定您的数据集的全局语言指令 (Prompt)
+# 这句话将被嵌入并替代未知的文件夹名，传给文本编码大模型
+TASK_PROMPT="put box and block into paper box"
+
+# 5. 指定开放的内部主节点通讯端口 (防止与其他训练任务冲突)
 MASTER_PORT=12341
 
 echo "================================================================================"
@@ -22,6 +26,7 @@ echo "🚀 正在启动 Cosmos Policy 训练..."
 echo "📂 数据集基准路径: $BASE_DATASETS_DIR"
 echo "🔧 GPU 调度数量: $NUM_GPUS"
 echo "🧪 加载的配置卡: $EXPERIMENT_NAME"
+echo "🗣️  文本语言指令: $TASK_PROMPT"
 echo "================================================================================"
 
 # 5. 解决 Transformer Engine 在非 Docker 环境下的 ldconfig -p 报错bug
@@ -69,4 +74,5 @@ fi
 python -m torch.distributed.run --nproc_per_node=${NUM_GPUS} --master_port=${MASTER_PORT} \
   -m cosmos_policy.scripts.train \
   --config=cosmos_policy/config/config.py -- \
-  experiment="${EXPERIMENT_NAME}"
+  experiment="${EXPERIMENT_NAME}" \
+  dataloader_train.dataset.default_command="${TASK_PROMPT}"

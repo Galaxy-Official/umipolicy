@@ -504,6 +504,7 @@ aloha_cosmos_policy_dataset_handcap = L(UMIDataset)(
     return_value_function_returns=True,
     gamma=0.998,
     use_handcap=True,
+    default_command="manipulate object",
 )
 
 cosmos_predict2_handcap = LazyDict(
