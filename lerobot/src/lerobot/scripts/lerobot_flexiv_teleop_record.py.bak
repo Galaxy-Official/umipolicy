@@ -12,6 +12,7 @@ from pathlib import Path
 import signal as signal_module
 from loguru import logger
 import pybullet as pb
+import pybullet_data
 
 # PyTorch & Torchvision
 import torch
