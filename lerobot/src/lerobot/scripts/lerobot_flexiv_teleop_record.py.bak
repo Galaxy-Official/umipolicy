@@ -80,7 +80,7 @@ class LeaderFKResolver:
         pb.setAdditionalSearchPath(pybullet_data.getDataPath())
         
         URDF_DICT = {
-            "koch": "urdf/assets/koch_v1_1_urdf/urdf/koch_v1_1_urdf.urdf",
+            "koch": "urdf/assets/low_cost_robot_description/urdf/low_cost_robot.urdf",
             "so100": "urdf/assets/SO_5DOF_ARM100_8j_URDF.SLDASM/urdf/SO_5DOF_ARM100_8j_URDF.SLDASM.urdf",
         }
         urdf_path = URDF_DICT.get(self.robot_type, None)

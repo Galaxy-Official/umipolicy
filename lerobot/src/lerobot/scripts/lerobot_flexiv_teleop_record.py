@@ -450,7 +450,7 @@ def main(args):
                 obs_gripper = env.robot.get_gripper_width()
 
             curr_state = np.zeros((8,), dtype=np.float32)
-            arm_state = env.robot.get_joint_position()
+            arm_state = env.robot.get_joint_positions()
             curr_state = np.concatenate([arm_state, np.array([obs_gripper])])
             
             # --- 2. Action from Teleop
