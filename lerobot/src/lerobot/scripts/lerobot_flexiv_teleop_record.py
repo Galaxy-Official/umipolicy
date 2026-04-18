@@ -332,14 +332,19 @@ def main(args):
             "names": ["height", "width", "channel"],
         }
     
-    dataset = LeRobotDataset.create(
-        repo_id=args.repo_id,
-        fps=args.fps,
-        root=args.root,
-        robot_type="handcap_flexiv",
-        features=features,
-        use_videos=True,
-    )
+    dataset_path = Path(args.root) / args.repo_id
+    if dataset_path.exists() and (dataset_path / "meta" / "info.json").exists():
+        logger.info(f"Dataset already exists at {dataset_path}, loading it to append...")
+        dataset = LeRobotDataset(repo_id=args.repo_id, root=args.root)
+    else:
+        dataset = LeRobotDataset.create(
+            repo_id=args.repo_id,
+            fps=args.fps,
+            root=args.root,
+            robot_type="handcap_flexiv",
+            features=features,
+            use_videos=True,
+        )
     
     logger.info(f"Press CTRL+C anytime to cleanly stop recording an episode!")
     
