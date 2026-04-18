@@ -22,7 +22,8 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.utils.device_utils import get_safe_torch_device
 from lerobot.datasets.feature_utils import build_dataset_frame
 
-# Flexiv imports (New RDK)
+# Flexiv imports (New RDK) - inject .so path before import
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../lib_py"))
 import flexivrdk
 import scipy.spatial.transform as st
 # using perception and umi utilities
