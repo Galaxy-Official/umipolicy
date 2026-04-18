@@ -68,7 +68,12 @@ if [[ -n "$PYTHON_INCLUDE_DIR" ]]; then
     echo "✅ 已注入 C_INCLUDE_PATH=$PYTHON_INCLUDE_DIR"
 fi
 
-# 7. 自动修复服务器缺失 GUI 库 (libGL.so.1) 导致的 OpenCV 导入错误
+# 7. 自动修复由容器网络造成的 NCCL 死锁超时问题 (30分钟卡死)
+echo "正在注入 NCCL 防死锁环境变量..."
+export NCCL_P2P_DISABLE=1
+export NCCL_IB_DISABLE=1
+export NCCL_BLOCKING_WAIT=1  # 强制使死锁崩溃而不是干等30分钟
+export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 
 # 8. 离线预处理文本指令的 T5 嵌入 (防止在训练主进程中多开导致极高的 CUDA OOM)
 T5_CKPT_DIR="ckpt/google-t5/t5-11b"
