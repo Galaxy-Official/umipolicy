@@ -72,19 +72,19 @@ class LeaderFKResolver:
             qx = (matrix[0, 2] + matrix[2, 0]) / S
             qy = (matrix[1, 2] + matrix[2, 1]) / S
             qz = 0.25 * S
-        return np.array([qx, qy, qz, qw])
-
     def __init__(self, robot_type="koch"):
         self.robot_type = robot_type
         # Pybullet GUI overhead avoidance
         pb.connect(pb.DIRECT)
+        pb.setAdditionalSearchPath(pybullet_data.getDataPath())
         
-        # Determine the relative URDF path
-        repo_root = Path(__file__).resolve().parent.parent.parent
-        urdf_path = str(repo_root / self.URDF_DICT.get(self.robot_type, self.URDF_DICT["koch"]))
-        
-        if not os.path.exists(urdf_path):
-            logger.warning(f"URDF path {urdf_path} does not exist. Cannot solve Forward Kinematics!")
+        URDF_DICT = {
+            "koch": "urdf/assets/koch_v1_1_urdf/urdf/koch_v1_1_urdf.urdf",
+            "so100": "urdf/assets/SO_5DOF_ARM100_8j_URDF.SLDASM/urdf/SO_5DOF_ARM100_8j_URDF.SLDASM.urdf",
+        }
+        urdf_path = URDF_DICT.get(self.robot_type, None)
+        if urdf_path is None:
+            raise ValueError(f"Unknown URDF for {self.robot_type}")
             
         base_orien = [0, 0, 1, 0] if self.robot_type == "so100" else [0, 0, 0, 1]
         self.robot_pb = pb.loadURDF(
@@ -94,8 +94,16 @@ class LeaderFKResolver:
             useFixedBase=True,
         )
 
-    def get_eef_pose(self, dynamixel_joints):
-        """Converts raw leader joints to TCP pose targeting."""
+        flexiv_urdf_path = os.path.join(os.path.dirname(__file__), "../flexiv_api/assets/flexiv_rizon4.urdf")
+        self.follow_arm = pb.loadURDF(
+            flexiv_urdf_path,
+            basePosition=[0.0, 0.0, 0.0],
+            baseOrientation=[0, 0, 0.7071068, 0.7071068],
+            useFixedBase=True,
+        )
+
+    def get_target_joints(self, dynamixel_joints):
+        """Calculates IK to return 7 joint angles for Rizon 4."""
         if self.robot_type == "koch":
             # Joint mapping conversion for Koch
             data = [
@@ -133,32 +141,6 @@ class LeaderFKResolver:
             rot_axes = T_ab @ new_axes
             rot_axes = rot_axes[:3]
             
-            new_eef_orn = self.matrix2quaternion(rot_axes)
-            
-            return eef_pos, new_eef_orn, -data[-1]
-
-        elif self.robot_type == "so100":
-            data = [
-                -dynamixel_joints[0],
-                90 - dynamixel_joints[1],
-                dynamixel_joints[2] - 90,
-                dynamixel_joints[3] - 90,
-                90 - dynamixel_joints[4],
-                dynamixel_joints[5],
-            ]
-            data = [angle * np.pi / 180 for angle in data]
-            for i, joint in enumerate(data):
-                pb.resetJointState(self.robot_pb, i, joint)
-            
-            eef_pos = np.array(pb.getLinkState(self.robot_pb, 4)[0])
-            eef_orn = pb.getLinkState(self.robot_pb, 4)[1]
-            
-            eef_orn_matrix = np.array(pb.getMatrixFromQuaternion(eef_orn)).reshape(3, 3)
-            original_axes = np.eye(3)
-            
-            z_in_eef = np.array([-1, 0, 0])
-            x_in_eef = np.array([0, -1, 0])
-            y_in_eef = np.array([0, 0, 1])
             new_axes = np.array([x_in_eef, y_in_eef, z_in_eef]).T
             new_axes = np.concatenate([new_axes, np.array([[1, 1, 1]])], axis=0)
             
@@ -283,6 +265,10 @@ class NewFlexivEnv:
         flange_pose = FlexivInterface.tip_to_flange_pose(tip_pose)
         self.robot.send_flange_pose(flange_pose)
         self.robot.send_gripper_state(max(target_width - 0.01, 0.005), 0.1, 10)
+        
+    def exec_action_joints(self, target_joints, target_width):
+        self.robot.send_joint_position(target_joints)
+        self.robot.send_gripper_state(max(target_width - 0.01, 0.005), 0.1, 10)
 
 
 # ---------------------------------------------------------------------
@@ -367,7 +353,7 @@ def main(args):
         },
         "action": {
             "dtype": "float32",
-            "shape": (7,), # pos(3) + rotvec(3) + gripper(1)
+            "shape": (8,), # 7 joints + 1 gripper
         }
     }
     if args.use_tactile:
@@ -443,38 +429,31 @@ def main(args):
                 eepose = frame_data['eepose']
                 obs_gripper = frame_data['gripper_width']
             else:
-                wrist_img = np.zeros((480, 640, 3), dtype=np.uint8)
+                wrist_img = np.zeros((1536, 1536, 3), dtype=np.uint8)
                 eepose = env.robot.get_ee_pose()
                 obs_gripper = env.robot.get_gripper_width()
 
             curr_state = np.zeros((8,), dtype=np.float32)
+            arm_state = env.robot.get_joint_position()
+            curr_state = np.concatenate([arm_state, np.array([obs_gripper])])
             
             # --- 2. Action from Teleop
             leader_action_dict = leader.get_action()
             motors = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"]
             leader_jnts = [leader_action_dict[f"{m}.pos"] for m in motors]
             
-            # FK Resolution
-            # FK Resolution
-            target_pos, target_orn_quat, _t_gripper = fk_resolver.get_eef_pose(leader_jnts)
+            # FK Resolution -> PyBullet internal IK -> Joint Actions
+            target_joints, _t_gripper = fk_resolver.get_target_joints(leader_jnts)
+            action_state = np.concatenate([target_joints, np.array([_t_gripper])])
             
-            import scipy.spatial.transform as st
-            target_orn_rotvec = st.Rotation.from_quat(target_orn_quat).as_rotvec()
-            
-            scale_factor = 4.2
-            target_pos = np.array(target_pos) * scale_factor
-            
-            action_pose = np.concatenate([target_pos, target_orn_rotvec, np.array([_t_gripper])])
-            curr_state = np.concatenate([np.zeros(7,), np.array([obs_gripper])]) # dummy
-            
-            # Exec Flexiv IK
-            env.exec_action(tip_pose=np.concatenate([target_pos, target_orn_rotvec]), target_width=_t_gripper)
+            # Exec Flexiv Joint Position
+            env.exec_action_joints(target_joints=target_joints, target_width=_t_gripper)
 
             # --- 3. Save to Dataset properly (v3.0 standard)
             frame_dict = {
                 "observation.images.wrist": cv2.cvtColor(wrist_img, cv2.COLOR_BGR2RGB),
                 "observation.state": torch.from_numpy(curr_state.astype(np.float32)),
-                "action": torch.from_numpy(action_pose.astype(np.float32)),
+                "action": torch.from_numpy(action_state.astype(np.float32)),
                 "task": args.single_task,
             }
             if args.use_tactile:
