@@ -109,6 +109,24 @@ class LeaderFKResolver:
             data = [
                 -dynamixel_joints[0],
                 90 - dynamixel_joints[1],
+                90 - dynamixel_joints[2],
+                90 - dynamixel_joints[3],
+                dynamixel_joints[4] - 90,
+                -dynamixel_joints[5],
+            ]
+            data = [angle * np.pi / 180 for angle in data]
+            for i, joint in enumerate(data):
+                pb.resetJointState(self.robot_pb, i, joint)
+            
+            # eef Link #4
+            eef_pos = np.array(pb.getLinkState(self.robot_pb, 4)[0])
+            new_eef_orn = pb.getLinkState(self.robot_pb, 4)[1]
+            gripper = -data[-1]
+
+        elif self.robot_type == "so100":
+            data = [
+                -dynamixel_joints[0],
+                90 - dynamixel_joints[1],
                 dynamixel_joints[2] - 90,
                 dynamixel_joints[3] - 90,
                 90 - dynamixel_joints[4],
@@ -118,29 +136,14 @@ class LeaderFKResolver:
             for i, joint in enumerate(data):
                 pb.resetJointState(self.robot_pb, i, joint)
             
-            # eef Link #4
             eef_pos = np.array(pb.getLinkState(self.robot_pb, 4)[0])
             eef_orn = pb.getLinkState(self.robot_pb, 4)[1]
             
             eef_orn_matrix = np.array(pb.getMatrixFromQuaternion(eef_orn)).reshape(3, 3)
-            original_axes = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
-
+            original_axes = np.eye(3)
             z_in_eef = np.array([-1, 0, 0])
             x_in_eef = np.array([0, -1, 0])
             y_in_eef = np.array([0, 0, 1])
-            new_axes = np.array([x_in_eef, y_in_eef, z_in_eef]).T
-            new_axes = np.concatenate([new_axes, np.array([[1, 1, 1]])], axis=0)
-
-            x_ab = np.array([np.dot(eef_orn_matrix[:, 0], original_axes[0]), np.dot(eef_orn_matrix[:, 0], original_axes[1]), np.dot(eef_orn_matrix[:, 0], original_axes[2])])
-            y_ab = np.array([np.dot(eef_orn_matrix[:, 1], original_axes[0]), np.dot(eef_orn_matrix[:, 1], original_axes[1]), np.dot(eef_orn_matrix[:, 1], original_axes[2])])
-            z_ab = np.array([np.dot(eef_orn_matrix[:, 2], original_axes[0]), np.dot(eef_orn_matrix[:, 2], original_axes[1]), np.dot(eef_orn_matrix[:, 2], original_axes[2])])
-
-            T_ab = np.array([x_ab, y_ab, z_ab, eef_pos]).T
-            T_ab = np.concatenate([T_ab, np.array([[0, 0, 0, 1]])], axis=0)
-
-            rot_axes = T_ab @ new_axes
-            rot_axes = rot_axes[:3]
-            
             new_axes = np.array([x_in_eef, y_in_eef, z_in_eef]).T
             new_axes = np.concatenate([new_axes, np.array([[1, 1, 1]])], axis=0)
             
@@ -180,7 +183,19 @@ class LeaderFKResolver:
                     qz = 0.25 * S
                 return np.array([qx, qy, qz, qw])
             new_eef_orn = matrix2quaternion(rot_axes)
-            return eef_pos, new_eef_orn, -data[-1]
+            gripper = data[5]
+
+        # Calculate IK using follow_arm
+        eef_pos = eef_pos * 4.2
+        joints_tuple = pb.calculateInverseKinematics(
+            self.follow_arm, 8, eef_pos, new_eef_orn
+        )
+        
+        joints = list(joints_tuple[:7])
+        for i, joint in enumerate(joints):
+            pb.resetJointState(self.follow_arm, i, joint)
+            
+        return joints, gripper
 
 
 # ---------------------------------------------------------------------
