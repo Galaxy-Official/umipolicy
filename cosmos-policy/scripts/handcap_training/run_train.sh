@@ -24,7 +24,28 @@ echo "🔧 GPU 调度数量: $NUM_GPUS"
 echo "🧪 加载的配置卡: $EXPERIMENT_NAME"
 echo "================================================================================"
 
-# 5. 直接拉起 torchrun (因为您已经在 cosmos-policy 的 conda 环境中了)
+# 5. 解决 Transformer Engine 在非 Docker 环境下的 ldconfig -p 报错bug
+NVRTC_PATH=$(find $PWD/.venv/lib -name "libnvrtc.so*" | grep -v "stubs" | head -n 1)
+if [[ -z "$NVRTC_PATH" ]]; then
+    NVRTC_PATH=$(find /usr/local/cuda*/lib64 -name "libnvrtc.so*" | grep -v "stubs" | head -n 1)
+fi
+if [[ -n "$NVRTC_PATH" ]]; then
+    mkdir -p .tmp_bin
+    cat << EOF > .tmp_bin/ldconfig
+#!/bin/bash
+if [[ "\$*" == *"-p"* ]]; then
+    /sbin/ldconfig -p 2>/dev/null
+    echo "	libnvrtc.so.11.2 (libc6,x86-64) => \$NVRTC_PATH"
+    echo "	libnvrtc.so (libc6,x86-64) => \$NVRTC_PATH"
+    exit 0
+fi
+/sbin/ldconfig "\$@"
+EOF
+    chmod +x .tmp_bin/ldconfig
+    export PATH="$PWD/.tmp_bin:$PATH"
+fi
+
+# 6. 直接拉起 torchrun (因为您已经在 cosmos-policy 的 conda 环境中了)
 python -m torch.distributed.run --nproc_per_node=${NUM_GPUS} --master_port=${MASTER_PORT} \
   -m cosmos_policy.scripts.train \
   --config=cosmos_policy/config/config.py -- \
