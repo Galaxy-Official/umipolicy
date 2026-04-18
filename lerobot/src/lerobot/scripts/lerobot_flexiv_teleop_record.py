@@ -201,13 +201,10 @@ class LeaderFKResolver:
                 pb.resetJointState(self.follow_arm, i, float(joint))
             self.initialized = True
                 
-        # To further stabilize 7DOF, we pass restPoses (the initial QPos of the robot)!
-        init_qpos = [-0.0, -0.698, -0.0, 1.571, -0.0, 0.698, -0.0]
         # For flexiv_rizon4.urdf, flange link is index 7.
         target_link_index = 7
         joints_tuple = pb.calculateInverseKinematics(
-            self.follow_arm, target_link_index, eef_pos, new_eef_orn,
-            restPoses=init_qpos
+            self.follow_arm, target_link_index, eef_pos, new_eef_orn
         )
         
         joints = list(joints_tuple[:7])
