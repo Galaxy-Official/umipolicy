@@ -103,7 +103,7 @@ class LeaderFKResolver:
             useFixedBase=True,
         )
 
-    def get_target_joints(self, dynamixel_joints):
+    def get_target_joints(self, dynamixel_joints, current_flexiv_joints=None):
         """Calculates IK to return 7 joint angles for Rizon 4."""
         if self.robot_type == "koch":
             # Joint mapping conversion for Koch
@@ -121,7 +121,53 @@ class LeaderFKResolver:
             
             # eef Link #4
             eef_pos = np.array(pb.getLinkState(self.robot_pb, 4)[0])
-            new_eef_orn = pb.getLinkState(self.robot_pb, 4)[1]
+            eef_orn = pb.getLinkState(self.robot_pb, 4)[1]
+            
+            eef_orn_matrix = np.array(pb.getMatrixFromQuaternion(eef_orn)).reshape(3, 3)
+            original_axes = np.eye(3)
+            z_in_eef = np.array([-1, 0, 0])
+            x_in_eef = np.array([0, -1, 0])
+            y_in_eef = np.array([0, 0, 1])
+            new_axes = np.array([x_in_eef, y_in_eef, z_in_eef]).T
+            new_axes = np.concatenate([new_axes, np.array([[1, 1, 1]])], axis=0)
+            
+            x_ab = np.array([np.dot(eef_orn_matrix[:, 0], original_axes[i]) for i in range(3)])
+            y_ab = np.array([np.dot(eef_orn_matrix[:, 1], original_axes[i]) for i in range(3)])
+            z_ab = np.array([np.dot(eef_orn_matrix[:, 2], original_axes[i]) for i in range(3)])
+            
+            T_ab = np.array([x_ab, y_ab, z_ab, eef_pos]).T
+            T_ab = np.concatenate([T_ab, np.array([[0, 0, 0, 1]])], axis=0)
+            rot_axes = (T_ab @ new_axes)[:3]
+            
+            def matrix2quaternion(matrix):
+                tr = matrix[0, 0] + matrix[1, 1] + matrix[2, 2]
+                if tr > 0:
+                    S = np.sqrt(tr + 1.0) * 2
+                    qw = 0.25 * S
+                    qx = (matrix[2, 1] - matrix[1, 2]) / S
+                    qy = (matrix[0, 2] - matrix[2, 0]) / S
+                    qz = (matrix[1, 0] - matrix[0, 1]) / S
+                elif matrix[0, 0] > matrix[1, 1] and matrix[0, 0] > matrix[2, 2]:
+                    S = np.sqrt(1.0 + matrix[0, 0] - matrix[1, 1] - matrix[2, 2]) * 2
+                    qw = (matrix[2, 1] - matrix[1, 2]) / S
+                    qx = 0.25 * S
+                    qy = (matrix[0, 1] + matrix[1, 0]) / S
+                    qz = (matrix[0, 2] + matrix[2, 0]) / S
+                elif matrix[1, 1] > matrix[2, 2]:
+                    S = np.sqrt(1.0 + matrix[1, 1] - matrix[0, 0] - matrix[2, 2]) * 2
+                    qw = (matrix[0, 2] - matrix[2, 0]) / S
+                    qx = (matrix[0, 1] + matrix[1, 0]) / S
+                    qy = 0.25 * S
+                    qz = (matrix[1, 2] + matrix[2, 1]) / S
+                else:
+                    S = np.sqrt(1.0 + matrix[2, 2] - matrix[0, 0] - matrix[1, 1]) * 2
+                    qw = (matrix[1, 0] - matrix[0, 1]) / S
+                    qx = (matrix[0, 2] + matrix[2, 0]) / S
+                    qy = (matrix[1, 2] + matrix[2, 1]) / S
+                    qz = 0.25 * S
+                return np.array([qx, qy, qz, qw])
+                
+            new_eef_orn = matrix2quaternion(rot_axes)
             gripper = -data[-1]
 
         elif self.robot_type == "so100":
@@ -188,6 +234,13 @@ class LeaderFKResolver:
 
         # Calculate IK using follow_arm
         eef_pos = eef_pos * 4.2
+        
+        # VERY IMPORTANT: Synchronize PyBullet's simulated follower arm with the REAL physical arm's position
+        # BEFORE running Inverse Kinematics! This prevents IK branch jumping/snapping!
+        if current_flexiv_joints is not None:
+            for i, joint in enumerate(current_flexiv_joints):
+                pb.resetJointState(self.follow_arm, i, float(joint))
+                
         joints_tuple = pb.calculateInverseKinematics(
             self.follow_arm, 8, eef_pos, new_eef_orn
         )
@@ -459,7 +512,8 @@ def main(args):
             leader_jnts = [leader_action_dict[f"{m}.pos"] for m in motors]
             
             # FK Resolution -> PyBullet internal IK -> Joint Actions
-            target_joints, _t_gripper = fk_resolver.get_target_joints(leader_jnts)
+            # We seed it with `arm_state` so PyBullet doesn't jump to strange branches
+            target_joints, _t_gripper = fk_resolver.get_target_joints(leader_jnts, current_flexiv_joints=arm_state)
             action_state = np.concatenate([target_joints, np.array([_t_gripper])])
             
             # Exec Flexiv Joint Position
