@@ -20,5 +20,5 @@ echo "Starting Real Robot Inference..."
 python -m lerobot.scripts.lerobot_flexiv \
     --pretrained_model_name_or_path "ckpt/010000/pretrained_model" \
     --task_name "tool_to_box" \
-    --ctrl_freq 20 \
+    --ctrl_freq 5 \
     --obs_horizon 2
