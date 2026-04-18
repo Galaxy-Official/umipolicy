@@ -60,4 +60,5 @@ cosmos-policy/checkpoints/
 cosmos-policy/ckpt/
 cosmos-policy/logs/
 cosmos-policy/wandb/
+cosmos-policy/data/
 cosmos-policy/train_out/
