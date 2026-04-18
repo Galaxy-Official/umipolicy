@@ -454,7 +454,7 @@ class SerialMotorsBus(MotorsBusBase):
 
         found_models = {}
         for id_ in self.ids:
-            model_nb = self.ping(id_)
+            model_nb = self.ping(id_, num_retry=5)
             if model_nb is not None:
                 found_models[id_] = model_nb
 
