@@ -25,7 +25,7 @@ echo "🧪 加载的配置卡: $EXPERIMENT_NAME"
 echo "================================================================================"
 
 # 5. 直接拉起 torchrun (因为您已经在 cosmos-policy 的 conda 环境中了)
-torchrun --nproc_per_node=${NUM_GPUS} --master_port=${MASTER_PORT} \
+python -m torch.distributed.run --nproc_per_node=${NUM_GPUS} --master_port=${MASTER_PORT} \
   -m cosmos_policy.scripts.train \
   --config=cosmos_policy/config/config.py -- \
   experiment="${EXPERIMENT_NAME}"
