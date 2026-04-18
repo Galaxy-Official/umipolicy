@@ -110,10 +110,10 @@ class LeaderFKResolver:
             data = [
                 -dynamixel_joints[0],
                 90 - dynamixel_joints[1],
-                90 - dynamixel_joints[2],
-                90 - dynamixel_joints[3],
-                dynamixel_joints[4] - 90,
-                -dynamixel_joints[5],
+                dynamixel_joints[2] - 90,
+                dynamixel_joints[3] - 90,
+                90 - dynamixel_joints[4],
+                dynamixel_joints[5],
             ]
             data = [angle * np.pi / 180 for angle in data]
             for i, joint in enumerate(data):
@@ -123,11 +123,13 @@ class LeaderFKResolver:
             eef_pos = np.array(pb.getLinkState(self.robot_pb, 4)[0])
             new_eef_orn = pb.getLinkState(self.robot_pb, 4)[1]
             
-            raw_gripper = -data[-1]
+            raw_gripper = -data[-1]  # Radians
             
-            # Map Koch radiant angle (roughly 0 to np.pi/2) to Flexiv meters (0 to 0.1)
-            # Clip between [0, 0.1] physically.
-            gripper = np.clip(raw_gripper / (np.pi / 2.0) * 0.1, 0.0, 0.1)
+            # According to the user log, the gripper was inverted. 
+            # In Mini-Tele, if it was producing negative radians, let's remap it cleanly.
+            # Dynamixel outputs angle map -> invert it to fix "opened means closed".
+            gripper_normalized = max(0.0, min(1.0, (np.pi/2 - abs(raw_gripper)) / (np.pi/2)))
+            gripper = gripper_normalized * 0.1
 
         elif self.robot_type == "so100":
             data = [
@@ -498,7 +500,7 @@ def main(args):
                 
             timestamp = time.perf_counter() - start_t
             
-        dataset.save_episode(task=args.single_task)
+        dataset.save_episode()
         recorded_episodes += 1
         logger.info(f"Episode {recorded_episodes} saved!")
         
