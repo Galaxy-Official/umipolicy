@@ -125,11 +125,7 @@ class LeaderFKResolver:
             new_eef_orn = pb.getLinkState(self.robot_pb, 4)[1]
             
             raw_gripper = -data[-1]  # Radians
-            
-            # According to the user log, the gripper was inverted. 
-            # In Mini-Tele, if it was producing negative radians, let's remap it cleanly.
-            # Dynamixel outputs angle map -> invert it to fix "opened means closed".
-            gripper_normalized = max(0.0, min(1.0, (np.pi/2 - abs(raw_gripper)) / (np.pi/2)))
+            gripper_normalized = max(0.0, min(1.0, abs(raw_gripper) / (np.pi/2)))
             gripper = gripper_normalized * 0.1
 
         elif self.robot_type == "so100":
@@ -207,8 +203,10 @@ class LeaderFKResolver:
                 
         # To further stabilize 7DOF, we pass restPoses (the initial QPos of the robot)!
         init_qpos = [-0.0, -0.698, -0.0, 1.571, -0.0, 0.698, -0.0]
+        # For flexiv_rizon4.urdf, flange link is index 7.
+        target_link_index = 7
         joints_tuple = pb.calculateInverseKinematics(
-            self.follow_arm, 8, eef_pos, new_eef_orn,
+            self.follow_arm, target_link_index, eef_pos, new_eef_orn,
             restPoses=init_qpos
         )
         
