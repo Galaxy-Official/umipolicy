@@ -95,13 +95,14 @@ class LeaderFKResolver:
             useFixedBase=True,
         )
 
-        flexiv_urdf_path = "urdf/assets/leap_hand/flexiv_leap.urdf"
+        flexiv_urdf_path = "urdf/assets/rizon/flexiv_rizon4.urdf"
         self.follow_arm = pb.loadURDF(
             flexiv_urdf_path,
             basePosition=[0.0, 0.0, 0.0],
             baseOrientation=[0, 0, 0.7071068, 0.7071068],
             useFixedBase=True,
         )
+        self.initialized = False
 
     def get_target_joints(self, dynamixel_joints, current_flexiv_joints=None):
         """Calculates IK to return 7 joint angles for Rizon 4."""
@@ -196,18 +197,24 @@ class LeaderFKResolver:
         # Calculate IK using follow_arm
         eef_pos = eef_pos * 4.2
         
-        # VERY IMPORTANT: Synchronize PyBullet's simulated follower arm with the REAL physical arm's position
-        # BEFORE running Inverse Kinematics! This prevents IK branch jumping/snapping!
-        if current_flexiv_joints is not None:
+        # VERY IMPORTANT: Synchronize PyBullet ONLY ONCE!
+        # If we synchronize it every single frame, the solver loses its gradient memory
+        # and randomly jumps into other null-space branches (e.g. elbow falls downwards).
+        if current_flexiv_joints is not None and not self.initialized:
             for i, joint in enumerate(current_flexiv_joints):
                 pb.resetJointState(self.follow_arm, i, float(joint))
+            self.initialized = True
                 
+        # To further stabilize 7DOF, we pass restPoses (the initial QPos of the robot)!
+        init_qpos = [-0.0, -0.698, -0.0, 1.571, -0.0, 0.698, -0.0]
         joints_tuple = pb.calculateInverseKinematics(
-            self.follow_arm, 8, eef_pos, new_eef_orn
+            self.follow_arm, 8, eef_pos, new_eef_orn,
+            restPoses=init_qpos
         )
         
         joints = list(joints_tuple[:7])
         for i, joint in enumerate(joints):
+            # Advance PyBullet's internal solver
             pb.resetJointState(self.follow_arm, i, joint)
             
         return joints, gripper
