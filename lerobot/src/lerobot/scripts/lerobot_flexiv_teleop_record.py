@@ -102,6 +102,12 @@ class LeaderFKResolver:
             baseOrientation=[0, 0, 0.7071068, 0.7071068],
             useFixedBase=True,
         )
+        
+        # Relative Tracking States
+        self.init_leader_pos = None
+        self.init_leader_orn = None
+        self.init_follower_pos = None
+        self.init_follower_orn = None
 
     def get_target_joints(self, dynamixel_joints, current_flexiv_joints=None):
         """Calculates IK to return 7 joint angles for Rizon 4."""
@@ -190,16 +196,35 @@ class LeaderFKResolver:
             new_eef_orn = matrix2quaternion(rot_axes)
             gripper = data[5]
 
-        # Calculate IK using follow_arm
-        eef_pos = eef_pos * 4.2
+        # --- RELATIVE EEF TRACKING LOGIC ---
+        target_link_index = 7 # flange
         
-        # VERY IMPORTANT: Synchronize PyBullet ONLY ONCE!
-        # If we synchronize it every single frame, the solver loses its gradient memory
-        # and randomly jumps into other null-space branches (e.g. elbow falls downwards).
-        # Reverting to EXACT Mini-Tele calculation parameters
-        target_link_index = 8
+        if self.init_leader_pos is None:
+            self.init_leader_pos = eef_pos
+            self.init_leader_orn = new_eef_orn
+            
+            # Sync to physical Flexiv on first frame to capture true hardware EEF
+            if current_flexiv_joints is not None:
+                for i, jv in enumerate(current_flexiv_joints):
+                    pb.resetJointState(self.follow_arm, i, float(jv))
+                    
+            state = pb.getLinkState(self.follow_arm, target_link_index)
+            self.init_follower_pos = np.array(state[0])
+            self.init_follower_orn = state[1]
+
+        # Compute translation delta scaled by 4.2
+        delta_pos = (eef_pos - self.init_leader_pos) * 4.2
+        target_pos = self.init_follower_pos + delta_pos
+        
+        # Compute orientation delta using pybullet matrix math: delta_orn = curr_leader * inv(init_leader)
+        inv_init_leader_pos, inv_init_leader_orn = pb.invertTransform([0,0,0], self.init_leader_orn)
+        _, delta_orn = pb.multiplyTransforms([0,0,0], new_eef_orn, [0,0,0], inv_init_leader_orn)
+        
+        # Target orn = delta_orn * init_follower_orn
+        _, target_orn = pb.multiplyTransforms([0,0,0], delta_orn, [0,0,0], self.init_follower_orn)
+
         joints_tuple = pb.calculateInverseKinematics(
-            self.follow_arm, target_link_index, eef_pos, new_eef_orn
+            self.follow_arm, target_link_index, target_pos, target_orn
         )
         
         joints = list(joints_tuple[:7])
