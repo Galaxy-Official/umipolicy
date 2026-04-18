@@ -23,6 +23,7 @@ from cosmos_policy._src.imaginaire.lazy_config import LazyDict
 from cosmos_policy._src.imaginaire.utils import log
 from cosmos_policy._src.imaginaire.utils.checkpoint_db import get_checkpoint_path  # noqa: F401
 from cosmos_policy.datasets.aloha_dataset import ALOHADataset
+from cosmos_policy.datasets.umi_dataset import UMIDataset
 from cosmos_policy.datasets.libero_dataset import LIBERODataset
 from cosmos_policy.datasets.robocasa_dataset import RoboCasaDataset
 from cosmos_policy.models.policy_video2world_model import CosmosPolicyVideo2WorldModel
@@ -477,6 +478,7 @@ def register_configs():
         cosmos_predict2_2b_480p_aloha_185_demos_4_tasks_mixture_foldshirt15_candiesinbowl45_candyinbag45_eggplantchickenonplate80__inference_only,
         cosmos_predict2_2b_480p_aloha_185_demos_4_tasks_mixture_foldshirt15_candiesinbowl45_candyinbag45_eggplantchickenonplate80__resumeFrom50K_648_rollouts_Vsprime_value_func,  # ALOHA planning model
         cosmos_predict2_2b_480p_aloha_185_demos_4_tasks_mixture_foldshirt15_candiesinbowl45_candyinbag45_eggplantchickenonplate80__resumeFrom50K_648_rollouts_Vsprime_value_func__inference_only,
+        cosmos_predict2_handcap, # Handcap model
     ]:
         experiment_name = _item["job"]["name"]
         log.info(f"Registering experiment: {experiment_name}")
@@ -486,3 +488,67 @@ def register_configs():
             name=experiment_name,
             node=_item,
         )
+
+# *** Handcap Dataset Configuration ***
+aloha_cosmos_policy_dataset_handcap = L(UMIDataset)(
+    data_dir=os.path.join(BASE_DATASETS_DIR),  # Directly points to handcapcosmos
+    t5_text_embeddings_path="", 
+    chunk_size=50,
+    use_image_aug=True,
+    use_stronger_image_aug=True,
+    use_proprio=True,
+    normalize_proprio=True,
+    normalize_actions=True,
+    num_duplicates_per_image=4,  # WAN 2.1 tokenizer: 4 images per latent frame
+    treat_demos_as_success_rollouts=True,  # Include demos as success rollouts
+    demonstration_sampling_prob=0.5,
+    success_rollout_sampling_prob=0.5,
+    return_value_function_returns=True,
+    gamma=0.998,
+    use_handcap=True,
+)
+
+cosmos_predict2_handcap = LazyDict(
+    dict(
+        defaults=[
+            "/experiment/cosmos_predict2_2b_480p_libero",
+            "_self_",
+        ],
+        scheduler=dict(
+            cycle_lengths=[20000, 100000000000000],
+            warm_up_steps=[2000, 0],
+            f_start=[1e-6, 0.06],
+            f_max=[1.0, 0.06],
+            f_min=[0.3, 0.06],
+        ),
+        model=L(CosmosPolicyVideo2WorldModel)(
+            config=dict(
+                state_t=11,  # Latent temporal dim (blank, proprio, left wrist, right wrist, primary, action, future proprio, future left wrist, future right wrist, future primary, value)
+                min_num_conditional_frames=5,  # 1 blank, 4 conditioning (proprio, left wrist, right wrist, primary)
+                max_num_conditional_frames=5,  # 1 blank, 4 conditioning (proprio, left wrist, right wrist, primary)
+                tokenizer=dict(
+                    chunk_duration=41,  # 1 blank + 40 images (4 proprio, 4 left wrist image, 4 right wrist image, 4 primary image, 4 action, 4 future proprio, 4 future left wrist, 4 future right wrist, 4 future primary, 4 value)
+                ),
+            ),
+        ),
+        dataloader_train=L(DataLoader)(
+            num_workers=12,
+            persistent_workers=True,
+            pin_memory=True,
+            dataset=aloha_cosmos_policy_dataset_handcap,
+            sampler=L(DistributedSampler)(
+                dataset=aloha_cosmos_policy_dataset_handcap,
+                num_replicas=L(parallel_state.get_data_parallel_world_size)(),
+                rank=L(parallel_state.get_data_parallel_rank)(),
+                shuffle=True,
+                seed=0,
+            ),
+            batch_size=25,
+            drop_last=True,
+        ),
+        job=dict(
+            group="cosmos_v2_finetune",
+            name="cosmos_predict2_handcap",
+        ),
+    )
+)

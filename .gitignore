@@ -54,3 +54,10 @@ cosmos-policy/build/
 .ipynb_checkpoints/
 **/.ipynb_checkpoints/
 
+# Cosmos Policy outputs & checkpoints
+cosmos-policy/outputs/
+cosmos-policy/checkpoints/
+cosmos-policy/ckpt/
+cosmos-policy/logs/
+cosmos-policy/wandb/
+cosmos-policy/train_out/
