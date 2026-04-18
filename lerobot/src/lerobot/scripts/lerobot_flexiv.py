@@ -362,31 +362,35 @@ def main(args):
                 if 'observation.tactiles.right' in obs_data:
                     observation["observation.tactiles.right"] = obs_data['observation.tactiles.right']
 
+                # Handcap explicit Tensor mapping (Manual caching since Handcap uses relative poses that invalidate internal LeRobot queues)
+                device = get_safe_torch_device(policy.config.device)
+                for k, v in observation.items():
+                    if isinstance(v, np.ndarray):
+                        observation[k] = torch.from_numpy(v).to(device).unsqueeze(0).to(torch.float32)
+                    elif isinstance(v, torch.Tensor):
+                        observation[k] = v.to(device).unsqueeze(0).to(torch.float32)
 
-                # LeRobot Action Prediction Hook
-                # Note: `action_values_dict` mapping heavily depends on LeRobot's architecture. 
-                # Assumes policy returns {"action": Tensor}
+                # Execute Dataset Stat Normalizations
+                observation = preprocessor(observation)
+                
+                # Perform OBS_IMAGES stacking required by diffusion model
+                if hasattr(policy.config, "image_features") and policy.config.image_features:
+                    # dim=-4 stacks cameras so shape matches -> (Batch, ObsHorizon, num_cams, C, H, W)
+                    observation['observation.images'] = torch.stack([observation[key] for key in policy.config.image_features], dim=-4)
+
                 try:
-                    action_values_dict = predict_action(
-                        observation=observation,
-                        policy=policy,
-                        device=get_safe_torch_device(policy.config.device),
-                        preprocessor=preprocessor,
-                        postprocessor=postprocessor,
-                        use_amp=policy.config.use_amp,
-                        task=None,
-                        robot_type=""
-                    )
-                    if isinstance(action_values_dict, dict) and "action" in action_values_dict:
-                        raw_action = action_values_dict["action"].squeeze(0).cpu().numpy()
-                    else:
-                        # Fallback simple tensor assumption
-                        raw_action = action_values_dict.squeeze(0).cpu().numpy()
+                    # Generate action chunk overriding standard `select_action` and `predict_action` abstractions
+                    action_chunk = policy.diffusion.generate_actions(observation)
+                    
+                    # Un-normalize using Action Postprocessor
+                    action_chunk_dict = {"action": action_chunk}
+                    action_chunk_dict = postprocessor(action_chunk_dict)
+                    
+                    raw_action = action_chunk_dict["action"].squeeze(0).cpu().numpy()
                 except Exception as eval_e:
-                    logger.warning(f"Failed using LeRobot predict action. Falling back to simple policy forward. Error: {eval_e}")
-                    # Direct inference if predict_action isn't perfectly mapped
-                    tensor_out = policy.select_action(observation)
-                    raw_action = tensor_out.squeeze(0).cpu().numpy()
+                    logger.error(f"Error when processing model generation: {str(eval_e)}\n{traceback.format_exc()}")
+                    signal_handler(None, None)
+
 
             # Handcap backwards logic: Action back to Original Absolute Coordinates
             abs_pose = np.concatenate([abs_pose, obs_data['robot0_gripper_width']], axis=-1)
