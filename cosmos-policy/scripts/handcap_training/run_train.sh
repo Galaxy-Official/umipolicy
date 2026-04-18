@@ -95,7 +95,11 @@ if [[ ! -f "${BASE_DATASETS_DIR}/t5_embeddings.pkl" ]]; then
     fi
 fi
 
-# 9. 直接拉起 torchrun (因为您已经在 cosmos-policy 的 conda 环境中了)
+# 9. 清理上一轮被 NaN 污染的特征状态文件，强制重新生成干净版本
+echo "清理可能存在的僵尸 NaN 缓存..."
+rm -vf "${BASE_DATASETS_DIR}/dataset_statistics_post_norm.json"
+
+# 10. 直接拉起 torchrun (因为您已经在 cosmos-policy 的 conda 环境中了)
 python -m torch.distributed.run --nproc_per_node=${NUM_GPUS} --master_port=${MASTER_PORT} \
   -m cosmos_policy.scripts.train \
   --config=cosmos_policy/config/config.py -- \
