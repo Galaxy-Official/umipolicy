@@ -21,6 +21,7 @@ __pycache__/
 lerobot/tests/artifacts/
 lerobot/src/Data
 lerobot/src/ckpt
+lerobot/src/urdf
 lerobot/src/outputs
 lerobot/realworld_replay_recording
 
