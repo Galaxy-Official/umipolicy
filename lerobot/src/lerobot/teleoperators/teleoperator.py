@@ -155,9 +155,15 @@ class Teleoperator(abc.ABC):
         """
         fpath = self.calibration_fpath if fpath is None else fpath
         import json
-        with open(fpath, "r") as f:
-            data = json.load(f)
-            self.calibration = {k: MotorCalibration(**v) for k, v in data.items()}
+        import os
+        try:
+            with open(fpath, "r") as f:
+                data = json.load(f)
+                self.calibration = {k: MotorCalibration(**v) for k, v in data.items()}
+        except json.JSONDecodeError:
+            print(f"Warning: Calibration file {fpath} was corrupted (probably from a previous crash). Deleting it.")
+            os.remove(fpath)
+            self.calibration = {}
 
     def _save_calibration(self, fpath: Path | None = None) -> None:
         """
