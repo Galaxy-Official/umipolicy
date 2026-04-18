@@ -479,6 +479,7 @@ class Wan2pt1VAEInterface(VideoTokenizerInterface):
             vae_pth=kwargs.get(
                 "vae_pth",
                 "ckpt/tokenizer.pth",
+            ),
             s3_credential_path=kwargs.get("s3_credential_path", "credentials/s3_training.secret"),
             temporal_window=kwargs.get("temporal_window", 4),
             is_parallel=kwargs.get("is_parallel", False),
