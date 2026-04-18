@@ -74,11 +74,14 @@ def init() -> int | None:
             rank0_only=False,
         )
     # Increase the L2 fetch granularity for faster speed.
-    _libcudart = ctypes.CDLL("libcudart.so")
-    # Set device limit on the current device.
-    p_value = ctypes.cast((ctypes.c_int * 1)(), ctypes.POINTER(ctypes.c_int))
-    _libcudart.cudaDeviceSetLimit(ctypes.c_int(0x05), ctypes.c_int(128))
-    _libcudart.cudaDeviceGetLimit(p_value, ctypes.c_int(0x05))
+    try:
+        _libcudart = ctypes.CDLL("libcudart.so")
+        # Set device limit on the current device.
+        p_value = ctypes.cast((ctypes.c_int * 1)(), ctypes.POINTER(ctypes.c_int))
+        _libcudart.cudaDeviceSetLimit(ctypes.c_int(0x05), ctypes.c_int(128))
+        _libcudart.cudaDeviceGetLimit(p_value, ctypes.c_int(0x05))
+    except Exception as e:
+        log.warning(f"Could not load libcudart.so: {e}. Skipping L2 fetch granularity increase.")
     log.info(f"Training with {get_world_size()} GPUs.")
 
 
