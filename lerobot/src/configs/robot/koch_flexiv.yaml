@@ -1,0 +1,41 @@
+_target_: lerobot.common.robot_devices.robots.flexiv.FlexivRobot
+robot_type: flexiv 
+
+leader_arm:
+  robot_path: lerobot/configs/robot/koch_leader.yaml
+  visualize: false
+
+ips:
+  robot_ip: 192.168.2.100
+  local_ip: 192.168.2.102
+
+cameras:
+  head:
+    _target_: lerobot.common.robot_devices.cameras.intelrealsense.IntelRealSenseCamera.init_from_sn
+    # name: Intel RealSense D435I
+    cam_sn: 135122074278
+    fps: 30
+    width: 640
+    height: 480
+    # use_depth: true
+  side:
+    _target_: lerobot.common.robot_devices.cameras.intelrealsense.IntelRealSenseCamera.init_from_sn
+    # name: Intel RealSense D435I
+    cam_sn: 233522075695
+    fps: 30
+    width: 640
+    height: 480
+    # use_depth: true
+  wrist:
+    _target_: lerobot.common.robot_devices.cameras.intelrealsense.IntelRealSenseCamera.init_from_sn
+    # name: Intel RealSense D435I
+    cam_sn: 233622078525
+    fps: 30
+    width: 640
+    height: 480
+    # use_depth: true
+
+# ~ Koch specific settings ~
+# Sets the leader arm in torque mode with the gripper motor set to this angle. This makes it possible
+# to squeeze the gripper and have it spring back to an open position on its own.
+gripper_open_degree: 35.156
