@@ -736,11 +736,17 @@ class DiffusionRgbEncoder(nn.Module):
         import logging
         weights_arg = config.pretrained_backbone_weights
         
-        # [Offline loading support] If the weights_arg is a local file, initialize without weights and load state dict natively.
+        # [Offline loading support & Inference hotfix] 
+        # When evaluating/inferencing, we don't need ImageNet weights because the entire model.safetensors is loaded.
+        # If it's a local path that's missing, just default to None to prevent torchvision KeyError.
+        if weights_arg is not None and isinstance(weights_arg, str) and (weights_arg.endswith('.pth') or weights_arg.endswith('.pt')):
+            if not os.path.isfile(weights_arg):
+                print(f"🌀 [Vision Encoder] Missing offline pretraining weight file: {weights_arg}, falling back to random init (HF checkpoint will populate weights natively during inference).")
+                weights_arg = None
+                
         if weights_arg is not None and os.path.isfile(weights_arg):
             backbone_model = getattr(torchvision.models, config.vision_backbone)(weights=None)
             state_dict = torch.load(weights_arg, map_location="cpu", weights_only=False)
-            # Handle possible key differences or nested state dicts
             if "state_dict" in state_dict:
                 state_dict = state_dict["state_dict"]
             backbone_model.load_state_dict(state_dict)
@@ -748,13 +754,17 @@ class DiffusionRgbEncoder(nn.Module):
             print(f"😎 [Vision Encoder] 成功加载预训练主视觉权重 '{config.vision_backbone}' 自离线文件: {weights_arg}")
             print(f"====================================\n")
         else:
-            backbone_model = getattr(torchvision.models, config.vision_backbone)(
-                weights=weights_arg
-            )
-            if weights_arg is not None:
-                print(f"😎 [Vision Encoder] 成功加载在线/自带预训练主视觉权重 '{config.vision_backbone}': {weights_arg}")
-            else:
-                print(f"🌀 [Vision Encoder] 未指定预训练权重，主视觉 '{config.vision_backbone}' 为随机初始化(From Scratch)!")
+            try:
+                backbone_model = getattr(torchvision.models, config.vision_backbone)(
+                    weights=weights_arg
+                )
+                if weights_arg is not None:
+                    print(f"😎 [Vision Encoder] 成功加载在线/自带预训练主视觉权重 '{config.vision_backbone}': {weights_arg}")
+                else:
+                    print(f"🌀 [Vision Encoder] 未指定预训练权重，主视觉 '{config.vision_backbone}' 为随机初始化(From Scratch)!")
+            except KeyError as e:
+                print(f"🌀 [Vision Encoder] Failed to resolve weights_arg '{weights_arg}', using weights=None! Error: {e}")
+                backbone_model = getattr(torchvision.models, config.vision_backbone)(weights=None)
         # Note: This assumes that the layer4 feature map is children()[-3]
         # TODO(alexander-soare): Use a safer alternative.
         self.backbone = nn.Sequential(*(list(backbone_model.children())[:-2]))
