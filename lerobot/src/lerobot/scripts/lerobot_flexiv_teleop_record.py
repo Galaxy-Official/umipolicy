@@ -99,7 +99,7 @@ class LeaderFKResolver:
         self.follow_arm = pb.loadURDF(
             flexiv_urdf_path,
             basePosition=[0.0, 0.0, 0.0],
-            baseOrientation=[0, 0, 0.7071068, 0.7071068],
+            baseOrientation=[0, 0, 0, 1],  # Standard base (removed 90 degree sideways mount from old leap hand)
             useFixedBase=True,
         )
         
@@ -196,35 +196,12 @@ class LeaderFKResolver:
             new_eef_orn = matrix2quaternion(rot_axes)
             gripper = data[5]
 
-        # --- RELATIVE EEF TRACKING LOGIC ---
-        target_link_index = 7 # flange
+        # We are performing ABSOLUTE 1:1 Workspace tracking.
+        # Ensure we target the real Flange Link (7) for the native flexiv_rizon4.urdf
+        target_link_index = 7
         
-        if self.init_leader_pos is None:
-            self.init_leader_pos = eef_pos
-            self.init_leader_orn = new_eef_orn
-            
-            # Sync to physical Flexiv on first frame to capture true hardware EEF
-            if current_flexiv_joints is not None:
-                for i, jv in enumerate(current_flexiv_joints):
-                    pb.resetJointState(self.follow_arm, i, float(jv))
-                    
-            state = pb.getLinkState(self.follow_arm, target_link_index)
-            self.init_follower_pos = np.array(state[0])
-            self.init_follower_orn = state[1]
-
-        # Compute translation delta scaled by 4.2
-        delta_pos = (eef_pos - self.init_leader_pos) * 4.2
-        target_pos = self.init_follower_pos + delta_pos
-        
-        # Compute orientation delta using pybullet matrix math: delta_orn = curr_leader * inv(init_leader)
-        inv_init_leader_pos, inv_init_leader_orn = pb.invertTransform([0,0,0], self.init_leader_orn)
-        _, delta_orn = pb.multiplyTransforms([0,0,0], new_eef_orn, [0,0,0], inv_init_leader_orn)
-        
-        # Target orn = delta_orn * init_follower_orn
-        _, target_orn = pb.multiplyTransforms([0,0,0], delta_orn, [0,0,0], self.init_follower_orn)
-
         joints_tuple = pb.calculateInverseKinematics(
-            self.follow_arm, target_link_index, target_pos, target_orn
+            self.follow_arm, target_link_index, eef_pos, new_eef_orn
         )
         
         joints = list(joints_tuple[:7])
