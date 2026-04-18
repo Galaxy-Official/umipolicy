@@ -18,7 +18,11 @@ from __future__ import annotations
 
 import importlib
 import logging
-from typing import Any, TypedDict, Unpack
+from typing import Any, TypedDict
+try:
+    from typing import Unpack
+except ImportError:
+    from typing_extensions import Unpack
 
 import torch
 
