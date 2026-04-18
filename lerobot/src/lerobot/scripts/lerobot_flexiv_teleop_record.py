@@ -308,7 +308,7 @@ def main(args):
     features = {
         "observation.images.wrist": {
             "dtype": "video",
-            "shape": (480, 640, 3),
+            "shape": (1536, 1536, 3),
             "names": ["height", "width", "channel"],
         },
         "observation.state": {
@@ -317,7 +317,7 @@ def main(args):
         },
         "action": {
             "dtype": "float32",
-            "shape": (8,),
+            "shape": (7,), # pos(3) + rotvec(3) + gripper(1)
         }
     }
     if args.use_tactile:
