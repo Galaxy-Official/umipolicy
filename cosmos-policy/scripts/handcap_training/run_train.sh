@@ -64,12 +64,6 @@ if [[ -n "$PYTHON_INCLUDE_DIR" ]]; then
 fi
 
 # 7. 自动修复服务器缺失 GUI 库 (libGL.so.1) 导致的 OpenCV 导入错误
-if ! python -c "import cv2" 2>/dev/null; then
-    echo "❌ 检测到 cv2 导入失败 (通常是因为服务器缺失 libGL.so.1 基本库)"
-    echo "正在自动将 opencv-python 替换为服务器专用的无头版本 opencv-python-headless..."
-    python -m pip uninstall -y opencv-python opencv-contrib-python
-    python -m pip install opencv-python-headless
-fi
 
 # 8. 直接拉起 torchrun (因为您已经在 cosmos-policy 的 conda 环境中了)
 python -m torch.distributed.run --nproc_per_node=${NUM_GPUS} --master_port=${MASTER_PORT} \
