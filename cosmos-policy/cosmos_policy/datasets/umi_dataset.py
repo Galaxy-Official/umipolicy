@@ -378,6 +378,13 @@ class UMIDataset(Dataset):
         if t5_text_embeddings_path != "":
             with open(t5_text_embeddings_path, "rb") as file:
                 self.t5_text_embeddings = pickle.load(file)
+        else:
+            import collections
+            import torch
+            # Fallback to zero-embeddings for single-task scenarios where T5 is unneeded
+            self.t5_text_embeddings = collections.defaultdict(
+                lambda: torch.zeros((1, 512, 1024), dtype=torch.bfloat16)
+            )
 
         # Calculate dataset statistics if the stats file doesn't exist
         self.dataset_stats = load_or_compute_dataset_statistics(

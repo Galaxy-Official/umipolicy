@@ -137,8 +137,9 @@ def get_text_embedding(
     max_length: int = 512,
     return_mask: bool = False,
     cache_dir: str = None,
-    local_files_only: str = False,
+    local_files_only: bool = False,
     text_encoder_class: str = "T5",
+    model_name: str = "google-t5/t5-11b",
 ) -> torch.Tensor:
     """Encodes text prompts into T5 embeddings.
 
@@ -159,7 +160,9 @@ def get_text_embedding(
 
     if encoder is None:
         if cosmos_encoder is None:
-            cosmos_encoder = CosmosT5TextEncoder(device=device, cache_dir=cache_dir, local_files_only=local_files_only)
+            cosmos_encoder = CosmosT5TextEncoder(
+                model_name=model_name, device=device, cache_dir=cache_dir, local_files_only=local_files_only
+            )
         encoder = cosmos_encoder
 
     encoder.text_encoder.to(device)

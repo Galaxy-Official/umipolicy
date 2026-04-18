@@ -70,9 +70,26 @@ fi
 
 # 7. 自动修复服务器缺失 GUI 库 (libGL.so.1) 导致的 OpenCV 导入错误
 
-# 8. 直接拉起 torchrun (因为您已经在 cosmos-policy 的 conda 环境中了)
+# 8. 离线预处理文本指令的 T5 嵌入 (防止在训练主进程中多开导致极高的 CUDA OOM)
+T5_CKPT_DIR="ckpt/google-t5/t5-11b"
+echo "正在检查是否存在离线 T5 特征 ${BASE_DATASETS_DIR}/t5_embeddings.pkl ..."
+if [[ ! -f "${BASE_DATASETS_DIR}/t5_embeddings.pkl" ]]; then
+    echo "未检测到 T5 离线缓存，即将为您生成。请确保 ${T5_CKPT_DIR} 下存放了 t5-11b 权重!"
+    python scripts/handcap_training/precompute_t5.py \
+        --prompt "$TASK_PROMPT" \
+        --data_dir "$BASE_DATASETS_DIR" \
+        --model_name "$T5_CKPT_DIR"
+    
+    if [ $? -ne 0 ]; then
+        echo "❌ T5 特征提取失败，停止训练。"
+        exit 1
+    fi
+fi
+
+# 9. 直接拉起 torchrun (因为您已经在 cosmos-policy 的 conda 环境中了)
 python -m torch.distributed.run --nproc_per_node=${NUM_GPUS} --master_port=${MASTER_PORT} \
   -m cosmos_policy.scripts.train \
   --config=cosmos_policy/config/config.py -- \
   experiment="${EXPERIMENT_NAME}" \
-  dataloader_train.dataset.default_command="${TASK_PROMPT}"
+  dataloader_train.dataset.default_command="${TASK_PROMPT}" \
+  dataloader_train.dataset.t5_text_embeddings_path="${BASE_DATASETS_DIR}/t5_embeddings.pkl"

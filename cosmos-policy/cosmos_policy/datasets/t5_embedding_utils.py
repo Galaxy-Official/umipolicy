@@ -27,7 +27,7 @@ from tqdm import tqdm
 from cosmos_policy._src.predict2.inference.get_t5_emb import get_text_embedding
 
 
-def generate_t5_embeddings(unique_commands: List[str]) -> Dict[str, torch.Tensor]:
+def generate_t5_embeddings(unique_commands: List[str], model_name: str = "google-t5/t5-11b") -> Dict[str, torch.Tensor]:
     """
     Generate T5 text embeddings for a list of commands.
 
@@ -40,7 +40,7 @@ def generate_t5_embeddings(unique_commands: List[str]) -> Dict[str, torch.Tensor
     t5_text_embeddings = dict()
     print("Getting text embeddings...")
     for command in tqdm(unique_commands):
-        embedding = get_text_embedding(command).to(dtype=torch.bfloat16).cpu()  # (1, 512, 1024)
+        embedding = get_text_embedding(command, model_name=model_name).to(dtype=torch.bfloat16).cpu()  # (1, 512, 1024)
         t5_text_embeddings[command] = embedding
     return t5_text_embeddings
 
