@@ -146,7 +146,7 @@ cosmos_predict2_2b_480p_libero = LazyDict(
             context_parallel_size=1,
         ),
         checkpoint=dict(
-            load_path=get_checkpoint_path("hf://nvidia/Cosmos-Predict2-2B-Video2World/model-480p-16fps.pt"),
+            load_path="ckpt/model-480p-16fps.pt",
             load_training_state=False,  # This means do not load train state from the base checkpoint above (load_path); but when resuming this job, will load train state
             strict_resume=False,
             save_iter=1000,
@@ -402,9 +402,7 @@ cosmos_predict2_2b_480p_aloha_185_demos_4_tasks_mixture_foldshirt15_candiesinbow
         ],
         checkpoint=dict(
             # Resume from 50K checkpoint of base Cosmos Policy run
-            load_path=get_checkpoint_path(
-                "hf://nvidia/Cosmos-Policy-ALOHA-Predict2-2B/Cosmos-Policy-ALOHA-Predict2-2B.pt"
-            ),
+            load_path="ckpt/Cosmos-Policy-ALOHA-Predict2-2B.pt",
         ),
         scheduler=dict(
             # LR decay for 15K steps in cycle #1, then decay by 5x and stay constant forever in cycle #2
@@ -520,6 +518,9 @@ cosmos_predict2_handcap = LazyDict(
             f_start=[1e-6, 0.06],
             f_max=[1.0, 0.06],
             f_min=[0.3, 0.06],
+        ),
+        checkpoint=dict(
+            load_path=os.path.abspath("ckpt/model-480p-16fps.pt"),
         ),
         model=L(CosmosPolicyVideo2WorldModel)(
             config=dict(
