@@ -155,12 +155,12 @@ class NewFlexivEnv:
     def tip_to_flange_pose(tip_pose):
         return mat_to_pose(pose_to_mat(tip_pose) @ NewFlexivEnv.tx_tip_flange)
 
-    def __init__(self, init_qpos, obs_horizon=2, robot_ip="192.168.2.100", use_gripper_width_mapping=False, pose_type="rotvec"):
+    def __init__(self, init_qpos, obs_horizon=2, robot_ip="192.168.2.100", local_ip="192.168.2.102", use_gripper_width_mapping=False, pose_type="rotvec"):
         self.obs_horizon = obs_horizon
         self.pose_type = pose_type
         
         # New RDK Setup
-        self.robot = flexivrdk.Robot(robot_ip)
+        self.robot = flexivrdk.Robot(robot_ip, local_ip)
         self.model = flexivrdk.Model(self.robot)
         self.gripper = flexivrdk.Gripper(self.robot)
         self.mode = flexivrdk.Mode
@@ -323,9 +323,10 @@ def main(args):
     # 2. Init Robot (New Flexiv RDK Setup)
     logger.info("Initializing NewFlexivEnv...")
     robot_ip = os.environ.get("FLEXIV_ROBOT_IP", "192.168.2.100")
+    local_ip = os.environ.get("FLEXIV_LOCAL_IP", "192.168.2.102")
     init_qpos = eval(os.environ.get("FLEXIV_INIT_POSE", "[-0.0, -0.698, -0.0, 1.571, -0.0, 0.698, -0.0]"))  # Give a safe default
     
-    env = NewFlexivEnv(init_qpos, obs_horizon=obs_horizon, robot_ip=robot_ip, use_gripper_width_mapping=False, pose_type="rotvec")
+    env = NewFlexivEnv(init_qpos, obs_horizon=obs_horizon, robot_ip=robot_ip, local_ip=local_ip, use_gripper_width_mapping=False, pose_type="rotvec")
     env.robot = env.robot_mock # Patch up observation thread calls
 
     
