@@ -1,0 +1,7 @@
+{
+    "wrist": {
+        "type": "mvs_cam",
+        "serial":"DA8942749", 
+        "exposure":20000
+    }
+}

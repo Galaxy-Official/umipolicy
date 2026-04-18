@@ -72,8 +72,11 @@ class ObservationThread(threading.Thread):
     def run(self):
         while self.running:
             cam_state, wrist_img, cam_cap_time = self.cam_wrist.read()
-            left_tactile_img, _ = self.cam_tactile_left.get_data()
-            right_tactile_img, _ = self.cam_tactile_right.get_data()
+            left_tactile_img, right_tactile_img = None, None
+            if self.cam_tactile_left is not None:
+                left_tactile_img, _ = self.cam_tactile_left.get_data()
+            if self.cam_tactile_right is not None:
+                right_tactile_img, _ = self.cam_tactile_right.get_data()
             
             eepose = self.env.robot.get_ee_pose()
             gripper_width = self.env.robot.get_gripper_width()
@@ -288,27 +291,28 @@ def main(args):
     
     # 1. Initialize Cameras (copied MVS logic via base_camera.json config)
     logger.info("Initializing Handcap Cameras (MVS & Webcams)...")
-    # Path to config moved from robopolicy to umipolicy
-    handcap_camera_cfg = Path(__file__).resolve().parent.parent.parent / "perception/configs/camera/handcap_camera.json"
+    if args.use_tactile:
+        handcap_camera_cfg = Path(__file__).resolve().parent.parent.parent / "perception/configs/camera/handcap_camera.json"
+    else:
+        handcap_camera_cfg = Path(__file__).resolve().parent.parent.parent / "perception/configs/camera/handcap_camera_no_tactile.json"
     cam_dict = BaseCamera.create_cameras_from_config(config_path=str(handcap_camera_cfg))
     
     cam_wrist = cam_dict["wrist"]
-    cam_tactile_left = cam_dict["left_tactile"]
-    cam_tactile_right = cam_dict["right_tactile"]
+    cam_tactile_left = cam_dict.get("left_tactile")
+    cam_tactile_right = cam_dict.get("right_tactile")
 
     # Grab initial frames to set up VideoWriter metadata
     cam_state, init_agent_img, cam_cap_time = cam_wrist.read()
     wrist_size = (init_agent_img.shape[1], init_agent_img.shape[0])
     
-    left_tactile_img, _ = cam_tactile_left.get_data()
-    left_size = (left_tactile_img.shape[1], left_tactile_img.shape[0])
-
-    right_tactile_img, _ = cam_tactile_right.get_data()
-    right_size = (right_tactile_img.shape[1], right_tactile_img.shape[0])
-
     wrist_video = cv2.VideoWriter(str(output_dir / 'view1_wrist.mp4'), fourcc, args.ctrl_freq, wrist_size)
-    tactile_left_video = cv2.VideoWriter(str(output_dir / 'view2_tactile_left.mp4'), fourcc, args.ctrl_freq, left_size)
-    tactile_right_video = cv2.VideoWriter(str(output_dir / 'view3_tactile_right.mp4'), fourcc, args.ctrl_freq, right_size)
+    if args.use_tactile:
+        left_tactile_img, _ = cam_tactile_left.get_data()
+        left_size = (left_tactile_img.shape[1], left_tactile_img.shape[0])
+        right_tactile_img, _ = cam_tactile_right.get_data()
+        right_size = (right_tactile_img.shape[1], right_tactile_img.shape[0])
+        tactile_left_video = cv2.VideoWriter(str(output_dir / 'view2_tactile_left.mp4'), fourcc, args.ctrl_freq, left_size)
+        tactile_right_video = cv2.VideoWriter(str(output_dir / 'view3_tactile_right.mp4'), fourcc, args.ctrl_freq, right_size)
 
     states_data = []
     
@@ -380,6 +384,10 @@ def main(args):
                 left_tactile_img = frame_data['left_tactile_img']
                 right_tactile_img = frame_data['right_tactile_img']
                 
+                if not args.use_tactile:
+                    left_tactile_img = np.zeros((480, 640, 3), dtype=np.uint8)
+                    right_tactile_img = np.zeros((480, 640, 3), dtype=np.uint8)
+                
                 wrist_frame_rgb = cv2.cvtColor(wrist_img, cv2.COLOR_BGR2RGB)
                 left_tactile_frame_rgb = cv2.cvtColor(left_tactile_img, cv2.COLOR_BGR2RGB)
                 right_tactile_frame_rgb = cv2.cvtColor(right_tactile_img, cv2.COLOR_BGR2RGB)
@@ -387,8 +395,9 @@ def main(args):
                 # Write live video
                 if i_hor == obs_horizon - 1:
                     wrist_video.write(wrist_frame_rgb)
-                    tactile_left_video.write(left_tactile_frame_rgb)
-                    tactile_right_video.write(right_tactile_frame_rgb)
+                    if args.use_tactile:
+                        tactile_left_video.write(left_tactile_frame_rgb)
+                        tactile_right_video.write(right_tactile_frame_rgb)
                 
                 # Preprocess for model
                 wrist_frame = wrist_frame_rgb / 255.0
@@ -505,6 +514,7 @@ if __name__ == "__main__":
     parser.add_argument("--ctrl_freq", action="store", type=int, default=30)
     parser.add_argument("--task_name", type=str, default="handcap_flexiv_mvs")
     parser.add_argument("--pretrained_model_name_or_path", type=str, required=True, help="HF Model or path to the pretrained policy")
+    parser.add_argument("--use_tactile", action="store_true", help="Use tactile cameras")
     
     args = parser.parse_args()
     main(args)
