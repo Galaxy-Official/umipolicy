@@ -62,6 +62,9 @@ def record(
     # Features are implicitly retrieved from old robot
     features = robot.features
 
+    if root is not None:
+        root = Path(root) / repo_id
+
     if resume:
         dataset = LeRobotDataset(
             repo_id,
