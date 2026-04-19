@@ -210,6 +210,7 @@ def record_episode(
     device,
     use_amp,
     fps,
+    task=None,
 ):
     control_loop(
         robot=robot,
@@ -222,6 +223,7 @@ def record_episode(
         use_amp=use_amp,
         fps=fps,
         teleoperate=policy is None,
+        task=task,
     )
 
 @safe_stop_image_writer
@@ -304,7 +306,8 @@ def control_loop(
 
         if dataset is not None:
             frame = {**observation, **action}
-            
+            if task is not None:
+                frame["task"] = task
             dataset.add_frame(frame)
 
         # print("cv2 --- start")

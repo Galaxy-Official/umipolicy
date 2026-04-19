@@ -134,6 +134,7 @@ def record(
             device=device,
             use_amp=use_amp,
             fps=fps,
+            task=task,
         )
 
         if not events["stop_recording"] and (
