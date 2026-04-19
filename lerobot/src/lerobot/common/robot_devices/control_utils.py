@@ -22,7 +22,6 @@ from lerobot.policies.factory import make_policy
 from lerobot.common.robot_devices.robots.utils import Robot
 from lerobot.common.robot_devices.utils import busy_wait
 from lerobot.common.utils.utils import get_safe_torch_device, init_hydra_config, set_global_seed
-from lerobot.scripts.eval import get_pretrained_policy_path
 import os
 import numpy as np
 
@@ -167,7 +166,7 @@ def init_keyboard_listener():
 
 def init_policy(pretrained_policy_name_or_path, policy_overrides):
     """Instantiate the policy and load fps, device and use_amp from config yaml"""
-    pretrained_policy_path = get_pretrained_policy_path(
+    raise NotImplementedError("Legacy eval init_policy removed.") # pretrained_policy_path = get_pretrained_policy_path(
         pretrained_policy_name_or_path)
     hydra_cfg = init_hydra_config(
         pretrained_policy_path / "config.yaml", policy_overrides)
