@@ -17,6 +17,7 @@ class MVSWrapperCamera:
         self.fps = fps
         self.width = width
         self.height = height
+        self.channels = 3
         
         self.is_connected = False
         self.camera = None
