@@ -228,6 +228,7 @@ class LeadArmReader:
         # data[5] closed is ~90, open is 0
         gripper_deg = abs(gripper * 180.0 / 3.14159265359)
         
+        # Test: maybe the open value is around 90 and closed is 0? 
         # Map 0 deg (Open) -> 0.09m, 90+ deg (Closed) -> 0.0m
         flexiv_width = 0.09 - (min(90.0, max(0.0, gripper_deg)) / 90.0) * 0.09
         
@@ -235,6 +236,14 @@ class LeadArmReader:
             flexiv_width = 0.09
         elif flexiv_width < 0.01: 
             flexiv_width = 0.01
+
+        if not hasattr(self, 'last_print_time'):
+            self.last_print_time = 0
+            
+        import time
+        if time.time() - self.last_print_time > 1.0:
+            print(f"Koch RAW rad: {gripper:.3f} | Gripper {gripper_deg:.1f} DEG -> Flexiv width {flexiv_width:.4f} m")
+            self.last_print_time = time.time()
 
         return joints, flexiv_width
 
