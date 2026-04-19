@@ -17,7 +17,7 @@ from loguru import logger
 
 from lerobot.datasets.image_writer import safe_stop_image_writer
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
-from lerobot.datasets.utils import get_features_from_robot
+from lerobot.common.datasets.utils import get_features_from_robot
 from lerobot.policies.factory import make_policy
 from lerobot.common.robot_devices.robots.utils import Robot
 from lerobot.common.robot_devices.utils import busy_wait
