@@ -223,11 +223,13 @@ class LeadArmReader:
         for i, joint in enumerate(joints):
             pb.resetJointState(self.follow_arm, i, joint)
 
-        # map Koch gripper radians (-rad) back to degrees
-        gripper_deg = gripper * -180.0 / 3.14159265359
+        # map Koch gripper radians back to degrees (it was returning data[-1])
+        # Since get_lead_arm_eef returns -data[-1], we reverse it back and keep it positive
+        # data[5] closed is ~90, open is 0
+        gripper_deg = abs(gripper * 180.0 / 3.14159265359)
         
-        # Map 0 deg (Open) -> 0.09m, 60+ deg (Closed) -> 0.0m
-        flexiv_width = 0.09 - (max(0.0, gripper_deg) / 60.0) * 0.09
+        # Map 0 deg (Open) -> 0.09m, 90+ deg (Closed) -> 0.0m
+        flexiv_width = 0.09 - (min(90.0, max(0.0, gripper_deg)) / 90.0) * 0.09
         
         if flexiv_width > 0.09: 
             flexiv_width = 0.09
