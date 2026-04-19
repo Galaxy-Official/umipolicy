@@ -1,11 +1,19 @@
+import json
+import logging
+import cv2
+import threading
+
+def busy_wait(seconds):
+    end_time = time.perf_counter() + seconds
+    while time.perf_counter() < end_time:
+        pass
+
 import os
 import sys
-import cv2
 import time
 import argparse
 import datetime
 import traceback
-import threading
 import numpy as np
 from collections import deque
 from pathlib import Path
@@ -73,8 +81,9 @@ class LeaderFKResolver:
             qx = (matrix[0, 2] + matrix[2, 0]) / S
             qy = (matrix[1, 2] + matrix[2, 1]) / S
             qz = 0.25 * S
-    def __init__(self, robot_type="koch"):
+    def __init__(self, robot_type="koch", leader_bus=None):
         self.robot_type = robot_type
+        self.leader_bus = leader_bus
         # Pybullet GUI overhead avoidance
         pb.connect(pb.DIRECT)
         pb.setAdditionalSearchPath(pybullet_data.getDataPath())
@@ -95,11 +104,11 @@ class LeaderFKResolver:
             useFixedBase=True,
         )
 
-        flexiv_urdf_path = "urdf/assets/rizon/flexiv_rizon4.urdf"
+        flexiv_urdf_path = "urdf/assets/leap_hand/flexiv_leap.urdf"
         self.follow_arm = pb.loadURDF(
             flexiv_urdf_path,
             basePosition=[0.0, 0.0, 0.0],
-            baseOrientation=[0, 0, 0, 1],  # Standard base (removed 90 degree sideways mount from old leap hand)
+            baseOrientation=[0, 0, 0.7071068, 0.7071068],  # Keep EXACTLY matching Yushun
             useFixedBase=True,
         )
         
@@ -109,18 +118,36 @@ class LeaderFKResolver:
         self.init_follower_pos = None
         self.init_follower_orn = None
 
-    def get_target_joints(self, dynamixel_joints, current_flexiv_joints=None):
+    def get_target_joints(self, raw_ticks, current_flexiv_joints=None):
         """Calculates IK to return 7 joint angles for Rizon 4."""
         if self.robot_type == "koch":
-            # LeRobot 3.0 provides zero-centered, calibrated dynamixel joints.
-            # No 90-degree offsets are needed! Applying offsets breaks the geometry.
+            # LeRobot 3.0 calibration permanently writes "Homing_Offset" into the Dynamixel EEPROM,
+            # destroying the absolute mechanical zero that LeRobot 2.0 relied upon.
+            # We MUST subtract it back out to recover true mechanical horn ticks.
+            try:
+                homing_offsets = self.leader_bus.sync_read("Homing_Offset", normalize=False)
+                mechanical_ticks = {k: raw_ticks[k] - homing_offsets[k] for k in raw_ticks}
+            except Exception:
+                # Fallback if leader_bus is not reachable here
+                mechanical_ticks = raw_ticks
+
+            # LeRobot 2.0 legacy tracking geometry using true mechanical encoder ticks
+            degrees = [
+                (mechanical_ticks["shoulder_pan"] - 2048) * 0.08789,
+                (mechanical_ticks["shoulder_lift"] - 2048) * 0.08789,
+                (mechanical_ticks["elbow_flex"] - 2048) * 0.08789,
+                (mechanical_ticks["wrist_flex"] - 2048) * 0.08789,
+                (mechanical_ticks["wrist_roll"] - 2048) * 0.08789,
+                (mechanical_ticks["gripper"] - 2048) * 0.08789,
+            ]
+            
             data = [
-                -dynamixel_joints[0],
-                dynamixel_joints[1],
-                dynamixel_joints[2],
-                dynamixel_joints[3],
-                dynamixel_joints[4],
-                dynamixel_joints[5],
+                -degrees[0],
+                90 - degrees[1],
+                90 - degrees[2],
+                90 - degrees[3],
+                degrees[4] - 90,
+                -degrees[5]
             ]
             data = [angle * np.pi / 180.0 for angle in data]
             for i, joint in enumerate(data[:6]):
@@ -129,10 +156,8 @@ class LeaderFKResolver:
             eef_pos = np.array(pb.getLinkState(self.robot_pb, 4)[0])
             new_eef_orn = pb.getLinkState(self.robot_pb, 4)[1]
             
-            # Simple Gripper Mapping
-            raw_gripper = dynamixel_joints[5]
-            gripper_normalized = max(0.0, min(1.0, abs(raw_gripper) / 90.0))
-            gripper = gripper_normalized * 0.1
+            # Return exact same numeric equation as Yushun's -data[-1] behavior
+            gripper = mechanical_ticks["gripper"] * 0.08789 * (np.pi / 180.0)
 
         elif self.robot_type == "so100":
             data = [
@@ -196,35 +221,14 @@ class LeaderFKResolver:
             new_eef_orn = matrix2quaternion(rot_axes)
             gripper = data[5]
 
-        # --- RELATIVE EEF TRACKING ---
-        target_link_index = 7 # flange
+        # --- ABSOLUTE EEF TRACKING (Matching Yushun) ---
+        target_link_index = 8 # flange in flexiv_leap
         
-        if self.init_leader_pos is None:
-            self.init_leader_pos = eef_pos
-            self.init_leader_orn = new_eef_orn
-            
-            # Sync to physical Flexiv on first frame to capture true hardware EEF
-            if current_flexiv_joints is not None:
-                for i, jv in enumerate(current_flexiv_joints):
-                    pb.resetJointState(self.follow_arm, i, float(jv))
-                    
-            state = pb.getLinkState(self.follow_arm, target_link_index)
-            self.init_follower_pos = np.array(state[0])
-            self.init_follower_orn = state[1]
-
-        # Compute translation delta scaled by 4.2
-        delta_pos = (eef_pos - self.init_leader_pos) * 4.2
-        target_pos = self.init_follower_pos + delta_pos
+        target_pos = eef_pos * 4.2
+        target_orn = new_eef_orn
         
-        # Compute orientation delta using pybullet matrix math: delta_orn = curr_leader * inv(init_leader)
-        inv_init_leader_pos, inv_init_leader_orn = pb.invertTransform([0,0,0], self.init_leader_orn)
-        _, delta_orn = pb.multiplyTransforms([0,0,0], new_eef_orn, [0,0,0], inv_init_leader_orn)
-        
-        # Target orn = delta_orn * init_follower_orn
-        _, target_orn = pb.multiplyTransforms([0,0,0], delta_orn, [0,0,0], self.init_follower_orn)
-
         joints_tuple = pb.calculateInverseKinematics(
-            self.follow_arm, target_link_index, target_pos, target_orn
+             self.follow_arm, target_link_index, target_pos, target_orn
         )
         
         joints = list(joints_tuple[:7])
@@ -232,7 +236,7 @@ class LeaderFKResolver:
             # Advance PyBullet's internal solver
             pb.resetJointState(self.follow_arm, i, joint)
             
-        return joints, gripper
+        return joints, gripper, eef_pos
 
 
 # ---------------------------------------------------------------------
@@ -378,7 +382,8 @@ def main(args):
         raise ValueError("Invalid teleop robot")
         
     leader.connect()
-    fk_resolver = LeaderFKResolver(robot_type=args.teleop)
+    # Reverting to pure mathematical tracking
+    fk_resolver = LeaderFKResolver(robot_type=args.teleop, leader_bus=leader.bus)
     
     # 4. Start Cameras Thread
     if cam_wrist is not None:
@@ -490,17 +495,17 @@ def main(args):
             curr_state = np.concatenate([arm_state, np.array([obs_gripper])])
             
             # --- 2. Action from Teleop
-            leader_action_dict = leader.get_action()
-            motors = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"]
-            leader_jnts = [leader_action_dict[f"{m}.pos"] for m in motors]
+            # Read pure raw ticks to avoid LeRobot 3.0 normalized boundaries messing up PyBullet IK geometric mappings
+            raw_ticks = leader.bus.sync_read("Present_Position", normalize=False)
             
             # FK Resolution -> PyBullet internal IK -> Joint Actions
             # We seed it with `arm_state` so PyBullet doesn't jump to strange branches
-            target_joints, _t_gripper = fk_resolver.get_target_joints(leader_jnts, current_flexiv_joints=arm_state)
-            action_state = np.concatenate([target_joints, np.array([_t_gripper])])
             
+            target_joints, _t_gripper, eef_pos = fk_resolver.get_target_joints(raw_ticks, current_flexiv_joints=arm_state)
+            action_state = np.concatenate([target_joints, np.array([_t_gripper])])
             # Exec Flexiv Joint Position
             env.exec_action_joints(target_joints=target_joints, target_width=_t_gripper)
+
 
             # --- 3. Save to Dataset properly (v3.0 standard)
             frame_dict = {
@@ -516,9 +521,10 @@ def main(args):
                 frame_dict["observation.tactiles.right"] = cv2.cvtColor(right_img, cv2.COLOR_BGR2RGB) if right_img is not None else np.zeros((480, 640, 3), dtype=np.uint8)
             dataset.add_frame(frame_dict)
             
+            # Wait for next frame using precise busy_wait
             dt = time.perf_counter() - t0
-            if dt < (1.0 / args.fps):
-                time.sleep((1.0 / args.fps) - dt)
+            sleep_time = max(0, 1.0 / args.fps - dt)
+            busy_wait(sleep_time)
                 
             timestamp = time.perf_counter() - start_t
             

@@ -17,13 +17,14 @@ export FLEXIV_LOCAL_IP="192.168.2.102"
 export FLEXIV_INIT_POSE="[-0.0, -0.698, -0.0, 1.571, -0.0, 0.698, -0.0]"
 
 # --- 采集参数配置 ---
-REPO_ID="umipolicy/handcap_flexiv_demo"
+ROOT_DIR="/home/rhos/umipolicy/lerobot/src/Data"
+REPO_ID="$(date +"%m-%d-%H-%M-%S")"
 TELEOP_TYPE="koch"                          # 可选: koch, so100
 TELEOP_PORT="/dev/ttyUSB0"                  # 主臂串口路径 (Linux: /dev/ttyUSB0)
-EPISODES=15                                 # 连续录入组数
-EPISODE_TIME_S=60                           # 每组总时长 (秒)
-FPS=30
-TASK_NAME="teleop grasp target"
+EPISODES=50                                 # 连续录入组数
+EPISODE_TIME_S=50                           # 每组总时长 (秒)
+FPS=24
+TASK_NAME="testmove."
 
 # --- 相机模式 ---
 # 设为 true 开启触觉相机 (webcam), false 仅使用 MVS 工业相机
@@ -49,6 +50,7 @@ fi
 
 python -m lerobot.scripts.lerobot_flexiv_teleop_record \
     --repo-id "${REPO_ID}" \
+    --root "${ROOT_DIR}" \
     --teleop "${TELEOP_TYPE}" \
     --teleop_port "${TELEOP_PORT}" \
     --num_episodes ${EPISODES} \
