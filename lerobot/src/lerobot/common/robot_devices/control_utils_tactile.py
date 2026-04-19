@@ -238,6 +238,7 @@ def control_loop(
     device=None,
     use_amp=None,
     fps=None,
+    task=None,
 ):
     # TODO(rcadene): Add option to record logs
     if not robot.is_connected:
