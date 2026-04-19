@@ -205,10 +205,13 @@ if __name__ == "__main__":
         type=int,
         default=0,
     )
-    parser.add_argument("--warmup-time-s", type=int, default=10)
-    parser.add_argument("--episode-time-s", type=int, default=60)
-    parser.add_argument("--reset-time-s", type=int, default=60)
-    parser.add_argument("--num-episodes", type=int, default=50)
+    parser.add_argument("--teleop", type=str, default="koch", help="Leader arm type")
+    parser.add_argument("--teleop_port", type=str, default="/dev/ttyUSB0", help="Leader arm port")
+    parser.add_argument("--use_tactile", action="store_true", help="Enable tactile cameras")
+    parser.add_argument("--warmup-time-s", "--warmup_time_s", dest="warmup_time_s", type=int, default=10)
+    parser.add_argument("--episode-time-s", "--episode_time_s", dest="episode_time_s", type=int, default=60)
+    parser.add_argument("--reset-time-s", "--reset_time_s", dest="reset_time_s", type=int, default=60)
+    parser.add_argument("--num-episodes", "--num_episodes", dest="num_episodes", type=int, default=50)
     parser.add_argument("--run-compute-stats", type=int, default=1)
     parser.add_argument("--push-to-hub", type=int, default=1)
     parser.add_argument("--tags", type=str, nargs="*")
@@ -225,6 +228,9 @@ if __name__ == "__main__":
     kwargs = vars(args)
     del kwargs["robot_path"]
     del kwargs["robot_overrides"]
+    del kwargs["teleop"]
+    del kwargs["teleop_port"]
+    del kwargs["use_tactile"]
 
     robot_cfg = init_hydra_config(robot_path, robot_overrides)
     robot = make_robot(robot_cfg)
