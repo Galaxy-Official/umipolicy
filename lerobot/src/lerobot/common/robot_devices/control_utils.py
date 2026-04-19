@@ -166,12 +166,7 @@ def init_keyboard_listener():
 
 def init_policy(pretrained_policy_name_or_path, policy_overrides):
     """Instantiate the policy and load fps, device and use_amp from config yaml"""
-    raise NotImplementedError("Legacy eval init_policy removed.") # pretrained_policy_path = get_pretrained_policy_path(
-        pretrained_policy_name_or_path)
-    hydra_cfg = init_hydra_config(
-        pretrained_policy_path / "config.yaml", policy_overrides)
-    policy = make_policy(hydra_cfg=hydra_cfg,
-                         pretrained_policy_name_or_path=pretrained_policy_path)
+    raise NotImplementedError("Legacy eval init_policy removed.")
 
     # Check device is available
     device = get_safe_torch_device(hydra_cfg.device, log=True)
