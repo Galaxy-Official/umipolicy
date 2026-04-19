@@ -222,13 +222,19 @@ class LeadArmReader:
             self.follow_arm, 8, eef_pos, eef_orn)
         for i, joint in enumerate(joints):
             pb.resetJointState(self.follow_arm, i, joint)
-            
-        # if gripper > 0.1: 
-        #     gripper = 0.1
-        # elif gripper < 0.1: 
-        #     gripper = 0.01
 
-        return joints, gripper
+        # map Koch gripper radians (-rad) back to degrees
+        gripper_deg = gripper * -180.0 / 3.14159265359
+        
+        # Map 0 deg (Open) -> 0.09m, 60+ deg (Closed) -> 0.0m
+        flexiv_width = 0.09 - (max(0.0, gripper_deg) / 60.0) * 0.09
+        
+        if flexiv_width > 0.09: 
+            flexiv_width = 0.09
+        elif flexiv_width < 0.01: 
+            flexiv_width = 0.01
+
+        return joints, flexiv_width
 
     def disconnect(self):
         self.arm.disconnect()
