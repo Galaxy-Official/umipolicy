@@ -225,12 +225,20 @@ class LeadArmReader:
 
         # map Koch gripper radians back to degrees (it was returning data[-1])
         # Since get_lead_arm_eef returns -data[-1], we reverse it back and keep it positive
-        # data[5] closed is ~90, open is 0
         gripper_deg = abs(gripper * 180.0 / 3.14159265359)
         
-        # Test: maybe the open value is around 90 and closed is 0? 
-        # Map 0 deg (Open) -> 0.09m, 90+ deg (Closed) -> 0.0m
-        flexiv_width = 0.09 - (min(90.0, max(0.0, gripper_deg)) / 90.0) * 0.09
+        # Real-world dynamic bounds: Open is ~68 deg, Closed is ~132 deg
+        open_deg = 68.0
+        closed_deg = 125.0 # Set slightly lower than 132 so you don't have to squeeze too hard!
+        
+        # Clamp degree
+        clamped_deg = min(closed_deg, max(open_deg, gripper_deg))
+        
+        # Ratio of closure: 0.0 (open) to 1.0 (closed)
+        closure_ratio = (clamped_deg - open_deg) / (closed_deg - open_deg)
+        
+        # Map 0.0 ratio (Open) -> 0.09m, 1.0 ratio (Closed) -> 0.01m
+        flexiv_width = 0.09 - closure_ratio * 0.08
         
         if flexiv_width > 0.09: 
             flexiv_width = 0.09
