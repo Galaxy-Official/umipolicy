@@ -34,15 +34,10 @@ follower_arms:
       gripper: [6, "xl330-m288"]
 
 cameras:
-  laptop:
-    _target_: lerobot.common.robot_devices.cameras.opencv.OpenCVCamera
-    camera_index: 0
-    fps: 30
-    width: 640
-    height: 480
-  phone:
-    _target_: lerobot.common.robot_devices.cameras.opencv.OpenCVCamera
-    camera_index: 1
+  mvs_camera:
+    _target_: lerobot.common.robot_devices.cameras.mvs.MVSWrapperCamera
+    serial: "DA8942731"
+    exposure: 20000
     fps: 30
     width: 640
     height: 480
