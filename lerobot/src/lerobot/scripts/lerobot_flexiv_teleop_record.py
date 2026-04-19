@@ -23,7 +23,8 @@ from lerobot.common.robot_devices.MiniTeleop_utils import LeadArmReader
 from lerobot.common.robot_devices.robots.factory import make_robot
 from lerobot.common.robot_devices.robots.utils import Robot
 from lerobot.common.robot_devices.utils import busy_wait, safe_disconnect
-from lerobot.utils.utils import init_hydra_config, log_say, none_or_int, init_logging
+from lerobot.common.utils.utils import init_hydra_config, none_or_int
+from lerobot.utils.utils import log_say, init_logging
 
 @safe_disconnect
 def record(
