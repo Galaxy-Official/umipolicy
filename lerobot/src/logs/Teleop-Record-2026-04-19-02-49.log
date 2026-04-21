@@ -1,0 +1,10 @@
+2026-04-19 14:49:20.822 | INFO     | __main__:record:101 - Warmup record == True
+2026-04-19 14:49:20.823 | INFO     | lerobot.common.robot_devices.control_utils_tactile:control_loop:261 - ============================
+2026-04-19 14:49:20.823 | INFO     | lerobot.common.robot_devices.control_utils_tactile:control_loop:262 - Start a New Episode
+2026-04-19 14:49:30.848 | INFO     | lerobot.common.robot_devices.control_utils_tactile:control_loop:345 - End of the Episode
+2026-04-19 14:49:30.848 | INFO     | lerobot.common.robot_devices.control_utils_tactile:control_loop:360 - ============================
+2026-04-19 14:49:30.848 | INFO     | __main__:record:112 - Warmup Record End =====
+2026-04-19 14:49:35.584 | INFO     | __main__:record:123 - Recording episode 0 == True
+2026-04-19 14:49:35.584 | INFO     | __main__:record:124 - Per episodes continues for 50 s.
+2026-04-19 14:49:35.584 | INFO     | lerobot.common.robot_devices.control_utils_tactile:control_loop:261 - ============================
+2026-04-19 14:49:35.584 | INFO     | lerobot.common.robot_devices.control_utils_tactile:control_loop:262 - Start a New Episode

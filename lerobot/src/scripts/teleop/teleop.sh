@@ -19,14 +19,14 @@ export DISPLAY=:0
 
 
 # --- 采集参数配置 ---
-ROOT_DIR="/Users/macbookpro/Desktop/workspace/umipolicy/lerobot/src/Data/teleop"
-TASK_NAME="testmove"
+ROOT_DIR="Data/teleop"
+TASK_NAME="block and box into paper box"
 REPO_ID="${TASK_NAME}_$(date +"%Y%m%d_%H%M%S")"
 TELEOP_TYPE="koch"                          # 可选: koch, so100
 TELEOP_PORT="/dev/ttyUSB0"                  # 主臂串口路径 (Linux: /dev/ttyUSB0)
 EPISODES=50                                 # 连续录入组数
 EPISODE_TIME_S=50                           # 每组总时长 (秒)
-FPS=24
+FPS=20
 
 # --- 相机模式 ---
 # 设为 true 开启触觉相机 (webcam), false 仅使用 MVS 工业相机
