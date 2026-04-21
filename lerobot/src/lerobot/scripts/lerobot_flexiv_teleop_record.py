@@ -217,6 +217,8 @@ def record(
     logger.info("--------------------------------------------------")
     logger.opt(colors=True).warning("<red>=> Current State: [PAUSED] (You can move arm freely. Press SPACE to start saving frames)</red>")
 
+    last_render_time = time.perf_counter()
+
     while not state["exit_app"] and recorded_episodes < num_episodes:
         start_loop_t = time.perf_counter()
 
@@ -229,18 +231,21 @@ def record(
             dataset.add_frame(frame)
 
         if display_cameras and not is_headless():
-            image_keys = [k for k in observation if "image" in k]
-            positions = {
-                "observation.images.wrist": (600, 520),
-                "observation.images.head": (0, 0),
-                "observation.images.left_tactile": (1200, 0),
-                "observation.images.right_tactile": (1200, 240)
-            }
-            for k in image_keys:
-                cv2.imshow(k, cv2.cvtColor(observation[k].numpy(), cv2.COLOR_RGB2BGR))
-                pos = positions.get(k, (0,0))
-                cv2.moveWindow(k, pos[0], pos[1])
-            cv2.waitKey(1)
+            now_t = time.perf_counter()
+            if now_t - last_render_time >= 0.033: # max 30 FPS UI refresh
+                image_keys = [k for k in observation if "image" in k]
+                positions = {
+                    "observation.images.wrist": (600, 520),
+                    "observation.images.head": (0, 0),
+                    "observation.images.left_tactile": (1200, 0),
+                    "observation.images.right_tactile": (1200, 240)
+                }
+                for k in image_keys:
+                    cv2.imshow(k, cv2.cvtColor(observation[k].numpy(), cv2.COLOR_RGB2BGR))
+                    pos = positions.get(k, (0,0))
+                    cv2.moveWindow(k, pos[0], pos[1])
+                cv2.waitKey(1)
+                last_render_time = now_t
 
         if state["discard_episode"]:
             dataset.clear_episode_buffer()
