@@ -218,6 +218,7 @@ def record(
     logger.opt(colors=True).warning("<red>=> Current State: [PAUSED] (You can move arm freely. Press SPACE to start saving frames)</red>")
 
     last_render_time = time.perf_counter()
+    _ui_debug_counter = 0
     visual_queue = None
     visual_process = None
     if display_cameras:
@@ -244,9 +245,22 @@ def record(
             now_t = time.perf_counter()
             if now_t - last_render_time >= 0.033: # max 30 FPS UI refresh
                 image_keys = [k for k in observation if "image" in k]
+                
+                # Debug print exactly once
+                if _ui_debug_counter == 0:
+                    logger.info(f"UI Debug: First payload intercepted. Detected keys: {image_keys}")
+                    _ui_debug_counter = 1
+                
                 render_dict = {}
                 for k in image_keys:
-                    render_dict[k] = cv2.cvtColor(observation[k].numpy(), cv2.COLOR_RGB2BGR)
+                    try:
+                        # Ensure we convert to numpy natively without errors
+                        render_dict[k] = cv2.cvtColor(observation[k].cpu().numpy(), cv2.COLOR_RGB2BGR)
+                    except Exception as e:
+                        if _ui_debug_counter == 1:
+                            logger.error(f"UI Debug Conversion Error: {e}")
+                            _ui_debug_counter = 2
+
                 try:
                     if not visual_queue.full():
                         visual_queue.put_nowait(render_dict)
