@@ -218,6 +218,16 @@ def record(
     logger.opt(colors=True).warning("<red>=> Current State: [PAUSED] (You can move arm freely. Press SPACE to start saving frames)</red>")
 
     last_render_time = time.perf_counter()
+    visual_queue = None
+    visual_process = None
+    if display_cameras and not is_headless():
+        import multiprocessing as mp
+        from lerobot.scripts.camera_viewer import viewer_process
+        mp.set_start_method('spawn', force=True)
+        visual_queue = mp.Queue(maxsize=1)
+        visual_process = mp.Process(target=viewer_process, args=(visual_queue,))
+        visual_process.daemon = True
+        visual_process.start()
 
     while not state["exit_app"] and recorded_episodes < num_episodes:
         start_loop_t = time.perf_counter()
@@ -230,21 +240,18 @@ def record(
                 frame["task"] = task
             dataset.add_frame(frame)
 
-        if display_cameras and not is_headless():
+        if display_cameras and not is_headless() and visual_queue is not None:
             now_t = time.perf_counter()
             if now_t - last_render_time >= 0.033: # max 30 FPS UI refresh
                 image_keys = [k for k in observation if "image" in k]
-                positions = {
-                    "observation.images.wrist": (600, 520),
-                    "observation.images.head": (0, 0),
-                    "observation.images.left_tactile": (1200, 0),
-                    "observation.images.right_tactile": (1200, 240)
-                }
+                render_dict = {}
                 for k in image_keys:
-                    cv2.imshow(k, cv2.cvtColor(observation[k].numpy(), cv2.COLOR_RGB2BGR))
-                    pos = positions.get(k, (0,0))
-                    cv2.moveWindow(k, pos[0], pos[1])
-                cv2.waitKey(1)
+                    render_dict[k] = cv2.cvtColor(observation[k].numpy(), cv2.COLOR_RGB2BGR)
+                try:
+                    if not visual_queue.full():
+                        visual_queue.put_nowait(render_dict)
+                except Exception:
+                    pass
                 last_render_time = now_t
 
         if state["discard_episode"]:
@@ -284,8 +291,13 @@ def record(
     robot.disconnect()
     if listener:
         listener.stop()
-    if display_cameras and not is_headless():
-        cv2.destroyAllWindows()
+        
+    if visual_process is not None:
+        try:
+            visual_queue.put_nowait("STOP")
+            visual_process.join(timeout=1.0)
+        except Exception:
+            pass
 
     # In LeRobot 3.0, consolidate is strictly removed/deprecated!
     # dataset.consolidate(run_compute_stats)
