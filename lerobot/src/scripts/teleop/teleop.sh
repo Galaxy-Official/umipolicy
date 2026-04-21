@@ -15,7 +15,7 @@ export PYTHONPATH="${SRC_DIR}:${PYTHONPATH}"
 export FLEXIV_ROBOT_IP="192.168.2.100"
 export FLEXIV_LOCAL_IP="192.168.2.102"
 export FLEXIV_INIT_POSE="[-0.0, -0.698, -0.0, 1.571, -0.0, 0.698, -0.0]"
-export DISPLAY=:0
+export DISPLAY=:1
 
 export XAUTHORITY="$HOME/.Xauthority"
 
