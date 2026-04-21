@@ -75,6 +75,7 @@ class FlexivRobot():
         for cam_key, cam in self.cameras.items():
             key = f"observation.images.{cam_key}"
             cam_ft[key] = {
+                "dtype": "video",
                 "shape": (cam.height, cam.width, cam.channels),
                 "names": ["height", "width", "channels"],
                 "info": None,
@@ -83,6 +84,7 @@ class FlexivRobot():
             if hasattr(cam, 'use_depth') and cam.use_depth:
                 depth_key = f"observation.depth.{cam_key}"
                 cam_ft[depth_key] = {
+                    "dtype": "video",
                     "shape": (cam.height, cam.width),
                     "names": ["height", "width"],
                     "info": None,
