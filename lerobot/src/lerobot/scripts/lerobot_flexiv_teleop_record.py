@@ -220,7 +220,7 @@ def record(
     last_render_time = time.perf_counter()
     visual_queue = None
     visual_process = None
-    if display_cameras and not is_headless():
+    if display_cameras:
         import multiprocessing as mp
         from lerobot.scripts.camera_viewer import viewer_process
         mp.set_start_method('spawn', force=True)
@@ -240,7 +240,7 @@ def record(
                 frame["task"] = task
             dataset.add_frame(frame)
 
-        if display_cameras and not is_headless() and visual_queue is not None:
+        if display_cameras and visual_queue is not None:
             now_t = time.perf_counter()
             if now_t - last_render_time >= 0.033: # max 30 FPS UI refresh
                 image_keys = [k for k in observation if "image" in k]
