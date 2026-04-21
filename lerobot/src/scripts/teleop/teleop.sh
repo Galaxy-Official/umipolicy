@@ -16,11 +16,11 @@ export FLEXIV_ROBOT_IP="192.168.2.100"
 export FLEXIV_LOCAL_IP="192.168.2.102"
 export FLEXIV_INIT_POSE="[-0.0, -0.698, -0.0, 1.571, -0.0, 0.698, -0.0]"
 export DISPLAY=:0
-
+export XAUTHORITY="$HOME/.Xauthority"
 
 # --- 采集参数配置 ---
 ROOT_DIR="Data/teleop"
-TASK_NAME="block and box into paper box"
+TASK_NAME="box and block into paper box"
 REPO_ID="${TASK_NAME}_$(date +"%Y%m%d_%H%M%S")"
 TELEOP_TYPE="koch"                          # 可选: koch, so100
 TELEOP_PORT="/dev/ttyUSB0"                  # 主臂串口路径 (Linux: /dev/ttyUSB0)
