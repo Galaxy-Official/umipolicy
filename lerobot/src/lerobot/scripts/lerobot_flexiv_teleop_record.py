@@ -184,7 +184,10 @@ def record(
                     timers["last_space"] = 0.0 
                 else:
                     state["is_recording"] = not state["is_recording"]
-                    logger.info(f"==> Recording state: {'[RECORDING (RED)]' if state['is_recording'] else '[PAUSED (BLUE)]'}")
+                    if state["is_recording"]:
+                        logger.opt(colors=True).info("<green>==> Recording state: [RECORDING]</green>")
+                    else:
+                        logger.opt(colors=True).warning("<red>==> Recording state: [PAUSED]</red>")
                     timers["last_space"] = now
             elif key == keyboard.Key.left:
                 logger.warning("==> Discarding current episode!")
@@ -212,7 +215,7 @@ def record(
     logger.info(" [LEFT]    : Discard currently unsaved recording")
     logger.info(" [ESC]     : Exit complete program and process dataset")
     logger.info("--------------------------------------------------")
-    logger.info("=> Current State: [PAUSED] (You can move arm freely. Press SPACE to start saving frames)")
+    logger.opt(colors=True).warning("<red>=> Current State: [PAUSED] (You can move arm freely. Press SPACE to start saving frames)</red>")
 
     while not state["exit_app"] and recorded_episodes < num_episodes:
         start_loop_t = time.perf_counter()
@@ -243,27 +246,19 @@ def record(
             dataset.clear_episode_buffer()
             state["is_recording"] = False
             state["discard_episode"] = False
-            logger.info("=> Episode discarded. Returned to [PAUSED]")
+            logger.opt(colors=True).warning("<red>=> Episode discarded. Returned to [PAUSED]</red>")
 
         if state["save_episode"]:
             try:
-                has_frames = False
-                if hasattr(dataset, "episode_buffer") and dataset.episode_buffer:
-                    if len(dataset.episode_buffer.get("action", [])) > 0:
-                        has_frames = True
-
-                if has_frames:
-                    dataset.save_episode(task)
-                    recorded_episodes += 1
-                    logger.success(f"=== Episode {recorded_episodes} Saved Successfully! ===")
-                else:
-                    logger.warning("Empty episode buffer! Ignoring save request.")
+                dataset.save_episode(task)
+                recorded_episodes += 1
+                logger.success(f"=== Episode {recorded_episodes} Saved Successfully! ===")
             except Exception as e:
-                logger.error(f"Failed to save episode: {e}")
+                logger.error(f"Failed to save episode: {e}. Is the buffer empty?")
             
             state["is_recording"] = False
             state["save_episode"] = False
-            logger.info("=> Current State: [PAUSED] (Move arms freely to next target, double-space triggered save)")
+            logger.opt(colors=True).warning("<red>=> Current State: [PAUSED] (Move arms freely to next target)</red>")
 
         if fps is not None:
             dt_s = time.perf_counter() - start_loop_t
