@@ -1,6 +1,7 @@
 import argparse
 import time
 import os
+import torch
 from pathlib import Path
 from typing import List
 from loguru import logger
@@ -60,7 +61,73 @@ def record(
         raise NotImplementedError("Only single-task recording is supported for now")
 
     # Features are implicitly retrieved from old robot
-    features = robot.features
+    features = robot.features.copy()
+    features["observation.state"] = {
+        "dtype": "float32", "shape": (10,), "names": ["x", "y", "z", "qx", "qy", "qz", "gripper", "none1", "none2", "none3"]
+    }
+    features["action"] = {
+        "dtype": "float32", "shape": (10,), "names": ["x", "y", "z", "qx", "qy", "qz", "gripper", "none1", "none2", "none3"]
+    }
+
+    # ---------------------------------------------------------
+    # Zero-Latency Monkey-patch 10D eef pose representation
+    # ---------------------------------------------------------
+    if hasattr(robot, "flexiv"):
+        import math
+        import lib_py.flexivrdk as flexivrdk
+        
+        def fast_new_get_state(*args):
+            # One single rapid pull directly from RDK
+            rs = flexivrdk.RobotStates()
+            robot.flexiv.getRobotStates(rs)
+            
+            pose = rs.tcpPose
+            qw, qx, qy, qz = pose[3], pose[4], pose[5], pose[6]
+            
+            # Pure native Python math for Quat -> RotVec (1000x faster than Scipy)
+            norm = math.sqrt(qw*qw + qx*qx + qy*qy + qz*qz)
+            if norm < 1e-12: norm = 1.0
+            qw, qx, qy, qz = qw/norm, qx/norm, qy/norm, qz/norm
+            
+            angle = 2 * math.acos(max(min(qw, 1.0), -1.0))
+            sin_half = math.sqrt(max(1.0 - qw * qw, 0.0))
+            if sin_half < 1e-6:
+                rx, ry, rz = 0.0, 0.0, 0.0
+            else:
+                rx = qx / sin_half * angle
+                ry = qy / sin_half * angle
+                rz = qz / sin_half * angle
+                
+            robot_states_gripper = flexivrdk.GripperStates()
+            robot.gripper.getGripperStates(robot_states_gripper)
+            gripper = float(robot_states_gripper.width)
+            
+            eef_10d = [pose[0], pose[1], pose[2], rx, ry, rz, gripper, 0.0, 0.0, 0.0]
+            return torch.tensor(eef_10d, dtype=torch.float32)
+            
+        # Instance method shadow ensures capture_observation leverages this natively without double-querying!
+        robot.get_state = fast_new_get_state
+        
+        old_teleop = robot.teleop_step
+        def new_teleop(*args, **kwargs):
+            res = old_teleop(*args, **kwargs)
+            if res is not None:
+                obs, act = res
+                # obs["observation.state"] is natively 10D thanks to fast_new_get_state
+                target_action = obs["observation.state"].tolist() 
+                try:
+                    if hasattr(robot, "teleop") and robot.teleop is not None:
+                        t_eef = robot.teleop.get_lead_arm_eef()
+                        if t_eef is not None and len(t_eef) > 0:
+                            t = t_eef[0]
+                            gripper = target_action[6]
+                            target_action = [t[0], t[1], t[2], t[3], t[4], t[5], gripper, 0.0, 0.0, 0.0]
+                except Exception:
+                    pass
+                act["action"] = torch.tensor(target_action, dtype=torch.float32)
+            return res
+        robot.teleop_step = new_teleop
+    # ---------------------------------------------------------
 
     if root is not None:
         root = Path(root) / repo_id
@@ -92,79 +159,157 @@ def record(
             image_writer_threads=num_image_writer_threads_per_camera * len(robot.cameras),
         )
 
+    from lerobot.common.robot_devices.control_utils_tactile import is_headless
+    import cv2
+    from pynput import keyboard
+
     if not robot.is_connected:
         robot.connect()
 
-    listener, events = init_keyboard_listener()
-
-    enable_teleoperation = policy is None
-    logger.info(f"Warmup record == {play_sounds}")
+    state = {
+        "is_recording": False, 
+        "save_episode": False, 
+        "discard_episode": False, 
+        "exit_app": False
+    }
     
-    warmup_record(
-        robot,
-        events,
-        enable_teleoperation,
-        warmup_time_s,
-        display_cameras,
-        fps
-    )
-    
-    logger.info("Warmup Record End =====")
-    if has_method(robot, "teleop_safety_stop"):
-        robot.teleop_safety_stop()
+    timers = {"last_space": 0.0}
 
+    def on_press(key):
+        try:
+            if key == keyboard.Key.space:
+                now = time.time()
+                if now - timers["last_space"] < 0.4:
+                    state["save_episode"] = True
+                    timers["last_space"] = 0.0 
+                else:
+                    state["is_recording"] = not state["is_recording"]
+                    logger.info(f"==> Recording state: {'[RECORDING (RED)]' if state['is_recording'] else '[PAUSED (BLUE)]'}")
+                    timers["last_space"] = now
+            elif key == keyboard.Key.left:
+                logger.warning("==> Discarding current episode!")
+                state["discard_episode"] = True
+            elif key == keyboard.Key.esc:
+                logger.warning("==> Exiting application!")
+                state["exit_app"] = True
+        except Exception:
+            pass
+
+    listener = None
+    if not is_headless():
+        listener = keyboard.Listener(on_press=on_press)
+        listener.start()
+    else:
+        logger.warning("Headless environment detected! Keyboard bindings will not work!")
+
+    logger.info("Initializing Home Position (Only running ONCE)...")
+    robot.set_robot_home_position()
+    
     recorded_episodes = 0
-    while True:
-        if recorded_episodes >= num_episodes:
-            break
+    logger.info("-------------------- Controls --------------------")
+    logger.info(" [SPACE] x1: Start / Pause recording (Toggle)")
+    logger.info(" [SPACE] x2: Save current recording & Add Episode +1")
+    logger.info(" [LEFT]    : Discard currently unsaved recording")
+    logger.info(" [ESC]     : Exit complete program and process dataset")
+    logger.info("--------------------------------------------------")
+    logger.info("=> Current State: [PAUSED] (You can move arm freely. Press SPACE to start saving frames)")
 
-        robot.set_robot_home_position()
+    while not state["exit_app"] and recorded_episodes < num_episodes:
+        start_loop_t = time.perf_counter()
 
-        logger.info(f"Recording episode {dataset.num_episodes} == {play_sounds}")
-        logger.info(f"Per episodes continues for {episode_time_s} s.")
-        
-        # record_episode natively calls dataset.add_frame({**observation, **action})
-        record_episode(
-            dataset=dataset,
-            robot=robot,
-            events=events,
-            episode_time_s=episode_time_s,
-            display_cameras=display_cameras,
-            policy=policy,
-            device=device,
-            use_amp=use_amp,
-            fps=fps,
-            task=task,
-        )
+        observation, action = robot.teleop_step(record_data=True)
 
-        if not events["stop_recording"] and (
-            (dataset.num_episodes < num_episodes - 1) or events["rerecord_episode"]
-        ):
-            logger.info(f"Reset the environment == {play_sounds}")
-            reset_environment(robot, events, reset_time_s)
+        if state["is_recording"]:
+            frame = {**observation, **action}
+            if task is not None:
+                frame["task"] = task
+            dataset.add_frame(frame)
 
-        if events["rerecord_episode"]:
-            logger.info(f"Re-record episode == {play_sounds}")
-            events["rerecord_episode"] = False
-            events["exit_early"] = False
+        if display_cameras and not is_headless():
+            image_keys = [k for k in observation if "image" in k]
+            positions = {
+                "observation.images.wrist": (600, 520),
+                "observation.images.head": (0, 0),
+                "observation.images.left_tactile": (1200, 0),
+                "observation.images.right_tactile": (1200, 240)
+            }
+            for k in image_keys:
+                cv2.imshow(k, cv2.cvtColor(observation[k].numpy(), cv2.COLOR_RGB2BGR))
+                pos = positions.get(k, (0,0))
+                cv2.moveWindow(k, pos[0], pos[1])
+            cv2.waitKey(1)
+
+        if state["discard_episode"]:
             dataset.clear_episode_buffer()
-            continue
+            state["is_recording"] = False
+            state["discard_episode"] = False
+            logger.info("=> Episode discarded. Returned to [PAUSED]")
 
-        # LeRobot 3.0 explicitly requires save_episode
-        dataset.save_episode(task)
-        recorded_episodes += 1
+        if state["save_episode"]:
+            try:
+                has_frames = False
+                if hasattr(dataset, "episode_buffer") and dataset.episode_buffer:
+                    if len(dataset.episode_buffer.get("action", [])) > 0:
+                        has_frames = True
 
-        if events["stop_recording"]:
-            break
+                if has_frames:
+                    dataset.save_episode(task)
+                    recorded_episodes += 1
+                    logger.success(f"=== Episode {recorded_episodes} Saved Successfully! ===")
+                else:
+                    logger.warning("Empty episode buffer! Ignoring save request.")
+            except Exception as e:
+                logger.error(f"Failed to save episode: {e}")
+            
+            state["is_recording"] = False
+            state["save_episode"] = False
+            logger.info("=> Current State: [PAUSED] (Move arms freely to next target, double-space triggered save)")
 
-    logger.info(f"Stop recording {play_sounds} blocking={True}")
-    stop_recording(robot, listener, display_cameras)
+        if fps is not None:
+            dt_s = time.perf_counter() - start_loop_t
+            busy_wait(1 / fps - dt_s)
+
+    logger.info("Disconnecting and cleaning up...")
+    robot.disconnect()
+    if listener:
+        listener.stop()
+    if display_cameras and not is_headless():
+        cv2.destroyAllWindows()
 
     # In LeRobot 3.0, consolidate is strictly removed/deprecated!
     # dataset.consolidate(run_compute_stats)
 
     if push_to_hub:
         dataset.push_to_hub(tags=tags)
+
+    # ---------------------------------
+    # Added for lingbot-va compatibility
+    # ---------------------------------
+    logger.info("Injecting action_config for lingbot-va compatibility...")
+    import json
+    episodes_file = dataset.root / "meta" / "episodes.jsonl"
+    if episodes_file.exists():
+        new_lines = []
+        with open(episodes_file, 'r') as f:
+            for line in f:
+                if not line.strip(): continue
+                data = json.loads(line)
+                length = data.get("length", 0)
+                if "tasks" not in data or not data["tasks"]:
+                    data["tasks"] = [task if task else "perform the manipulation task"]
+                
+                data["action_config"] = [
+                    {
+                        "start_frame": 0,
+                        "end_frame": length,
+                        "action_text": data["tasks"][0],
+                    }
+                ]
+                new_lines.append(json.dumps(data) + "\n")
+        
+        with open(episodes_file, 'w') as f:
+            f.writelines(new_lines)
+        logger.info(f"Successfully updated {episodes_file} to lingbot-va format.")
 
     logger.info(f"Exiting == {play_sounds}")
     return dataset

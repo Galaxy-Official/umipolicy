@@ -65,6 +65,13 @@ class ObservationThread(threading.Thread):
             left_tactile_img, _ = self.cam_tactile_left.get_data()
             right_tactile_img, _ = self.cam_tactile_right.get_data()
             
+            if wrist_img is not None and (wrist_img.shape[1] != 768 or wrist_img.shape[0] != 768):
+                wrist_img = cv2.resize(wrist_img, (768, 768), interpolation=cv2.INTER_AREA)
+            if left_tactile_img is not None and (left_tactile_img.shape[1] != 224 or left_tactile_img.shape[0] != 224):
+                left_tactile_img = cv2.resize(left_tactile_img, (224, 224), interpolation=cv2.INTER_LANCZOS4)
+            if right_tactile_img is not None and (right_tactile_img.shape[1] != 224 or right_tactile_img.shape[0] != 224):
+                right_tactile_img = cv2.resize(right_tactile_img, (224, 224), interpolation=cv2.INTER_LANCZOS4)
+            
             # Use SimpleFlexivEnv (FlexivInterface inside)
             eepose = self.env.robot.get_ee_pose()
             gripper_width = self.env.robot.get_gripper_width()
@@ -156,13 +163,13 @@ def main(args):
 
     # Grab initial frames to set up VideoWriter metadata
     cam_state, init_agent_img, cam_cap_time = cam_wrist.read()
-    wrist_size = (init_agent_img.shape[1], init_agent_img.shape[0])
+    wrist_size = (768, 768)
     
     left_tactile_img, _ = cam_tactile_left.get_data()
-    left_size = (left_tactile_img.shape[1], left_tactile_img.shape[0])
+    left_size = (224, 224)
 
     right_tactile_img, _ = cam_tactile_right.get_data()
-    right_size = (right_tactile_img.shape[1], right_tactile_img.shape[0])
+    right_size = (224, 224)
 
     wrist_video = cv2.VideoWriter(str(output_dir / 'view1_wrist.mp4'), fourcc, args.ctrl_freq, wrist_size)
     tactile_left_video = cv2.VideoWriter(str(output_dir / 'view2_tactile_left.mp4'), fourcc, args.ctrl_freq, left_size)
@@ -239,9 +246,9 @@ def main(args):
                 
                 # Write live video
                 if i_hor == obs_horizon - 1:
-                    wrist_video.write(wrist_frame_rgb)
-                    tactile_left_video.write(left_tactile_frame_rgb)
-                    tactile_right_video.write(right_tactile_frame_rgb)
+                    wrist_video.write(wrist_img)
+                    tactile_left_video.write(left_tactile_img)
+                    tactile_right_video.write(right_tactile_img)
                 
                 # Preprocess for model
                 wrist_frame = wrist_frame_rgb / 255.0
