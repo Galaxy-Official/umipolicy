@@ -47,6 +47,20 @@ class MVSWrapperCamera:
         # MVS returns BGR by cvtColor, convert to LeRobot RGB
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
+        # Apply resize with black padding strictly mirroring old _02_combine_... preprocessing
+        target_w, target_h = self.width, self.height
+        h, w = frame.shape[:2]
+        if h != target_h or w != target_w:
+            scale = min(target_w / w, target_h / h)
+            new_w, new_h = int(w * scale), int(h * scale)
+            resized = cv2.resize(frame, (new_w, new_h))
+            
+            pad_w = (target_w - new_w) // 2
+            pad_h = (target_h - new_h) // 2
+            canvas = np.zeros((target_h, target_w, 3), dtype=frame.dtype)
+            canvas[pad_h:pad_h+new_h, pad_w:pad_w+new_w] = resized
+            frame = canvas
+
         self.color_image = frame
         self.logs["delta_timestamp_s"] = time.perf_counter() - start_time
         self.logs["timestamp_utc"] = capture_timestamp_utc()

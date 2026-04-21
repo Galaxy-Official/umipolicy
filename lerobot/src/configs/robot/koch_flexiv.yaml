@@ -9,7 +9,8 @@ ips:
   robot_ip: 192.168.2.100
   local_ip: 192.168.2.102
 
-  mvs_camera:
+cameras:
+  wrist:
     _target_: lerobot.common.robot_devices.cameras.mvs.MVSWrapperCamera
     serial: "DA8942731"
     exposure: 20000
