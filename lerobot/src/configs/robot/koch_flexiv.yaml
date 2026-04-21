@@ -12,7 +12,7 @@ ips:
 cameras:
   wrist:
     _target_: lerobot.common.robot_devices.cameras.mvs.MVSWrapperCamera
-    serial: "DA8942731"
+    serial: "DA8942749"
     exposure: 20000
     fps: 30
     width: 640
