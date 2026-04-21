@@ -230,6 +230,23 @@ def record(
                 frame["task"] = task
             dataset.add_frame(frame)
 
+        if display_cameras and not is_headless():
+            now_t = time.perf_counter()
+            if now_t - last_render_time >= 0.033: # max 30 FPS UI refresh
+                image_keys = [k for k in observation if "image" in k]
+                positions = {
+                    "observation.images.wrist": (600, 520),
+                    "observation.images.head": (0, 0),
+                    "observation.images.left_tactile": (1200, 0),
+                    "observation.images.right_tactile": (1200, 240)
+                }
+                for k in image_keys:
+                    cv2.imshow(k, cv2.cvtColor(observation[k].numpy(), cv2.COLOR_RGB2BGR))
+                    pos = positions.get(k, (0,0))
+                    cv2.moveWindow(k, pos[0], pos[1])
+                cv2.waitKey(1)
+                last_render_time = now_t
+
         if state["discard_episode"]:
             dataset.clear_episode_buffer()
             state["is_recording"] = False
@@ -251,6 +268,17 @@ def record(
         if fps is not None:
             dt_s = time.perf_counter() - start_loop_t
             busy_wait(1 / fps - dt_s)
+
+    # ---------------------------------------------------------
+    # Auto-save buffer if ESC was pressed while still recording
+    # ---------------------------------------------------------
+    try:
+        if state["is_recording"]:
+            dataset.save_episode(task)
+            recorded_episodes += 1
+            logger.success(f"=== Auto-saved final partial episode {recorded_episodes} on exit! ===")
+    except Exception as e:
+        pass
 
     logger.info("Disconnecting and cleaning up...")
     robot.disconnect()
