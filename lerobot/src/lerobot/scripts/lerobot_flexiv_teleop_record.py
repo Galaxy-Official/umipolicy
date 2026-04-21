@@ -222,11 +222,11 @@ def record(
     visual_queue = None
     visual_process = None
     if display_cameras:
-        import multiprocessing as mp
-        from lerobot.scripts.camera_viewer import viewer_process
-        mp.set_start_method('spawn', force=True)
-        visual_queue = mp.Queue(maxsize=1)
-        visual_process = mp.Process(target=viewer_process, args=(visual_queue,))
+        import threading
+        import queue
+        from lerobot.scripts.camera_viewer import viewer_thread_func
+        visual_queue = queue.Queue(maxsize=1)
+        visual_process = threading.Thread(target=viewer_thread_func, args=(visual_queue,))
         visual_process.daemon = True
         visual_process.start()
 
