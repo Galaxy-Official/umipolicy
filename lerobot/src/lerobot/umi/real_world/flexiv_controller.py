@@ -218,7 +218,7 @@ class FlexivInterface:
 
         self.sim_rizon = sim_rizon = Rizon4(headless=True)
         robot_sn = os.environ.get("FLEXIV_ROBOT_SN", robot_ip)
-        self.robot = robot = flexivrdk.Robot(robot_sn, [local_ip])
+        self.robot = robot = flexivrdk.Robot(robot_sn)
         self.gripper = flexivrdk.Gripper(robot)
 
         if use_gripper_width_mapping:
