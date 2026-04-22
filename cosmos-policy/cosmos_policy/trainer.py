@@ -83,6 +83,13 @@ class CosmosPolicyTrainer(ImaginaireTrainer):
         if self.config.trainer.run_validation and iteration == 0 and self.config.trainer.run_validation_on_start:
             self.validate(model, dataloader_val, iteration=iteration)
         _end_training = False
+        
+        import time as timer
+        import os
+        import json
+        out_dir = os.environ.get("OUTPUT_DIR", self.config.trainer.get("log_dir", "."))
+        performance_log_path = os.path.join(out_dir, "performance_record.jsonl")
+
         with (
             maybe_enable_profiling(self.config, global_step=iteration) as torch_profiler,
             maybe_enable_memory_snapshot(self.config, global_step=iteration) as memory_profiler,
@@ -92,6 +99,7 @@ class CosmosPolicyTrainer(ImaginaireTrainer):
                 dataloader_train.sampler.set_epoch(epoch)
                 dataloader_train_iter = iter(dataloader_train)
                 while True:
+                    t_dl_start = timer.perf_counter()
                     self.callbacks.on_before_dataloading(iteration)
                     try:
                         with (
@@ -107,6 +115,8 @@ class CosmosPolicyTrainer(ImaginaireTrainer):
                         break
                     finally:
                         self.callbacks.on_after_dataloading(iteration)
+                    t_dl_end = timer.perf_counter()
+                    t_dl = t_dl_end - t_dl_start
                     # If max_iter is reached, exit the training loop.
                     if iteration >= self.config.trainer.max_iter:
                         _end_training = True
@@ -120,6 +130,8 @@ class CosmosPolicyTrainer(ImaginaireTrainer):
                         model_ddp.train()
                     assert model_ddp.training, "model_ddp is not in training mode."
                     assert model.training, "model is not in training mode."
+                    
+                    t_step_start = timer.perf_counter()
                     output_batch, loss, grad_accum_iter = self.training_step(
                         model_ddp,
                         optimizer,
@@ -132,6 +144,31 @@ class CosmosPolicyTrainer(ImaginaireTrainer):
                     self.callbacks.on_training_step_batch_end(
                         model, data_batch, output_batch, loss, iteration=iteration
                     )
+                    t_step_end = timer.perf_counter()
+                    t_update = t_step_end - t_step_start
+
+                    # Logging to JSONL
+                    unwrapped = model_ddp.module if hasattr(model_ddp, "module") else model_ddp
+                    prof = getattr(unwrapped, "_profiling", {})
+                    encoder_s = prof.get("encoder_s", 0.0)
+                    unet_s = prof.get("unet_s", 0.0)
+
+                    if distributed.get_world_size() == 1 or distributed.get_rank() == 0:
+                        if grad_accum_iter == 0:
+                            json_log = {
+                                "step": iteration,
+                                "dataloading_s": round(t_dl, 4),
+                                "encoder_s": round(encoder_s, 4),
+                                "unet_s": round(unet_s, 4),
+                                "update_s": round(t_update, 4),
+                                "avg_step_s": round(t_dl + t_update, 4)
+                            }
+                            try:
+                                with open(performance_log_path, "a") as f:
+                                    f.write(json.dumps(json_log) + "\n")
+                            except Exception:
+                                pass
+
                     # If the gradients are still being accumulated, continue to load the next training batch.
                     if grad_accum_iter != 0:
                         continue

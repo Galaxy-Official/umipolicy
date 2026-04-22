@@ -151,11 +151,7 @@ class Trainer:
         self.save_dir.mkdir(parents=True, exist_ok=True)
 
         if config.rank == 0:
-            self.profile_log_path = Path(config.save_root) / "train_profile.md"
-            if not self.profile_log_path.exists():
-                with open(self.profile_log_path, "w") as f:
-                    f.write("| Step | LR | Data Proc | Encoder/FWD | Backward | Optim | Total/Step | ETA |\n")
-                    f.write("|---|---|---|---|---|---|---|---|\n")
+            self.profile_log_path = Path(config.save_root) / "performance_record.jsonl"
 
         self.gradient_accumulation_steps = getattr(config, 'gradient_accumulation_steps', 1)
         self.train_loader_iter = None
@@ -309,9 +305,13 @@ class Trainer:
         return latent_loss / self.gradient_accumulation_steps, action_loss / self.gradient_accumulation_steps
 
     def _train_step(self, batch, batch_idx):
+        import time as timer
+        t_start = timer.perf_counter()
+        
         """Train a single batch, returns losses for logging."""
         batch = self.convert_input_format(batch)
         input_dict = self._prepare_input_dict(batch)
+        t_prep_end = timer.perf_counter()
         
         should_sync = (batch_idx + 1) % self.gradient_accumulation_steps == 0
         
@@ -328,7 +328,9 @@ class Trainer:
                         # Do not crash the entire process immediately, just print so the user can see it in logs, and optionally replace with zeros temporarily to see if network survives
                         input_dict[k][sub_k] = torch.nan_to_num(sub_v, 0.0)
 
+        t_fwd_start = timer.perf_counter()
         output = self.transformer(input_dict, train_mode=True)
+        t_fwd_end = timer.perf_counter()
         
         # Check output for NaNs
         if isinstance(output, tuple):
@@ -340,21 +342,36 @@ class Trainer:
         latent_loss, action_loss = self.compute_loss(input_dict, output)
         loss = latent_loss + action_loss
 
+        t_bwd_start = timer.perf_counter()
         loss.backward()
+        t_bwd_end = timer.perf_counter()
 
         losses = {'latent_loss': latent_loss.detach(), 'action_loss': action_loss.detach()}
         
         # Only update weights after accumulating gradients
         if should_sync:
+            t_opt_start = timer.perf_counter()
             total_norm = torch.nn.utils.clip_grad_norm_(self.transformer.parameters(), 2.0)
             self.optimizer.step()
             self.lr_scheduler.step()
             self.optimizer.zero_grad()
+            t_opt_end = timer.perf_counter()
             
             losses['total_norm'] = total_norm
             losses['should_log'] = True
+            losses['time_optim'] = t_opt_end - t_opt_start
         else:
             losses['should_log'] = False
+            losses['time_optim'] = 0.0
+
+        unwrapped_transformer = self.transformer.module if hasattr(self.transformer, "module") else self.transformer
+        prof = getattr(unwrapped_transformer, "_profiling", {})
+        
+        losses['time_data_prep'] = t_prep_end - t_start
+        losses['time_forward'] = t_fwd_end - t_fwd_start
+        losses['time_backward'] = t_bwd_end - t_bwd_start
+        losses['time_encoder'] = prof.get("encoder_s", 0.0)
+        losses['time_unet'] = prof.get("unet_s", 0.0)
 
         return losses
 
@@ -476,6 +493,8 @@ class Trainer:
         acc_time_forward = 0.0
         acc_time_backward = 0.0
         acc_time_optim = 0.0
+        acc_time_encoder = 0.0
+        acc_time_unet = 0.0
         import time
         acc_step_time_start = time.perf_counter()
 
@@ -495,6 +514,8 @@ class Trainer:
             acc_time_forward += losses.get('time_forward', 0.0)
             acc_time_backward += losses.get('time_backward', 0.0)
             acc_time_optim += losses.get('time_optim', 0.0)
+            acc_time_encoder += losses.get('time_encoder', 0.0)
+            acc_time_unet += losses.get('time_unet', 0.0)
             
             step_in_accumulation += 1
 
@@ -537,19 +558,23 @@ class Trainer:
                         avg_time_forward = acc_time_forward / profile_log_interval
                         avg_time_backward = acc_time_backward / profile_log_interval
                         avg_time_optim = acc_time_optim / profile_log_interval
+                        avg_time_encoder = acc_time_encoder / profile_log_interval
+                        avg_time_unet = acc_time_unet / profile_log_interval
                         
                         eta_seconds = (self.config.num_steps - self.step - 1) * step_time_total
                         eta_str = f"{int(eta_seconds // 3600)}h {int((eta_seconds % 3600) // 60)}m"
 
-                        log_line = (f"| {self.step:<6} | {lr:<8.2e} | "
-                                    f"{total_data_time:<8.2f}s | "
-                                    f"{avg_time_forward:<10.2f}s | "
-                                    f"{avg_time_backward:<7.2f}s | "
-                                    f"{avg_time_optim:<8.2f}s | "
-                                    f"{step_time_total:<9.2f}s | "
-                                    f"{eta_str} |\n")
+                        import json
+                        json_log = {
+                            "step": self.step,
+                            "dataloading_s": round(total_data_time, 4),
+                            "encoder_s": round(avg_time_encoder, 4),
+                            "unet_s": round(avg_time_unet, 4),
+                            "update_s": round(avg_time_backward + avg_time_optim, 4),
+                            "avg_step_s": round(step_time_total, 4)
+                        }
                         with open(self.profile_log_path, "a") as f:
-                            f.write(log_line)
+                            f.write(json.dumps(json_log) + "\n")
                         
                         # Reset timers
                         acc_time_data_load = 0.0
@@ -557,6 +582,8 @@ class Trainer:
                         acc_time_forward = 0.0
                         acc_time_backward = 0.0
                         acc_time_optim = 0.0
+                        acc_time_encoder = 0.0
+                        acc_time_unet = 0.0
                         acc_step_time_start = time.perf_counter()
                         profile_accum_count = 0
                     if self.config.enable_wandb:

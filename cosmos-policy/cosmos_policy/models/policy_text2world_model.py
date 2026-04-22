@@ -254,6 +254,10 @@ class CosmosPolicyDiffusionModel(BaseDiffusionModel):
                 - dict: additional data that used to debug / logging / callbacks
                 - Tensor: The computed loss for the training step as a PyTorch Tensor.
         """
+        import time as timer
+        t_start = timer.perf_counter()
+        self._profiling = getattr(self, "_profiling", {})
+
         self._update_train_stats(data_batch)
 
         # Obtain text embeddings online
@@ -272,6 +276,10 @@ class CosmosPolicyDiffusionModel(BaseDiffusionModel):
         x0_B_C_T_H_W, condition, epsilon_B_C_T_H_W, sigma_B_T = self.broadcast_split_for_model_parallelsim(
             x0_B_C_T_H_W, condition, epsilon_B_C_T_H_W, sigma_B_T
         )
+
+        t_encoder_end = timer.perf_counter()
+        self._profiling["encoder_s"] = t_encoder_end - t_start
+
         output_batch, kendall_loss, _, _ = self.compute_loss_with_epsilon_and_sigma(
             x0_B_C_T_H_W,
             condition,
@@ -407,7 +415,11 @@ class CosmosPolicyDiffusionModel(BaseDiffusionModel):
         # Generate noisy observations
         xt_B_C_T_H_W = mean_B_C_T_H_W + epsilon_B_C_T_H_W * rearrange(std_B_T, "b t -> b 1 t 1 1")
         # make prediction
+        import time as timer
+        t_unet_start = timer.perf_counter()
         model_pred = self.denoise(xt_B_C_T_H_W, sigma_B_T, condition)
+        t_unet_end = timer.perf_counter()
+        self._profiling["unet_s"] = t_unet_end - t_unet_start
         # loss weights for different noise levels
         weights_per_sigma_B_T = self.get_per_sigma_loss_weights(sigma=sigma_B_T)
 
