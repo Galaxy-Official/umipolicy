@@ -187,15 +187,14 @@ class FlexivRobot():
         # self.home_for_twist() # by zhiyuan_hong for specific situations
 
     def home(self) -> None:
-        mode = flexivrdk.Mode
-        self.log.info("Moving to home pose")
-        self.flexiv.SwitchMode(mode.NRT_PRIMITIVE_EXECUTION)
-        self.flexiv.ExecutePrimitive("Home()")
+        """Move the robot to its home position"""
+        self.flexiv.SwitchMode(flexivrdk.Mode.NRT_PRIMITIVE_EXECUTION)
+        self.flexiv.ExecutePrimitive("Home", dict())
         while self.flexiv.busy():
             time.sleep(1)
-        self.flexiv.ExecutePrimitive("ZeroFTSensor()")
+        self.flexiv.ExecutePrimitive("ZeroFTSensor", dict())
 
-        self.flexiv.SwitchMode(mode.NRT_JOINT_POSITION)
+        self.flexiv.SwitchMode(flexivrdk.Mode.NRT_JOINT_POSITION)
 
     def home_for_twist(self) -> None:
         # by zhiyuan_hong
