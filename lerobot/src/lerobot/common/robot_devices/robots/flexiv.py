@@ -55,7 +55,12 @@ class FlexivRobot():
         self.is_connected = False
         self.teleop = None
         self.logs = {}
-        self.log = flexivrdk.Log()
+        try:
+            import spdlog
+            self.log = spdlog.ConsoleLogger("Flexiv")
+        except ImportError:
+            import logging
+            self.log = logging.getLogger("Flexiv")
 
         self.state_keys = None
         self.action_keys = None
