@@ -76,8 +76,8 @@ def main():
         pr_traj = []
         video_writer = None
         
-        ep_start = dataset.episode_data_index["from"][ep_idx].item()
-        ep_end = dataset.episode_data_index["to"][ep_idx].item()
+        ep_start = dataset.meta.episodes[ep_idx]["dataset_from_index"]
+        ep_end = dataset.meta.episodes[ep_idx]["dataset_to_index"]
         ep_len = ep_end - ep_start
         
         output_name = f"{args.output_video}_{ep_idx:04d}.mp4"
