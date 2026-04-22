@@ -10,9 +10,9 @@ from pathlib import Path
 from loguru import logger
 import signal as signal_module
 from torchvision import transforms
-from lerobot.umi.common.pose_util import *
+from lerobot.scripts.umi_realworld.utils.pose_util import *
 from lerobot.scripts.umi_realworld.real_inference_util import *
-from lerobot.scripts.umi_realworld.flexiv_simple_env import SimpleFlexivEnv
+from lerobot.scripts.umi_realworld.env import NewFlexivEnv
 from lerobot.datasets.pose_utils import quat_to_rot
 
 from scipy.spatial.transform import Rotation
@@ -144,7 +144,7 @@ def main(args: argparse.Namespace):
     
     # get init robot pose
     init_qpos=eval(os.environ.get("FLEXIV_INIT_POSE", "Set the pose in environ"))
-    env = SimpleFlexivEnv(init_qpos, obs_horizon=args.obs_horizon, use_gripper_width_mapping=False,pose_type="rotvec")
+    env = NewFlexivEnv(init_qpos, obs_horizon=args.obs_horizon, use_gripper_width_mapping=False,pose_type="rotvec")
 
     logger.info(args)
     
