@@ -154,13 +154,15 @@ class FlexivRobot():
             while not self.flexiv.operational():
                 time.sleep(1)
 
-            self.log.info("Robot is now operational")
-
             self.log.info(f"Enabling gripper [{self.gripper_name}]")
             try:
                 self.gripper.Enable(self.gripper_name)
+                self.log.info(f"Gripper [{self.gripper_name}] enabled successfully. Initializing...")
+                self.gripper.Init()
+                self.log.info("Gripper initialization complete.")
             except Exception as e:
-                self.log.warn(f"Failed to enable gripper [{self.gripper_name}]: {e}")
+                self.log.error(f"Failed to enable or init gripper [{self.gripper_name}]: {e}")
+                print(f"\n\n[CRITICAL ERROR] Failed to enable gripper: {self.gripper_name}\nError: {e}\nPlease check if the gripper name in teleop.sh matches Flexiv Elements -> Settings -> Device!\n\n")
 
 
         except Exception as e:
