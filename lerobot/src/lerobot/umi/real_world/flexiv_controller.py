@@ -245,7 +245,7 @@ class FlexivInterface:
         """return pose in flexiv's coordinates using native RDK FK"""
         fp = self.robot.states().flange_pose
         # RDK returns [x, y, z, qw, qx, qy, qz]
-        pos = fp[:3]
+        pos = np.array(fp[:3])
         quat_wxyz = fp[3:]
         # scipy expects [x, y, z, w]
         quat_xyzw = [quat_wxyz[1], quat_wxyz[2], quat_wxyz[3], quat_wxyz[0]]
