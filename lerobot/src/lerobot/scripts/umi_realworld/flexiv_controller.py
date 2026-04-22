@@ -226,7 +226,7 @@ class FlexivInterface:
         self.robot = robot = flexivrdk.Robot(robot_sn, [actual_local_ip])
         self.gripper = flexivrdk.Gripper(robot)
 
-        gripper_name = os.environ.get("FLEXIV_GRIPPER_NAME", "Flexiv-Ovoid")
+        gripper_name = os.environ.get("FLEXIV_GRIPPER_NAME", "Flexiv-GN01")
         try:
             self.log.info(f"Enabling gripper [{gripper_name}] ...")
             self.gripper.Enable(gripper_name)
