@@ -104,75 +104,6 @@ class NullWidthMapper:
     def aruco_to_real(self, aruco_width):
         return aruco_width
     
-
-
-# class FlexivSimulationInterface:
-#     DOF = 7
-
-
-#     tx_flange_tip = np.identity(4)
-#     # tx_flange_tip[:3, 3] = np.array([-0.04, 0, 0.19])  # calibrated
-#     tx_flange_tip[:3, 3] = np.array([0, 0, 0.17])  # measured physically
-#     tx_tip_flange = np.linalg.inv(tx_flange_tip)
-
-
-#     @staticmethod
-#     def tip_to_flange_pose(tip_pose):
-#         return mat_to_pose(pose_to_mat(tip_pose) @ FlexivInterface.tx_tip_flange)
-
-
-#     def __init__(self, init_offset=None, init_qpos=None):
-#         self.sim_rizon = Rizon4(headless=False)
-
-#         if init_qpos is not None:
-#             assert len(init_qpos) == 7
-#             self.sim_rizon.set_joints(np.array(init_qpos))
-#             time.sleep(10)
-#             print("Set to desired q pos: ", init_qpos)
-
-#         if init_offset is not None:
-#             assert len(init_offset) == 3
-#             pose = self.get_ee_pose()
-#             pose = FlexivInterface.tip_to_flange_pose(pose)
-#             pos, rot = pose_to_pos_rot(pose)
-#             pos[0] += init_offset[0]
-#             pos[1] += init_offset[1]
-#             pos[2] += init_offset[2]
-#             pose = pos_rot_to_pose(pos, rot)
-#             self.send_flange_pose(pose)
-#             print("Set position offset: ", init_offset)
-#             time.sleep(10)
-
-
-#     # robot arm api
-
-#     def get_flange_pose(self):
-#         flange_pose = self.sim_rizon.get_catersian(self.sim_rizon.flange_link)
-#         pos, quat = flange_pose[:3], flange_pose[3:]  # xyzw quat for pybullet
-#         rot = st.Rotation.from_quat(quat, scalar_first=False)
-
-#         return pos_rot_to_pose(pos, rot)
-
-#     def get_ee_pose(self):
-        
-#         flange_pose = self.get_flange_pose()
-#         pos, rot = pose_to_pos_rot(flange_pose)
-
-#         tip_pose_mat = pos_rot_to_mat(np.array(pos), rot) @ FlexivInterface.tx_flange_tip
-#         umi_tip_pose = mat_to_pose(tip_pose_mat)
-
-#         return umi_tip_pose
-
-#     def send_flange_pose(self, flange_pose: np.ndarray):
-#         """receive pose in flexiv's coordinates, not umi coordinates"""
-
-#         # from pos-rotvec 6d pose to pos-quat 7d pose
-#         pos, rot = pose_to_pos_rot(flange_pose)
-#         quat = rot.as_quat(scalar_first=False)  # zyxw quat for scipy/pybullet api
-#         flange_pose = np.concatenate([pos, quat])
-#         next_joints = self.sim_rizon.calc_ik(flange_pose)  # pppqqqq -> q
-#         self.sim_rizon.set_joints(np.array(next_joints))
-
 _flexiv_lock = False
 
 
@@ -185,23 +116,8 @@ class FlexivInterface:
 
 
     tx_flange_tip = np.identity(4)
-    # tx_flange_tip[:3, 3] = np.array([-0.04, 0, 0.19])  # calibrated
     tx_flange_tip[:3, 3] = np.array([0, 0, 0.185])  # measured physically
     tx_tip_flange = np.linalg.inv(tx_flange_tip)
-
-
-    # tx_rotate_to_umi = np.identity(4)
-    # tx_rotate_to_umi[:3,:3] = st.Rotation.from_euler('z', [np.pi/2]).as_matrix()
-    # tx_rotate_from_umi = np.linalg.inv(tx_rotate_to_umi)
-
-
-    # tx_arbase_to_flexbase = np.identity(4)
-    # tx_arbase_to_flexbase[:3, :3] = st.Rotation.from_euler('z', [np.pi/2]).as_matrix()
-    # tx_flexbase_to_arbase = np.linalg.inv(tx_arbase_to_flexbase)
-
-    # tx_arpose_to_datapose = np.identity(4)
-    # tx_arpose_to_datapose[:3, :3] = st.Rotation.from_euler('zx', [np.pi, np.pi/2]).as_matrix()
-    # tx_datapose_to_arpose = np.linalg.inv(tx_arpose_to_datapose)
 
     @staticmethod
     def tip_to_flange_pose(tip_pose):
@@ -327,15 +243,6 @@ class FlexivInterface:
 
     def get_flange_pose(self):
         """return pose in flexiv's coordinates"""
-
-
-        # ## ABANDON: direct read flangePose from api
-        # flange_pose = self.robot_states.flangePose  # pppqqqq wzyx quat for flexiv api
-        # pos, quat = flange_pose[:3], flange_pose[3:]
-        # pos = np.array(pos)
-        # rot = st.Rotation.from_quat(quat, scalar_first=True)
-
-        ### read flangepose from pybullet
         self.sim_rizon.set_joints(self.get_joint_positions())
         flange_pose = self.sim_rizon.get_catersian(self.sim_rizon.flange_link)
         pos, quat = flange_pose[:3], flange_pose[3:]  # xyzw quat for pybullet
@@ -361,26 +268,11 @@ class FlexivInterface:
 
     def send_flange_pose(self, flange_pose: np.ndarray):
         
-        # print("Arm: ", time.monotonic(), flange_pose)
-        """receive pose in flexiv's coordinates, not umi coordinates"""
-        self.sim_rizon.set_joints(self.get_joint_positions())
-        # print("before IK", self.get_joint_positions())
-
-        ## Protect
-        # tcp_pose = mat_to_pose(pose_to_mat(flange_pose) @ FlexivInterface.tx_flange_tip)
-        # tcp_pose[2] = max(tcp_pose[2], 0.02)  # limit z
-        # flange_pose = mat_to_pose(pose_to_mat(tcp_pose) @ FlexivInterface.tx_tip_flange)
-
-        # print("Send flange", " ".join(["%5.2f"%x for x in flange_pose]))
-
         # from pos-rotvec 6d pose to pos-quat 7d pose
         pos, rot = pose_to_pos_rot(flange_pose)
         quat = rot.as_quat(scalar_first=False)  # zyxw quat for scipy/pybullet api
-        # quat = quat / np.linalg.norm(quat)
         flange_pose = np.concatenate([pos, quat])
-        # print("ext flange_pose", flange_pose)
         next_joints = self.sim_rizon.calc_ik(flange_pose)  # pppqqqq -> q
-        # print("next joints", next_joints)
 
         if self.verbose:
             print(
