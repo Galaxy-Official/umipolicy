@@ -143,7 +143,7 @@ def self_exam(log):
 # ---------------------------------------------------------------------
 # NewFlexivEnv (New RDK 1.8 API)
 # ---------------------------------------------------------------------
-from lerobot.umi.real_world.flexiv_controller import FlexivInterface
+import socket
 
 class NewFlexivEnv:
     def __init__(self, init_qpos, obs_horizon=2, robot_ip="192.168.2.100", local_ip="192.168.2.102", use_gripper_width_mapping=False, pose_type="rotvec"):
@@ -151,22 +151,53 @@ class NewFlexivEnv:
         self.pose_type = pose_type
         self.init_qpos = init_qpos
         
-        # New RDK Setup -> Legacy v0.9 Wrapper (Directly maps to SimpleFlexivEnv)
-        self.robot = FlexivInterface(
-            robot_ip=robot_ip, 
-            local_ip=local_ip, 
-            move_home=False, 
-            init_offset=None, 
-            init_qpos=None,  # Handled in reset() 
-            use_gripper_width_mapping=use_gripper_width_mapping
-        )
-        self.robot.send_gripper_state(0.12, 0.1, 10)
+        # New RDK 1.0+ Native Setup
+        robot_sn = os.environ.get("FLEXIV_ROBOT_SN", robot_ip)
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect((robot_ip, 1))
+            actual_local_ip = s.getsockname()[0]
+            s.close()
+        except Exception:
+            actual_local_ip = local_ip
+
+        self.robot = flexivrdk.Robot(robot_sn, [actual_local_ip])
+        self.gripper = flexivrdk.Gripper(self.robot)
+        self.model = flexivrdk.Model(self.robot)
+        
+        gripper_name = os.environ.get("FLEXIV_GRIPPER_NAME", "Flexiv-GN01")
+        try:
+            self.gripper.Enable(gripper_name)
+        except Exception as e:
+            logger.warning(f"Failed to enable gripper [{gripper_name}]: {e}")
+            
+        if self.robot.fault():
+            self.robot.ClearFault()
+            time.sleep(2)
+        self.robot.Enable()
+        while not self.robot.operational():
+            time.sleep(1)
+            
+        self.robot.SwitchMode(flexivrdk.Mode.NRT_JOINT_POSITION)
+        
+        max_width = self.gripper.params().max_width
+        self.gripper.Move(max_width, 0.1, 20)
         time.sleep(1)
+
+    def get_ee_pose(self):
+        pose = self.robot.states().tcp_pose
+        qw, qx, qy, qz = pose[3], pose[4], pose[5], pose[6]
+        rot = st.Rotation.from_quat([qx, qy, qz, qw], scalar_first=False)
+        return pos_rot_to_pose(pose[:3], rot)
+
+    def get_gripper_width(self):
+        return self.gripper.states().width
 
     def reset(self):
         logger.info("Resetting robot to initial joint positions...")
-        self.robot.send_joint_position(self.init_qpos)
-        self.robot.send_gripper_state(0.12, 0.1, 10)
+        self.robot.SendJointPosition(self.init_qpos, [0]*7, [0]*7, [1]*7, [0.5]*7)
+        max_width = self.gripper.params().max_width
+        self.gripper.Move(max_width, 0.1, 20)
         time.sleep(10) # Reduced from 15 to 10 for inference
 
     def exec_actions(self, actions, timestamps):
@@ -179,12 +210,19 @@ class NewFlexivEnv:
             tip_pose = new_actions[i, 0:6]
             target_width = new_actions[i, 6]
             
-            # Use original FlexivInterface methods
-            flange_pose = FlexivInterface.tip_to_flange_pose(tip_pose)
-            self.robot.send_flange_pose(flange_pose)
+            # Format target TCP pose to [x, y, z, qw, qx, qy, qz]
+            pos, rot = pose_to_pos_rot(tip_pose)
+            quat = rot.as_quat(scalar_first=False) # x,y,z,w
+            target_tcp = [pos[0], pos[1], pos[2], quat[3], quat[0], quat[1], quat[2]]
             
-            # Follow robopolicy gripper method
-            self.robot.send_gripper_state(max(target_width - 0.01, 0.005), 0.1, 10)
+            # Native IK calculation using RDK Model API
+            result = self.model.reachable(target_tcp, self.robot.states().q, True)
+            if result[0]:
+                self.robot.SendJointPosition(result[1], [0]*7, [0]*7, [1]*7, [0.5]*7)
+            else:
+                logger.warning(f"Pose {target_tcp} is not reachable!")
+            
+            self.gripper.Move(max(target_width - 0.01, 0.005), 0.1, 20)
             
             dt = new_timestamps[i] - time.time()
             if dt > 0:
