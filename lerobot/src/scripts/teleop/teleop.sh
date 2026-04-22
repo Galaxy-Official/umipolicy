@@ -13,6 +13,8 @@ export PYTHONPATH="${SRC_DIR}:${PYTHONPATH}"
 
 # --- 环境变量配置 ---
 export FLEXIV_ROBOT_IP="192.168.2.100"
+export FLEXIV_ROBOT_SN="Rizon4-062339"
+export FLEXIV_GRIPPER_NAME="Flexiv-GN01"
 export FLEXIV_LOCAL_IP="192.168.2.102"
 export FLEXIV_INIT_POSE="[-0.0, -0.698, -0.0, 1.571, -0.0, 0.698, -0.0]"
 
