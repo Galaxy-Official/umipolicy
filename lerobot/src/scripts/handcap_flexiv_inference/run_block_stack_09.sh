@@ -4,8 +4,8 @@
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 LEROBOT_SRC_DIR="$( cd "$SCRIPT_DIR/../.." && pwd )"
 
-# 设置 PYTHONPATH，确保优先加载 lib_py 目录下的 flexivrdk 0.9 环境
-export PYTHONPATH="$LEROBOT_SRC_DIR/lib_py:$LEROBOT_SRC_DIR:$PYTHONPATH"
+# 设置 PYTHONPATH
+export PYTHONPATH="$LEROBOT_SRC_DIR:$PYTHONPATH"
 
 # 设定真实的机器人连接参数（安全保护下的初始归零点）
 export FLEXIV_ROBOT_IP="192.168.2.100"
