@@ -123,9 +123,6 @@ class SimpleFlexivEnv:
         new_timestamps = timestamps[is_new]
         
         for i in range(len(new_actions)):
-            # user_input = input()
-            # if user_input.lower():
-            #     print('continue')
             flange_pose = new_actions[i, 0:  6]   # since we have only 1 robot
             target_width = new_actions[i, 6]
             # move robot

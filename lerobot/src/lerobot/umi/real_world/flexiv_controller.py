@@ -142,7 +142,7 @@ class FlexivInterface:
         except Exception:
             actual_local_ip = local_ip
 
-        self.sim_rizon = sim_rizon = Rizon4(headless=True)
+        # PyBullet initialization removed
         robot_sn = os.environ.get("FLEXIV_ROBOT_SN", robot_ip)
         
         self.log.info(f"Connecting to {robot_sn} via network interface {actual_local_ip} ...")
@@ -163,7 +163,8 @@ class FlexivInterface:
 
         self.verbose = os.environ.get("FLEXIV_VERBOSE", "0") == "1"
 
-        flange_lower_limits, flange_upper_limits = sim_rizon.get_flange_limits()
+        flange_lower_limits = np.array([-2.7925, -2.2689, -2.9670, -2.7052, -2.9670, -1.3962, -2.9670])
+        flange_upper_limits = np.array([2.7925, 2.2689, 2.9670, 2.7052, 2.9670, 4.5378, 2.9670])
         flange_lower_limits = torch.from_numpy(flange_lower_limits).to(device)
         flange_upper_limits = torch.from_numpy(flange_upper_limits).to(device)
 
@@ -218,7 +219,7 @@ class FlexivInterface:
 
         self.log.info("Done robot initializing")
 
-        self.sim_rizon.set_joints(self.robot.states().q)
+        # removed sim_rizon.set_joints
 
         # print(self.mode.__dict__)
         # self.robot.setMode(self.mode.RT_JOINT_POSITION)
@@ -242,11 +243,14 @@ class FlexivInterface:
     # robot arm api
 
     def get_flange_pose(self):
-        """return pose in flexiv's coordinates using PyBullet FK (matches URDF)"""
-        self.sim_rizon.set_joints(self.get_joint_positions())
-        flange_pose = self.sim_rizon.get_catersian(self.sim_rizon.flange_link)
-        pos, quat = flange_pose[:3], flange_pose[3:]  # xyzw quat for pybullet
-        rot = st.Rotation.from_quat(quat, scalar_first=False)
+        """return pose in flexiv's coordinates using native RDK FK"""
+        fp = self.robot.states().flange_pose
+        # RDK returns [x, y, z, qw, qx, qy, qz]
+        pos = np.array(fp[:3])
+        quat_wxyz = fp[3:]
+        # scipy expects [x, y, z, w]
+        quat_xyzw = [quat_wxyz[1], quat_wxyz[2], quat_wxyz[3], quat_wxyz[0]]
+        rot = st.Rotation.from_quat(quat_xyzw)
 
         return pos_rot_to_pose(pos, rot)
 
@@ -261,17 +265,29 @@ class FlexivInterface:
         return np.array(self.robot.states().dq)
 
     def send_flange_pose(self, flange_pose: np.ndarray):
-        
-        # from pos-rotvec 6d pose to pos-quat 7d pose
+        if not hasattr(self, 'model'):
+            self.model = flexivrdk.Model(self.robot)
+
+        # from pos-rotvec 6d pose to pos-quat 7d pose (w,x,y,z for RDK)
         pos, rot = pose_to_pos_rot(flange_pose)
-        quat = rot.as_quat(scalar_first=False)  # zyxw quat for scipy/pybullet api
-        flange_pose = np.concatenate([pos, quat])
-        next_joints = self.sim_rizon.calc_ik(flange_pose)  # pppqqqq -> q
+        quat_wxyz = rot.as_quat(scalar_first=True)
+        target_pose = np.concatenate([pos, quat_wxyz]).tolist()
+
+        curr_joints = self.get_joint_positions().tolist()
+        
+        # Use RDK's native IK solver
+        res, next_joints_list = self.model.reachable(target_pose, curr_joints, False)
+        
+        if not res:
+            self.log.error("IK failed, pose unreachable using RDK IK!")
+            return
+            
+        next_joints = np.array(next_joints_list)
 
         if self.verbose:
             print(
                 "[FlexivInterface] [DEBUG] Sending flange pose:",
-                " ".join(["%4.2f" % x for x in flange_pose]),
+                " ".join(["%4.2f" % x for x in target_pose]),
                 "(q =",
                 " ".join(["%4.2f" % x for x in next_joints]),
                 ")",
