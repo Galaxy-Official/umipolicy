@@ -216,9 +216,21 @@ class FlexivInterface:
         self.log = log = spdlog.ConsoleLogger("Flexiv")
         self.mode = flexivrdk.Mode
 
+        # Auto-detect the correct local IP that routes to the robot
+        import socket
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect((robot_ip, 1))
+            actual_local_ip = s.getsockname()[0]
+            s.close()
+        except Exception:
+            actual_local_ip = local_ip
+
         self.sim_rizon = sim_rizon = Rizon4(headless=True)
         robot_sn = os.environ.get("FLEXIV_ROBOT_SN", robot_ip)
-        self.robot = robot = flexivrdk.Robot(robot_sn)
+        
+        self.log.info(f"Connecting to {robot_sn} via network interface {actual_local_ip} ...")
+        self.robot = robot = flexivrdk.Robot(robot_sn, [actual_local_ip])
         self.gripper = flexivrdk.Gripper(robot)
 
         if use_gripper_width_mapping:
