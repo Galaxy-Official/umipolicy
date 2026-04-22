@@ -8,11 +8,13 @@ from pathlib import Path
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
+import scipy.spatial.transform as st
 import torch
 from tqdm import tqdm, trange
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.configs.policies import PreTrainedConfig
+from lerobot.datasets.pose_utils import rot6d_to_mat
 from lerobot.policies.factory import get_policy_class
 from lerobot.utils.utils import init_logging
 
@@ -83,18 +85,22 @@ def main():
 
     obs_keys = policy.config.input_features.keys()
     
-    fig = plt.figure(figsize=(12, 10))
-    # 设置大图：3D, 以及三个小图 X-Y, Y-Z, X-Z
-    ax_3d = fig.add_subplot(2, 2, 1, projection='3d')
-    ax_xy = fig.add_subplot(2, 2, 2)
-    ax_yz = fig.add_subplot(2, 2, 3)
-    ax_xz = fig.add_subplot(2, 2, 4)
+    fig = plt.figure(figsize=(16, 10))
+    # 设置大图：3D, 以及三个小图 X-Y, Y-Z, X-Z, 和旋转向量、夹爪宽度
+    ax_3d = fig.add_subplot(2, 3, 1, projection='3d')
+    ax_xy = fig.add_subplot(2, 3, 2)
+    ax_yz = fig.add_subplot(2, 3, 3)
+    ax_xz = fig.add_subplot(2, 3, 4)
+    ax_rot = fig.add_subplot(2, 3, 5)
+    ax_grip = fig.add_subplot(2, 3, 6)
 
     for ep_idx in selected_episodes:
         # Re-initialize state per episode
         policy.reset()
         gt_traj = []
         pr_traj = []
+        gt_gripper = []
+        pr_gripper = []
         video_writer = None
         
         ep_start = dataset.meta.episodes[ep_idx]["dataset_from_index"]
@@ -122,12 +128,22 @@ def main():
             action_pred = action_pred.squeeze(0).cpu().numpy()
             action_gt = item["action"].numpy()
             
-            # Assuming XYZ are the first 3 dims
-            gt_x, gt_y, gt_z = action_gt[0], action_gt[1], action_gt[2]
-            pr_x, pr_y, pr_z = action_pred[0], action_pred[1], action_pred[2]
+            # Decode 10D to 6D rotvec + 1D gripper
+            def get_6d_and_gripper(act):
+                pos = act[:3]
+                rot6d = act[3:9]
+                gripper = act[9]
+                rot_mat = rot6d_to_mat(rot6d)
+                rotvec = st.Rotation.from_matrix(rot_mat).as_rotvec()
+                return np.concatenate([pos, rotvec]), gripper
             
-            gt_traj.append([gt_x, gt_y, gt_z])
-            pr_traj.append([pr_x, pr_y, pr_z])
+            gt_6d, gt_grip = get_6d_and_gripper(action_gt)
+            pr_6d, pr_grip = get_6d_and_gripper(action_pred)
+            
+            gt_traj.append(gt_6d)
+            pr_traj.append(pr_6d)
+            gt_gripper.append(gt_grip)
+            pr_gripper.append(pr_grip)
             
             # --- Plotting --- #
             # We re-plot everything every N frames or just update, to be robust we clear and re-plot
@@ -136,9 +152,14 @@ def main():
                 ax_xy.clear()
                 ax_yz.clear()
                 ax_xz.clear()
+                ax_rot.clear()
+                ax_grip.clear()
                 
                 gt_arr = np.array(gt_traj)
                 pr_arr = np.array(pr_traj)
+                gt_g_arr = np.array(gt_gripper)
+                pr_g_arr = np.array(pr_gripper)
+                time_steps = np.arange(len(gt_arr))
                 
                 # 3D: Z down, Y left, X inward. matplotlib default: X right, Y in, Z up
                 ax_3d.plot(gt_arr[:, 0], gt_arr[:, 1], gt_arr[:, 2], label="GT", color='g', linewidth=2)
@@ -177,6 +198,24 @@ def main():
                 ax_xz.invert_yaxis()
                 ax_xz.set_title('X-Z View')
                 ax_xz.set_xlabel('X'); ax_xz.set_ylabel('Z (down)')
+                
+                # Rotvec
+                ax_rot.plot(time_steps, gt_arr[:, 3], 'g--', label='GT Rx')
+                ax_rot.plot(time_steps, gt_arr[:, 4], 'g-.', label='GT Ry')
+                ax_rot.plot(time_steps, gt_arr[:, 5], 'g:', label='GT Rz')
+                ax_rot.plot(time_steps, pr_arr[:, 3], 'r--', label='Pr Rx')
+                ax_rot.plot(time_steps, pr_arr[:, 4], 'r-.', label='Pr Ry')
+                ax_rot.plot(time_steps, pr_arr[:, 5], 'r:', label='Pr Rz')
+                ax_rot.set_title('Rotation Vector (Rx, Ry, Rz)')
+                ax_rot.set_xlabel('Steps')
+                ax_rot.legend(fontsize='small')
+
+                # Gripper
+                ax_grip.plot(time_steps, gt_g_arr, 'g', label='GT Gripper')
+                ax_grip.plot(time_steps, pr_g_arr, 'r', label='Pred Gripper')
+                ax_grip.set_title('Gripper Width')
+                ax_grip.set_xlabel('Steps')
+                ax_grip.legend(fontsize='small')
                 
                 plot_img = get_figure_canvas(fig)
             
