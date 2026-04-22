@@ -227,9 +227,10 @@ class LeadArmReader:
         # Since get_lead_arm_eef returns -data[-1], we reverse it back and keep it positive
         gripper_deg = abs(gripper * 180.0 / 3.14159265359)
         
-        # Real-world dynamic bounds: Open is ~68 deg, Closed is ~132 deg
-        open_deg = 68.0
-        closed_deg = 125.0 # Set slightly lower than 132 so you don't have to squeeze too hard!
+        # Real-world dynamic bounds based on user's calibration: 
+        # Open is ~83 deg, Closed is ~145 deg
+        open_deg = 82.0
+        closed_deg = 140.0 # Set slightly lower than 145 so you don't have to squeeze too hard!
         
         # Clamp degree
         clamped_deg = min(closed_deg, max(open_deg, gripper_deg))
