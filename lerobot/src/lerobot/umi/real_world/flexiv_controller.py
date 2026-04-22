@@ -242,14 +242,12 @@ class FlexivInterface:
     # robot arm api
 
     def get_flange_pose(self):
-        """return pose in flexiv's coordinates using native RDK FK"""
-        fp = self.robot.states().flange_pose
-        # RDK returns [x, y, z, qw, qx, qy, qz]
-        pos = np.array(fp[:3])
-        quat_wxyz = fp[3:]
-        # scipy expects [x, y, z, w]
-        quat_xyzw = [quat_wxyz[1], quat_wxyz[2], quat_wxyz[3], quat_wxyz[0]]
-        rot = st.Rotation.from_quat(quat_xyzw)
+        """return pose in flexiv's coordinates using PyBullet FK (matches URDF)"""
+        self.sim_rizon.set_joints(self.get_joint_positions())
+        flange_pose = self.sim_rizon.get_catersian(self.sim_rizon.flange_link)
+        pos, quat = flange_pose[:3], flange_pose[3:]  # xyzw quat for pybullet
+        rot = st.Rotation.from_quat(quat, scalar_first=False)
+
         return pos_rot_to_pose(pos, rot)
 
     def get_ee_pose(self):
