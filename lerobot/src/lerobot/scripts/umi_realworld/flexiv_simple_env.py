@@ -60,7 +60,7 @@ class SimpleFlexivEnv:
         )
         self.init_qpos = init_qpos
 
-        self.robot.send_gripper_state(0.12, 0.1, 10)
+        self.robot.send_gripper_state(0.09, 0.1, 10)
 
         self.obs_horizon = obs_horizon
         self.robot_downsample = robot_downsample
