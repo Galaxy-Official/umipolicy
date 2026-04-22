@@ -70,7 +70,6 @@ accelerate launch --multi_gpu --num_processes=4 --num_machines=1 --mixed_precisi
   --log_freq=500 \
   --wandb.mode="offline" \
   --policy.repo_id=tool_to_cups_0415/dp \
-  --resume  \
   ${RESUME_PARAM}
 
 # 注意: 上面的 --batch_size=128 代表 "单卡 Batch Size"。

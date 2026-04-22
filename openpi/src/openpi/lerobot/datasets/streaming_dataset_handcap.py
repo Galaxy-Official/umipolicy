@@ -24,6 +24,7 @@ import datasets
 import numpy as np
 import torch
 from datasets import load_dataset
+from lerobot.datasets.lerobot_dataset_handcap import process_to_relative_rot6d
 
 from lerobot.datasets.dataset_metadata_handcap import CODEBASE_VERSION, LeRobotDatasetMetadataHandcap
 from lerobot.datasets.feature_utils import get_delta_indices
@@ -519,6 +520,10 @@ class StreamingLeRobotDatasetHandcap(torch.utils.data.IterableDataset):
             result.update(update)
 
         result["task"] = self.meta.tasks.iloc[item["task_index"]].name
+
+        result["observation.state"], result["action"] = process_to_relative_rot6d(
+            result["observation.state"], result["action"]
+        )
 
         yield result
 
