@@ -18,10 +18,9 @@ from lerobot.utils.utils import init_logging
 
 def get_figure_canvas(fig):
     fig.canvas.draw()
-    img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-    img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-    # matplotlib uses RGB, cv2 uses BGR
-    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+    rgba = np.asarray(fig.canvas.buffer_rgba())
+    # Convert RGBA to BGR for cv2
+    img = cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGR)
     return img
 
 def main():
