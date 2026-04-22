@@ -34,7 +34,7 @@ import scipy.spatial.transform as st
 from lerobot.datasets.pose_utils import *
 from lerobot.scripts.umi_realworld.real_inference_util import *
 from lerobot.scripts.umi_realworld.utils.precise_sleep import precise_wait
-from lerobot.scripts.umi_realworld.env import NewFlexivEnv
+from lerobot.scripts.umi_realworld.env import FlexivEnv
 from perception.cameras.base_camera import BaseCamera
 
 
@@ -190,12 +190,12 @@ def main(args):
     signal_module.signal(signal_module.SIGTERM, signal_handler) 
 
     # 2. Init Robot (New Flexiv RDK Setup)
-    logger.info("Initializing NewFlexivEnv...")
+    logger.info("Initializing FlexivEnv...")
     robot_ip = os.environ.get("FLEXIV_ROBOT_IP", "192.168.2.100")
     local_ip = os.environ.get("FLEXIV_LOCAL_IP", "192.168.2.102")
     init_qpos = eval(os.environ.get("FLEXIV_INIT_POSE", "[-0.0, -0.698, -0.0, 1.571, -0.0, 0.698, -0.0]"))  # Give a safe default
     
-    env = NewFlexivEnv(init_qpos, obs_horizon=obs_horizon, robot_ip=robot_ip, local_ip=local_ip, use_gripper_width_mapping=False, pose_type="rotvec")
+    env = FlexivEnv(init_qpos, obs_horizon=obs_horizon, robot_ip=robot_ip, local_ip=local_ip, use_gripper_width_mapping=False, pose_type="rotvec")
 
     
     # Check robot fault

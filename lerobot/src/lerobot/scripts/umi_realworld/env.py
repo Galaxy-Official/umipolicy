@@ -6,7 +6,7 @@ import scipy.spatial.transform as st
 from loguru import logger
 from lerobot.datasets.pose_utils import pos_rot_to_pose, pose_to_pos_rot
 
-class NewFlexivEnv:
+class FlexivEnv:
     def __init__(self, init_qpos, obs_horizon=2, robot_ip="192.168.2.100", local_ip="192.168.2.102", use_gripper_width_mapping=False, pose_type="rotvec"):
         self.obs_horizon = obs_horizon
         self.pose_type = pose_type
