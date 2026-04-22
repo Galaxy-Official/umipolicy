@@ -46,7 +46,7 @@ from lerobot.utils.constants import ACTION, OBS_ENV_STATE, OBS_IMAGES, OBS_STATE
 from lerobot.policies.tactile_backbone.tactile_backbone import CLIPPretrainedTactileEncoderPooled
 
 try:
-    from lerobot.policies.point_backbone.point_backbone import PointBERTEncoderPooled
+    from lerobot.policies.point_backbone.point_backbone_fixed import PointBERTEncoderPooled
 except Exception:
     PointBERTEncoderPooled = None
 
@@ -210,7 +210,7 @@ class DiffusionModel(nn.Module):
                     "Please make sure lerobot.policies.point_backbone.point_backbone is available."
                 )
             self.point_backbone = PointBERTEncoderPooled(
-                point_pretrained_ckpt=getattr(self.config, "point_pretrained_ckpt", None),
+                pointbert_ckpt=getattr(self.config, "point_pretrained_ckpt", None),
                 pointbert_repo_root=getattr(self.config, "pointbert_repo_root", None),
                 use_rgb=getattr(self.config, "point_use_rgb", True),
                 output_dim=getattr(self.config, "point_encoder_output_dim", 64),

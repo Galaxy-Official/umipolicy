@@ -15,9 +15,9 @@ export CUDA_VISIBLE_DEVICES=0
 # 2. 执行评测脚本
 # 请根据实际情况修改 --policy-path, --repo-id, --root 等参数
 python -m lerobot.scripts.lerobot_eval_offline_viz \
-  --policy-path outputs/train/tool_to_cups_0415_1/checkpoints/200000/pretrained_model \
+  --policy-path outputs/train/simple_sorting_0409_0420train/checkpoints/040000/pretrained_model \
   --repo-id lihongcs/tool_to_cups_0415 \
-  --root Data/tool_to_cups_0415 \
+  --root Data/handcap_simple_sorting_409 \
   --num-episodes 10 \
   --output-video outputs/eval_viz_cups \
   --fps 10
