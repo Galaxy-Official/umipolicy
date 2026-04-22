@@ -15,7 +15,7 @@ from tqdm import tqdm, trange
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.configs.policies import PreTrainedConfig
 from lerobot.datasets.pose_utils import rot6d_to_mat
-from lerobot.policies.factory import get_policy_class
+from lerobot.policies.factory import get_policy_class, make_pre_post_processors
 from lerobot.utils.utils import init_logging
 
 def get_figure_canvas(fig):
@@ -70,6 +70,12 @@ def main():
     policy.eval()
     policy.to(device)
 
+    preprocessor, postprocessor = make_pre_post_processors(
+        policy_cfg=policy_config,
+        pretrained_path=args.policy_path,
+        dataset_stats=None,
+    )
+
     # Load full dataset metadata to pick episodes
     logging.info(f"Loading dataset {args.repo_id}")
     dataset = LeRobotDataset(args.repo_id, root=args.root, video_backend=args.video_backend)
@@ -97,6 +103,9 @@ def main():
     for ep_idx in selected_episodes:
         # Re-initialize state per episode
         policy.reset()
+        if preprocessor: preprocessor.reset()
+        if postprocessor: postprocessor.reset()
+        
         gt_traj = []
         pr_traj = []
         gt_gripper = []
@@ -121,11 +130,17 @@ def main():
                 if k in item:
                     obs_batch[k] = item[k].unsqueeze(0).to(device)
                     
+            # Apply Normalization
+            obs_batch = preprocessor(obs_batch)
+                    
             # Inference
             with torch.no_grad():
-                action_pred = policy.select_action(obs_batch)
+                action_pred_norm = policy.select_action(obs_batch)
                 
-            action_pred = action_pred.squeeze(0).cpu().numpy()
+            # Unnormalize Output
+            action_pred_unnorm = postprocessor({"action": action_pred_norm})["action"]
+                
+            action_pred = action_pred_unnorm.squeeze(0).cpu().numpy()
             action_gt = item["action"].numpy()
             
             # 解析 Ground Truth Action (原始数据格式： [x, y, z, rx, ry, rz, gripper, pad, pad, pad])

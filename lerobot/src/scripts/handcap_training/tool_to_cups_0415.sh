@@ -1,5 +1,5 @@
-# 修改为你要指定的显卡槽位 (目前针对你的配置：2 张 H200 则设为 0,1)
-export CUDA_VISIBLE_DEVICES=0,1
+# 修改为你要指定的显卡槽位 (目前针对你的配置：4 张卡则设为 0,1,2,3)
+export CUDA_VISIBLE_DEVICES=0,1,2,3
 
 # 屏蔽烦人的 torchvision pyav 弃用警告刷屏问题
 export PYTHONWARNINGS="ignore"
@@ -12,10 +12,10 @@ export PYTHONWARNINGS="ignore"
 # source /root/miniconda3/bin/activate
 # conda activate umipolicy
 
-# 【核心硬件优化提升说明】：
 # 1. --mixed_precision=bf16 针对 Hopper 架构开启更快的 bfloat16 半精度加速计算。
-# 2. --batch_size=128：2 张显卡组成双卡并行则总 Global Batch Size 为 256，保障扩散模型最好的收敛速度与稳定度。
-# 3. --training.num_workers=20：压榨你的 80 核 CPU 和 200内存，保证 GPU 高速读图不掉速。
+# 2. --batch_size=128：4 张显卡组成并行则总 Global Batch Size 为 512，保障扩散模型最好的收敛速度与稳定度。
+# 3. --num_workers=8：每张卡分配 8 个 CPU 线程进行数据加载，总共占用 32 核，平衡读图速度并防止死锁。
+# 4. --dataset.video_backend=video_reader：底层 C++ 解码，大大快于传统的 pyav 且避免了环境缺失 torchcodec 导致的问题。
 # ==========================================
 # 交互式训练控制逻辑：只有发现旧存档时才提示断点续训 (Resume)
 # ==========================================
@@ -46,13 +46,13 @@ if [ "$RESUME_PARAM" == "--resume=false" ] && [ -d "$OUTPUT_DIR" ]; then
 fi
 echo "=========================================="
 
-accelerate launch --multi_gpu --num_processes=2 --num_machines=1 --mixed_precision=bf16 --dynamo_backend=inductor -m lerobot.scripts.lerobot_train \
+accelerate launch --multi_gpu --num_processes=4 --num_machines=1 --mixed_precision=bf16 --dynamo_backend=inductor -m lerobot.scripts.lerobot_train \
   --dataset.repo_id=lihongcs/tool_to_cups_0415 \
   --dataset.root=Data/tool_to_cups_0415 \
-  --dataset.video_backend=pyav \
+  --dataset.video_backend=video_reader \
   --policy.type=diffusion \
-  --batch_size=256 \
-  --num_workers=10 \
+  --batch_size=128 \
+  --num_workers=8 \
   --policy.use_tactile=false \
   --policy.use_force=false \
   --policy.vision_backbone=resnet18 \
@@ -75,4 +75,4 @@ accelerate launch --multi_gpu --num_processes=2 --num_machines=1 --mixed_precisi
 
 # 注意: 上面的 --batch_size=128 代表 "单卡 Batch Size"。
 # LeRobot 3.0 中的总有效 Batch Size = batch_size * num_processes。
-# 当使用 2 卡且每卡 `batch_size=128` 时，系统总吞吐量将会是 256。
+# 当使用 4 卡且每卡 `batch_size=128` 时，系统总吞吐量将会是 512。

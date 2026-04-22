@@ -25,6 +25,7 @@ import torch.utils
 from huggingface_hub import HfApi, snapshot_download
 from huggingface_hub.errors import RevisionNotFoundError
 
+from lerobot.datasets.pose_utils import *
 from lerobot.datasets.dataset_metadata import CODEBASE_VERSION, LeRobotDatasetMetadata
 from lerobot.datasets.dataset_reader import DatasetReader
 from lerobot.datasets.dataset_writer import DatasetWriter
@@ -41,6 +42,56 @@ from lerobot.datasets.video_utils import (
 from lerobot.utils.constants import HF_LEROBOT_HUB_CACHE
 
 logger = logging.getLogger(__name__)
+def process_to_relative_rot6d(obs_state_tensor, action_tensor):
+    """
+    Converts absolute rotvec 10D data to relative rot6d 10D data.
+    Input:
+        obs_state_tensor: Shape [10] or [N, 10]
+        action_tensor: Shape [10] or [C, 10]
+    Output:
+        obs_state_new, action_new as torch.Tensors
+    """
+    obs_is_1d = obs_state_tensor.ndim == 1
+    act_is_1d = action_tensor.ndim == 1
+    
+    # 1. Ensure 2D shape for batching
+    obs_state = obs_state_tensor.unsqueeze(0) if obs_is_1d else obs_state_tensor
+    act_state = action_tensor.unsqueeze(0) if act_is_1d else action_tensor
+    
+    obs_np = obs_state.numpy()
+    act_np = act_state.numpy()
+    
+    # 2. Concatenate obs and act to process them in a single batch
+    # This halves the overhead of Scipy Rotation object instantiation
+    N = obs_np.shape[0]
+    combined_np = np.concatenate([obs_np, act_np], axis=0) # Shape: [N + C, 10]
+    
+    # 3. Extract absolute poses [..., :6] and batch convert to 4x4 matrices
+    combined_pose_mat = pose_to_mat(combined_np[..., :-4]) # Shape: [N + C, 4, 4]
+    
+    # 4. Compute relative pose
+    # The base frame is the last observation frame (index N - 1)
+    base_pose_mat = combined_pose_mat[N - 1]
+    combined_rel_mat = np.linalg.inv(base_pose_mat) @ combined_pose_mat
+    
+    # 5. Batch convert back to 10D format (3D Pos + 6D Rot = 9D)
+    combined_pose_10d = mat_to_certain_pose_type(combined_rel_mat, "10d") # Shape: [N + C, 9]
+    
+    # 6. Re-attach the gripper data (which was at index -4)
+    combined_gripper = combined_np[:, -4:-3] # Shape: [N + C, 1]
+    combined_new = np.concatenate([combined_pose_10d, combined_gripper], axis=-1) # Shape: [N + C, 10]
+    
+    # 7. Split back into observation and action
+    obs_new = combined_new[:N]
+    act_new = combined_new[N:]
+    
+    # 8. Restore original 1D shape if needed
+    if obs_is_1d:
+        obs_new = obs_new[0]
+    if act_is_1d:
+        act_new = act_new[0]
+        
+    return torch.from_numpy(obs_new).float(), torch.from_numpy(act_new).float()
 
 
 class LeRobotDatasetHandcap(torch.utils.data.Dataset):
@@ -450,7 +501,15 @@ class LeRobotDatasetHandcap(torch.utils.data.Dataset):
         if reader.hf_dataset is None:
             # One-shot load after finalize()
             reader.load_and_activate()
-        return reader.get_item(idx)
+            
+        item = reader.get_item(idx)
+        
+        item["observation.state"], item["action"] = process_to_relative_rot6d(
+            item["observation.state"], 
+            item["action"]
+        )
+        
+        return item
 
     def select_columns(self, column_names: str | list[str]):
         """Select specific columns from the underlying dataset.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 修改为你要指定的显卡槽位 (例如使用 4 张卡则是 0,1,2,3)
-export CUDA_VISIBLE_DEVICES=0,1
+export CUDA_VISIBLE_DEVICES=0,1,2,3
 
 # 屏蔽烦人的 torchvision pyav 弃用警告刷屏问题
 export PYTHONWARNINGS="ignore"
@@ -33,13 +33,13 @@ if [ "$RESUME_PARAM" == "--resume=false" ] && [ -d "$OUTPUT_DIR" ]; then
 fi
 echo "=========================================="
 
-accelerate launch --multi_gpu --num_processes=2 --num_machines=1 --mixed_precision=bf16 --dynamo_backend=inductor -m lerobot.scripts.lerobot_train \
+accelerate launch --multi_gpu --num_processes=4 --num_machines=1 --mixed_precision=bf16 --dynamo_backend=inductor -m lerobot.scripts.lerobot_train \
   --dataset.repo_id=lihongcs/simple_sorting_handcap \
   --dataset.root=Data/handcap_simple_sorting_409 \
-  --dataset.video_backend=pyav \
+  --dataset.video_backend=video_reader \
   --policy.type=diffusion \
-  --batch_size=256 \
-  --num_workers=20 \
+  --batch_size=128 \
+  --num_workers=8 \
   --policy.use_tactile=false \
   --policy.use_force=false \
   --policy.vision_backbone=resnet18 \
