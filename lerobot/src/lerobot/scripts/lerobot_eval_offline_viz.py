@@ -132,9 +132,15 @@ def main():
             def get_6d_and_gripper(act):
                 pos = act[:3]
                 rot6d = act[3:9]
-                gripper = act[9]
-                rot_mat = rot6d_to_mat(rot6d)
-                rotvec = st.Rotation.from_matrix(rot_mat).as_rotvec()
+                gripper = act[9] if len(act) > 9 else 0.0
+                try:
+                    rot_mat = rot6d_to_mat(rot6d)
+                    if np.isnan(rot_mat).any():
+                        raise ValueError("NaN detected in rotation matrix")
+                    rotvec = st.Rotation.from_matrix(rot_mat).as_rotvec()
+                except Exception as e:
+                    print(f"Warning: Failed to convert rot6d {rot6d} to rotvec: {e}. Falling back to zero rotation.")
+                    rotvec = np.zeros(3)
                 return np.concatenate([pos, rotvec]), gripper
             
             gt_6d, gt_grip = get_6d_and_gripper(action_gt)
