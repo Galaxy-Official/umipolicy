@@ -134,20 +134,11 @@ def main():
             gt_grip = action_gt[6] if len(action_gt) > 6 else 0.0
             gt_6d = np.concatenate([gt_pos, gt_rotvec])
             
-            # 解析 Predicted Action (模型输出格式： [x, y, z, r1, r2, r3, r4, r5, r6, gripper])
+            # 解析 Predicted Action (模型实际输出也是与 GT 相同的格式： [x, y, z, rx, ry, rz, gripper, pad, pad, pad])
             pr_pos = action_pred[:3]
-            pr_rot6d = action_pred[3:9]
-            pr_grip = action_pred[9] if len(action_pred) > 9 else 0.0
+            pr_rotvec = action_pred[3:6]
+            pr_grip = action_pred[6] if len(action_pred) > 6 else 0.0
             
-            try:
-                pr_rot_mat = rot6d_to_mat(pr_rot6d)
-                if np.isnan(pr_rot_mat).any():
-                    raise ValueError("NaN detected in rotation matrix")
-                pr_rotvec = st.Rotation.from_matrix(pr_rot_mat).as_rotvec()
-            except Exception as e:
-                print(f"Warning: Failed to convert predicted rot6d {pr_rot6d} to rotvec: {e}. Falling back to zero rotation.")
-                pr_rotvec = np.zeros(3)
-                
             pr_6d = np.concatenate([pr_pos, pr_rotvec])
             
             gt_traj.append(gt_6d)
