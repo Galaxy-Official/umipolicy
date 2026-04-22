@@ -83,11 +83,7 @@ class FlexivRobot():
         self.flexiv = flexivrdk.Robot(robot_sn, [actual_local_ip])
         self.gripper = flexivrdk.Gripper(self.flexiv)
         
-        gripper_name = os.environ.get("FLEXIV_GRIPPER_NAME", "Flexiv-GN01")
-        try:
-            self.gripper.Enable(gripper_name)
-        except Exception as e:
-            self.log.warn(f"Failed to enable gripper [{gripper_name}]: {e}")
+        self.gripper_name = os.environ.get("FLEXIV_GRIPPER_NAME", "Flexiv-GN01")
 
     @property
     def camera_features(self) -> dict:
@@ -159,6 +155,13 @@ class FlexivRobot():
                 time.sleep(1)
 
             self.log.info("Robot is now operational")
+
+            self.log.info(f"Enabling gripper [{self.gripper_name}]")
+            try:
+                self.gripper.Enable(self.gripper_name)
+            except Exception as e:
+                self.log.warn(f"Failed to enable gripper [{self.gripper_name}]: {e}")
+
 
         except Exception as e:
             # Print exception error message
