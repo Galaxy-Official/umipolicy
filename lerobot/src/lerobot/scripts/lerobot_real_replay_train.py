@@ -12,8 +12,6 @@ from loguru import logger
 import signal as signal_module
 from torchvision import transforms
 from lerobot.umi.common.pose_util import *
-from perception.cameras.base_camera import BaseCamera
-from lerobot.scripts.umi_realworld.real_inference_util import *
 from lerobot.scripts.umi_realworld.flexiv_simple_env import SimpleFlexivEnv
 from lerobot.datasets.pose_utils import quat_to_rot
 
@@ -83,83 +81,7 @@ robot = None
 ROBOT_IP = "192.168.2.100"
 LOCAL_IP = "192.168.2.103"
 
-# Signal states
-from perception.tasks.base_task import TaskStatus
-
-view1_video = None
-tactile1_video = None
-tactile2_video = None
-
-states_data = None
-output_dir = None
-
-
-def signal_handler(sig, frame):
-    global view1_video, states_data, output_dir
-    logger.info("\nDetected interrupt signal, saving data...")
-    try:
-        if view1_video is not None:
-            view1_video.release()
-        
-        if states_data:
-            states_array = np.array(states_data)
-            save_path = str(output_dir / 'states.npy')
-            np.save(save_path, states_array)
-            logger.info(f"Success save frames, totally {len(states_data)} frames")
-
-        logger.info(f"All data has been saved to: {output_dir}")
-
-        os.sync()
-        
-    except Exception as e:
-        logger.error(f"Error occurred while saving data: {str(e)}")
-    finally:
-        sys.exit(0)
-
-
-def to_torch(x, dtype=torch.float, device="cuda:0", requires_grad=False):
-    return torch.tensor(x, dtype=dtype, device=device, requires_grad=requires_grad)
-
-
-
-
-def draw_status_text(frame, status):
-    """在视频帧上绘制状态文本
-    
-    Args:
-        frame: 输入的视频帧
-        status: 任务状态
-    
-    Returns:
-        添加了状态文本的视频帧
-    """
-    # 设置文本参数
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 1
-    thickness = 2
-    
-    # 根据状态设置不同的颜色
-    if status == TaskStatus.STOP:
-        color = (0, 0, 255)  # 红色
-        text = "STOP"
-    elif status == TaskStatus.RETURN:
-        color = (0, 255, 255)  # 黄色
-        text = "RETURN"
-    else:  # CONTINUE
-        color = (0, 255, 0)  # 绿色
-        text = "CONTINUE"
-    
-    # 获取文本大小
-    (text_width, text_height), _ = cv2.getTextSize(text, font, font_scale, thickness)
-    
-    # 计算文本位置（左上角）
-    position = (10, 30)
-    
-    # 添加文本背景
-    cv2.rectangle(frame, 
-                 (position[0] - 5, position[1] - text_height - 5),
-                 (position[0] + text_width + 5, position[1] + 5),
-                 (0, 0, 0),
+           (0, 0, 0),
                  -1)
     
     # 添加文本
