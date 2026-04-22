@@ -320,6 +320,7 @@ def main(args):
         time.sleep(0.01)
     logger.info("Observation queue filled. Starting real robot inference control loop!")
 
+    eval_t_start = time.time()
     current_step = 0
     try:
         while True:
@@ -458,8 +459,26 @@ def main(args):
             abs_pose = np.array([abs_pose[-1] for _ in range(len(raw_action))])
             this_target_poses = get_real_umi_inference_action(raw_action, abs_pose, "relative")
             
-            # Formulate Action Timings
-            action_timestamps = (1 + np.arange(len(this_target_poses), dtype=np.float64)) * robot_dt + time.time() - action_latency
+            # Formulate Action Timings and enforce Time Budget (Latency Compensation)
+            # Use 's' as the base observation timestamp for this cycle
+            action_timestamps = (np.arange(len(this_target_poses), dtype=np.float64)) * robot_dt + s
+            action_exec_latency = 0.01
+            curr_time = time.time()
+            is_new = action_timestamps > (curr_time + action_exec_latency)
+            
+            if np.sum(is_new) == 0:
+                # Exceeded time budget, inference was too slow.
+                # Force execution of the last action at the next available multiple of dt
+                this_target_poses = this_target_poses[[-1]]
+                next_step_idx = int(np.ceil((curr_time - eval_t_start) / robot_dt))
+                action_timestamp = eval_t_start + (next_step_idx) * robot_dt
+                print(f'Over budget! Delay: {action_timestamp - curr_time:.3f}s')
+                action_timestamps = np.array([action_timestamp])
+            else:
+                # Keep only future actions
+                this_target_poses = this_target_poses[is_new]
+                action_timestamps = action_timestamps[is_new]
+
             current_step += 1
             
             # Send Actions
