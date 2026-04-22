@@ -193,7 +193,7 @@ class FlexivRobot():
         
         # Standard Flexiv Home Pose
         home_qpos = [0.0, -0.6981317, 0.0, 1.5707963, 0.0, 0.6981317, 0.0]
-        self.flexiv.SendJointPosition(home_qpos, [0]*7, [0]*7, [0.3]*7, [0.3]*7)
+        self.flexiv.SendJointPosition(home_qpos, [0]*7, [0.3]*7, [0.3]*7)
         
         # Wait until joints are close to home
         import numpy as np
@@ -487,7 +487,7 @@ class FlexivRobot():
         try:
             action = act_dof[:self.DOF].tolist()
             self.flexiv.SendJointPosition(
-                action, self.target_vel, self.target_acc, self.MAX_VEL, self.MAX_ACC
+                action, self.target_vel, self.MAX_VEL, self.MAX_ACC
             )
             self.gripper.Move(float(gripper_width), 0.1, 20)
         except Exception as e:
