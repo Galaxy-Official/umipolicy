@@ -19,8 +19,8 @@ from loguru import logger
 import torch
 import numpy as np
 from typing import List
-import lib_py.flexivrdk as flexivrdk
-
+import os
+import flexivrdk
 from lerobot.common.robot_devices.cameras.utils import Camera
 from lerobot.common.robot_devices.motors.utils import MotorsBus
 from lerobot.common.robot_devices.MiniTeleop_utils import LeadArmReader
@@ -65,9 +65,24 @@ class FlexivRobot():
         self.MAX_VEL = [1.0] * self.DOF
         self.MAX_ACC = [0.5] * self.DOF
 
-        self.flexiv = flexivrdk.Robot(
-            self.ips["robot_ip"], self.ips["local_ip"])
+        robot_sn = os.environ.get("FLEXIV_ROBOT_SN", self.ips.get("robot_ip", ""))
+        import socket
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect((self.ips["robot_ip"], 1))
+            actual_local_ip = s.getsockname()[0]
+            s.close()
+        except Exception:
+            actual_local_ip = self.ips.get("local_ip", "")
+
+        self.flexiv = flexivrdk.Robot(robot_sn, [actual_local_ip])
         self.gripper = flexivrdk.Gripper(self.flexiv)
+        
+        gripper_name = os.environ.get("FLEXIV_GRIPPER_NAME", "Flexiv-GN01")
+        try:
+            self.gripper.Enable(gripper_name)
+        except Exception as e:
+            self.log.warn(f"Failed to enable gripper [{gripper_name}]: {e}")
 
     @property
     def camera_features(self) -> dict:
@@ -121,35 +136,23 @@ class FlexivRobot():
     def connect(self) -> None:
         # connect flexiv
         try:
-            self.is_connected = self.flexiv.isFault() == False
+            self.is_connected = not self.flexiv.fault()
 
             if not self.is_connected:
-                self.log.warn(
-                    "Fault occurred on robot server, trying to clear ...")
-                # Try to clear the fault
-                self.flexiv.clearFault()
+                self.log.warn("Fault occurred on robot server, trying to clear ...")
+                self.flexiv.ClearFault()
                 time.sleep(2)
-                # Check again
-                if self.flexiv.isFault():
+                if self.flexiv.fault():
                     self.log.error("Fault cannot be cleared, exiting ...")
                     raise ConnectionError()
                 self.log.info("Fault on robot server is cleared")
 
-            # Enable the robot, make sure the E-stop is released before enabling
             self.log.info("Enabling robot ...")
-            self.flexiv.enable()
+            self.flexiv.Enable()
 
-            # Wait for the robot to become operational
-            while not self.flexiv.isOperational():
+            while not self.flexiv.operational():
                 time.sleep(1)
 
-            self.log.info("Robot is now operational")
-
-            # Enable the robot, make sure the E-stop is released before enabling
-            self.log.info("Enabling robot ...")
-            self.flexiv.enable()
-            while not self.flexiv.isOperational():
-                time.sleep(1)
             self.log.info("Robot is now operational")
 
         except Exception as e:
@@ -180,16 +183,14 @@ class FlexivRobot():
 
     def home(self) -> None:
         mode = flexivrdk.Mode
-        # print("Current robot position: ", self.get_state())
         self.log.info("Moving to home pose")
-        self.flexiv.setMode(mode.NRT_PRIMITIVE_EXECUTION)
-        self.flexiv.executePrimitive("Home()")
-        # Wait for the primitive to finish
-        while self.flexiv.isBusy():
+        self.flexiv.SwitchMode(mode.NRT_PRIMITIVE_EXECUTION)
+        self.flexiv.ExecutePrimitive("Home()")
+        while self.flexiv.busy():
             time.sleep(1)
-        self.flexiv.executePrimitive("ZeroFTSensor()")
+        self.flexiv.ExecutePrimitive("ZeroFTSensor()")
 
-        self.flexiv.setMode(mode.NRT_JOINT_POSITION)
+        self.flexiv.SwitchMode(mode.NRT_JOINT_POSITION)
 
     def home_for_twist(self) -> None:
         # by zhiyuan_hong
@@ -201,16 +202,17 @@ class FlexivRobot():
         mode = flexivrdk.Mode
         new_home = [0.682659924030304,-0.11099029332399368,0.13164113461971283,-0.0045234146527945995,-0.00043452114914543927,0.9999896287918091,0.0003461818560026586]
         new_home[2] += 0.1
-        self.flexiv.setMode(mode.NRT_CARTESIAN_MOTION_FORCE)
-        self.flexiv.sendCartesianMotionForce(new_home, maxLinearVel=0.1, maxAngularVel=0.4)
+        self.flexiv.SwitchMode(mode.NRT_CARTESIAN_MOTION_FORCE)
+        self.flexiv.SendCartesianMotionForce(new_home, maxLinearVel=0.1, maxAngularVel=0.4)
         time.sleep(3)
-        self.flexiv.setMode(mode.NRT_JOINT_POSITION)
+        self.flexiv.SwitchMode(mode.NRT_JOINT_POSITION)
 
 
 
     def set_robot_home_position(self) -> None:
-        # self.gripper.move(0.01, 0.1, 20)
-        self.gripper.move(0.1, 0.1, 20)
+        # self.gripper.Move(0.01, 0.1, 20)
+        max_width = self.gripper.params().max_width
+        self.gripper.Move(max_width, 0.1, 20)
         self.home()
         # self.home_for_twist()  # by zhiyuan_hong for specific situations
 
@@ -305,15 +307,14 @@ class FlexivRobot():
 
     def get_state_and_cam(self):
         import scipy.spatial.transform as st
-        robot_states = flexivrdk.RobotStates()
-        self.flexiv.getRobotStates(robot_states)
-        arm_state = robot_states.q
+        states = self.flexiv.states()
+        arm_state = states.q
         arm_state = torch.as_tensor(list(arm_state))[:self.DOF]
         
         gripper_width = torch.tensor([self.get_gripper_state()])
         
         state = torch.cat((arm_state, gripper_width))
-        cam_pose = robot_states.camPose
+        cam_pose = getattr(states, "cam_pose", states.tcp_pose)
         pos, quat = cam_pose[:3], cam_pose[3:]
         print("quat", quat)
         pos = np.array(pos)
@@ -331,9 +332,8 @@ class FlexivRobot():
 
 
     def get_state(self):
-        robot_states = flexivrdk.RobotStates()
-        self.flexiv.getRobotStates(robot_states)
-        arm_state = robot_states.q
+        states = self.flexiv.states()
+        arm_state = states.q
         arm_state = torch.as_tensor(list(arm_state))[:self.DOF]
         
         gripper_width = torch.tensor([self.get_gripper_state()])
@@ -346,9 +346,8 @@ class FlexivRobot():
     
     def readCamPose(self):
         import scipy.spatial.transform as st
-        robot_states = flexivrdk.RobotStates()
-        self.robot.getRobotStates(robot_states)
-        cam_pose = robot_states.camPose
+        states = self.flexiv.states()
+        cam_pose = getattr(states, "cam_pose", states.tcp_pose)
         pos, quat = cam_pose[:3], cam_pose[3:]
         print("quat", quat)
         pos = np.array(pos)
@@ -362,12 +361,7 @@ class FlexivRobot():
         return T
 
     def get_gripper_state(self) -> float:
-        # Data struct storing gripper states
-        gripper_states = flexivrdk.GripperStates()
-        # Get the latest gripper states
-        self.gripper.getGripperStates(gripper_states)
-        # print("width: ", round(gripper_states.width, 2))
-        return round(gripper_states.width, 2)
+        return round(self.gripper.states().width, 2)
 
     def capture_observation(self) -> dict:
         # TODO(aliberts): return ndarrays instead of torch.Tensors
@@ -462,7 +456,7 @@ class FlexivRobot():
         if eef_pos is not None and not self.is_eef_within_workspace(eef_pos):
             logger.warning(f"Out of bound! {eef_pos}")
 
-        if self.flexiv.isFault():
+        if self.flexiv.fault():
             raise Exception("Fault occurred on robot server, exiting ...")
 
         if not action_valid:
@@ -471,10 +465,10 @@ class FlexivRobot():
         act_dof = torch.tensor(action)
         try:
             action = act_dof[:self.DOF].tolist()
-            self.flexiv.sendJointPosition(
+            self.flexiv.SendJointPosition(
                 action, self.target_vel, self.target_acc, self.MAX_VEL, self.MAX_ACC
             )
-            self.gripper.move(float(gripper_width), 0.1, 20)
+            self.gripper.Move(float(gripper_width), 0.1, 20)
         except Exception as e:
             self.log.error(str(e))
             return False
