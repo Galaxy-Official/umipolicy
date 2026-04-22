@@ -67,8 +67,8 @@ class FlexivRobot():
         self.DOF = 7
         self.target_vel = [0.0] * self.DOF
         self.target_acc = [0.0] * self.DOF
-        self.MAX_VEL = [1.0] * self.DOF
-        self.MAX_ACC = [0.5] * self.DOF
+        self.MAX_VEL = [0.3] * self.DOF
+        self.MAX_ACC = [0.3] * self.DOF
 
         robot_sn = os.environ.get("FLEXIV_ROBOT_SN", self.ips.get("robot_ip", ""))
         import socket
@@ -188,11 +188,12 @@ class FlexivRobot():
 
     def home(self) -> None:
         """Move the robot to its home position"""
-        self.flexiv.SwitchMode(flexivrdk.Mode.NRT_PRIMITIVE_EXECUTION)
-        self.flexiv.ExecutePrimitive("Home", dict())
-        while not self.flexiv.primitive_states()["reachedTarget"]:
+        self.flexiv.SwitchMode(flexivrdk.Mode.NRT_PLAN_EXECUTION)
+        self.flexiv.ExecutePlan("PLAN-Home")
+        while self.flexiv.busy():
             time.sleep(1)
             
+        self.flexiv.SwitchMode(flexivrdk.Mode.NRT_PRIMITIVE_EXECUTION)
         self.flexiv.ExecutePrimitive("ZeroFTSensor", dict())
         while not self.flexiv.primitive_states()["terminated"]:
             time.sleep(1)
