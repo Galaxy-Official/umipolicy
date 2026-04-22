@@ -233,6 +233,13 @@ class FlexivInterface:
         self.robot = robot = flexivrdk.Robot(robot_sn, [actual_local_ip])
         self.gripper = flexivrdk.Gripper(robot)
 
+        gripper_name = os.environ.get("FLEXIV_GRIPPER_NAME", "Flexiv-Ovoid")
+        try:
+            self.log.info(f"Enabling gripper [{gripper_name}] ...")
+            self.gripper.Enable(gripper_name)
+        except Exception as e:
+            self.log.warn(f"Failed to enable gripper [{gripper_name}]: {e}. If you use a different gripper, export FLEXIV_GRIPPER_NAME.")
+
         if use_gripper_width_mapping:
             self.gripper_width_mapper = GripperWidthMapper()
         else:
