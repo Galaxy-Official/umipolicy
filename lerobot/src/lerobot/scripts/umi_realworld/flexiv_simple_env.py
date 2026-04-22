@@ -77,7 +77,7 @@ class SimpleFlexivEnv:
     def reset(self):
         print("Resetting robot")
         self.robot.send_joint_position(self.init_qpos)
-        self.robot.send_gripper_state(0.12, 0.1, 10)
+        self.robot.send_gripper_state(0.09, 0.1, 10)
         time.sleep(15)
 
     def calculate_ik(self, obs_data):
