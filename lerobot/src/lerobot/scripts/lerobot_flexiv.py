@@ -33,6 +33,7 @@ import flexivrdk
 import scipy.spatial.transform as st
 from lerobot.datasets.pose_utils import *
 from lerobot.scripts.umi_realworld.real_inference_util import *
+from lerobot.scripts.umi_realworld.utils.precise_sleep import precise_wait
 from perception.cameras.base_camera import BaseCamera
 
 
@@ -460,8 +461,9 @@ def main(args):
             this_target_poses = get_real_umi_inference_action(raw_action, abs_pose, "relative")
             
             # Formulate Action Timings and enforce Time Budget (Latency Compensation)
-            # Use 's' as the base observation timestamp for this cycle
-            action_timestamps = (np.arange(len(this_target_poses), dtype=np.float64)) * robot_dt + s
+            # Use hardware timestamp 'cam_cap_time' as the base observation timestamp for this cycle
+            cam_cap_time = frames[-1]['cam_cap_time']
+            action_timestamps = (np.arange(len(this_target_poses), dtype=np.float64)) * robot_dt + cam_cap_time
             action_exec_latency = 0.01
             curr_time = time.time()
             is_new = action_timestamps > (curr_time + action_exec_latency)
@@ -501,6 +503,11 @@ def main(args):
             
             if current_step % 10 == 0:
                 print(f"[{current_step}] Inference Cycle (ms): {inference_latency*1000:.1f}")
+
+            # Rate Limiting (Precise Wait) to prevent loop from spinning faster than robot_dt
+            # Subtract 0.005s as a small frame capture latency tolerance
+            t_cycle_end = eval_t_start + current_step * robot_dt
+            precise_wait(t_cycle_end - 0.005, time_func=time.time)
 
     except Exception as e:
         logger.error(f"Error when processing: {str(e)}\n{traceback.format_exc()}")
