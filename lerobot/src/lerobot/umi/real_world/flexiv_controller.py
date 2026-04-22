@@ -268,29 +268,16 @@ class FlexivInterface:
 
     def send_flange_pose(self, flange_pose: np.ndarray):
         
-        if not hasattr(self, 'model'):
-            self.model = flexivrdk.Model(self.robot)
-
-        # from pos-rotvec 6d pose to pos-quat 7d pose (w,x,y,z for RDK)
+        # from pos-rotvec 6d pose to pos-quat 7d pose
         pos, rot = pose_to_pos_rot(flange_pose)
-        quat_wxyz = rot.as_quat(scalar_first=True)
-        target_pose = np.concatenate([pos, quat_wxyz]).tolist()
-
-        curr_joints = self.get_joint_positions().tolist()
-        
-        # Use RDK's native IK solver
-        res, next_joints_list = self.model.reachable(target_pose, curr_joints, False)
-        
-        if not res:
-            self.log.error("IK failed, pose unreachable using RDK IK!")
-            return
-            
-        next_joints = np.array(next_joints_list)
+        quat = rot.as_quat(scalar_first=False)  # zyxw quat for scipy/pybullet api
+        flange_pose = np.concatenate([pos, quat])
+        next_joints = self.sim_rizon.calc_ik(flange_pose)  # pppqqqq -> q
 
         if self.verbose:
             print(
                 "[FlexivInterface] [DEBUG] Sending flange pose:",
-                " ".join(["%4.2f" % x for x in target_pose]),
+                " ".join(["%4.2f" % x for x in flange_pose]),
                 "(q =",
                 " ".join(["%4.2f" % x for x in next_joints]),
                 ")",
