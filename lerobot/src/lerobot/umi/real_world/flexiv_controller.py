@@ -285,6 +285,38 @@ class FlexivInterface:
 
         self.send_joint_position(next_joints)
 
+    def send_tcp_pose(self, tcp_pose: np.ndarray):
+        """Use RDK native IK to solve for the target TCP pose directly."""
+        if not hasattr(self, 'model'):
+            self.model = flexivrdk.Model(self.robot)
+
+        # from pos-rotvec 6d pose to pos-quat 7d pose (w,x,y,z for RDK)
+        pos, rot = pose_to_pos_rot(tcp_pose)
+        quat_wxyz = rot.as_quat(scalar_first=True)
+        target_pose = np.concatenate([pos, quat_wxyz]).tolist()
+
+        curr_joints = self.get_joint_positions().tolist()
+        
+        # model.reachable computes IK for the active TCP
+        res, next_joints_list = self.model.reachable(target_pose, curr_joints, False)
+        
+        if not res:
+            self.log.error("IK failed, TCP pose unreachable using RDK IK!")
+            return
+            
+        next_joints = np.array(next_joints_list)
+
+        if self.verbose:
+            print(
+                "[FlexivInterface] [DEBUG] Sending TCP pose:",
+                " ".join(["%4.2f" % x for x in target_pose]),
+                "(q =",
+                " ".join(["%4.2f" % x for x in next_joints]),
+                ")",
+            )
+
+        self.send_joint_position(next_joints)
+
     def send_joint_position(self, positions: np.ndarray):
         
         if os.environ.get("FLEXIV_USE_VEL_CONTROL", "0") == "1":

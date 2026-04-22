@@ -129,9 +129,8 @@ class SimpleFlexivEnv:
             tip_pose = new_actions[i, 0:  6]   # since we have only 1 robot
             target_width = new_actions[i, 6]
             # move robot
-            flange_pose = FlexivInterface.tip_to_flange_pose(tip_pose)
-
-            self.robot.send_flange_pose(flange_pose)
+            # move robot using RDK's native TCP IK solver
+            self.robot.send_tcp_pose(tip_pose)
 
             # move gripper
             self.robot.send_gripper_state(target_width, 0.1, 10)
