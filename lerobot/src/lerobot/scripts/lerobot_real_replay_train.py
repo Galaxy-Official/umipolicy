@@ -12,6 +12,7 @@ from loguru import logger
 import signal as signal_module
 from torchvision import transforms
 from lerobot.umi.common.pose_util import *
+from lerobot.scripts.umi_realworld.real_inference_util import *
 from lerobot.scripts.umi_realworld.flexiv_simple_env import SimpleFlexivEnv
 from lerobot.datasets.pose_utils import quat_to_rot
 
