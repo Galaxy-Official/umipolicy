@@ -176,7 +176,6 @@ def record(
 
     from lerobot.common.robot_devices.control_utils_tactile import is_headless
     import cv2
-    from pynput import keyboard
 
     if not robot.is_connected:
         robot.connect()
@@ -215,8 +214,12 @@ def record(
 
     listener = None
     if not is_headless():
-        listener = keyboard.Listener(on_press=on_press)
-        listener.start()
+        try:
+            from pynput import keyboard
+            listener = keyboard.Listener(on_press=on_press)
+            listener.start()
+        except ImportError as e:
+            logger.warning(f"Could not load pynput keyboard listener: {e}")
     else:
         logger.warning("Headless environment detected! Keyboard bindings will not work!")
 
