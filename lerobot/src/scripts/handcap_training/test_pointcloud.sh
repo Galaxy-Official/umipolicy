@@ -68,9 +68,12 @@ accelerate launch \
   --wandb.enable=true \
   --wandb.mode=offline \
   --use_handcap=true \
-  --steps=500 \
-  --save_freq=50 \
+  --steps=100000 \
+  --save_freq=500 \
+  --policy.push_to_hub=false \
   --eval_freq=50 \
   --log_freq=10 \
+  --resume=true  \
+  --config_path=/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/lerobot/src/outputs/train/test_point_xyz_only/checkpoints/last/pretrained_model/train_config.json \
   --policy.repo_id=test_point_xyz_only/dp \
   ${RESUME_PARAM}

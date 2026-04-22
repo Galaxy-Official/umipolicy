@@ -9,7 +9,7 @@ export PYTHONWARNINGS="ignore"
 # 交互式训练控制逻辑：只有发现旧存档时才提示断点续训 (Resume)
 # ==========================================
 RESUME_PARAM="--resume=false"
-OUTPUT_DIR="outputs/train/block_stack_0414"
+OUTPUT_DIR="outputs/train/block_stack_0414_0420train"
 
 if [ -d "$OUTPUT_DIR/checkpoints" ]; then
     read -p "🤔 发现曾经的训练存档！是否从上一个断点恢复训练？[输入 r 继续训练(Resume) / 直接回车重新开始并且覆盖旧档案]: " choice < /dev/tty
@@ -39,7 +39,7 @@ accelerate launch --multi_gpu --num_processes=2 --num_machines=1 --mixed_precisi
   --dataset.video_backend=pyav \
   --policy.type=diffusion \
   --batch_size=256 \
-  --num_workers=10 \
+  --num_workers=20 \
   --policy.use_tactile=false \
   --policy.use_force=false \
   --policy.vision_backbone=resnet18 \
