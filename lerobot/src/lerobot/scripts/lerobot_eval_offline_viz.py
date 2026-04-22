@@ -29,7 +29,7 @@ def main():
     parser.add_argument("--repo-id", type=str, required=True, help="Dataset repo id")
     parser.add_argument("--root", type=str, default=None, help="Dataset root path")
     parser.add_argument("--num-episodes", type=int, default=10, help="Number of random episodes to evaluate")
-    parser.add_argument("--output-video", type=str, default="offline_eval_eps", help="Output video file prefix")
+    parser.add_argument("--output-video", type=str, default="offline_eval_eps", help="Output video root directory (will append run_name/checkpoint)")
     parser.add_argument("--fps", type=int, default=10, help="FPS of output video")
     parser.add_argument("--video-backend", type=str, default="pyav", help="Video backend to use for decoding videos")
     
@@ -38,6 +38,27 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logging.info(f"Using device: {device}")
+
+    # Parse policy path to extract run_name and checkpoint for output directory
+    policy_path_obj = Path(args.policy_path)
+    run_name = "unknown_run"
+    checkpoint_name = "unknown_ckpt"
+
+    parts = policy_path_obj.parts
+    if len(parts) >= 3:
+        if parts[-2] == "checkpoints":
+            run_name = parts[-3]
+            checkpoint_name = parts[-1]
+        elif len(parts) >= 4 and parts[-3] == "checkpoints":
+            run_name = parts[-4]
+            checkpoint_name = parts[-2]
+        else:
+            run_name = parts[-2]
+            checkpoint_name = parts[-1]
+
+    output_dir = Path(args.output_video) / run_name / checkpoint_name
+    output_dir.mkdir(parents=True, exist_ok=True)
+    logging.info(f"Videos will be saved to {output_dir}")
 
     # Load policy
     logging.info(f"Loading policy from {args.policy_path}")
@@ -80,7 +101,7 @@ def main():
         ep_end = dataset.meta.episodes[ep_idx]["dataset_to_index"]
         ep_len = ep_end - ep_start
         
-        output_name = f"{args.output_video}_{ep_idx:04d}.mp4"
+        output_name = str(output_dir / f"eval_viz_{ep_idx:04d}.mp4")
         logging.info(f"Starting inference on episode {ep_idx} (frames {ep_start}-{ep_end}). Saving to {output_name}")
         
         pbar = tqdm(total=ep_len, desc=f"Ep {ep_idx}")
