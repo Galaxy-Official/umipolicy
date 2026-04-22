@@ -16,10 +16,10 @@ export CUDA_VISIBLE_DEVICES=0
 # 请根据实际情况修改 --policy-path, --repo-id, --root 等参数
 python -m lerobot.scripts.lerobot_eval_offline_viz \
   --policy-path outputs/train/simple_sorting_0409_0420train/checkpoints/040000/pretrained_model \
-  --repo-id lihongcs/tool_to_cups_0415 \
+  --repo-id lihongcs/simple_sorting_handcap \
   --root Data/handcap_simple_sorting_409 \
   --num-episodes 10 \
-  --output-video outputs/eval_viz_cups \
+  --output-video outputs/eval_viz_simple_sorting \
   --fps 10
 
 echo "Finished evaluation! Check the output directory for MP4 videos."
