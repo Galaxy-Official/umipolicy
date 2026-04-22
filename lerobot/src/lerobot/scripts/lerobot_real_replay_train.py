@@ -73,21 +73,49 @@ pre_action = np.array(
 action = None
 robot = None
 # LEAP
-# ROBOT_IP = "192.168.2.100"
-# LOCAL_IP = "192.168.2.102"
+ROBOT_IP = "192.168.2.100"
+LOCAL_IP = "192.168.2.102"
 
 # 700
 
-ROBOT_IP = "192.168.2.100"
-LOCAL_IP = "192.168.2.103"
+# ROBOT_IP = "192.168.2.100"
+# LOCAL_IP = "192.168.2.103"
 
-           (0, 0, 0),
-                 -1)
-    
-    # 添加文本
-    cv2.putText(frame, text, position, font, font_scale, color, thickness)
-    
-    return frame
+
+view1_video = None
+tactile1_video = None
+tactile2_video = None
+
+states_data = None
+output_dir = None
+
+
+def signal_handler(sig, frame):
+    global view1_video, states_data, output_dir
+    logger.info("\nDetected interrupt signal, saving data...")
+    try:
+        if view1_video is not None:
+            view1_video.release()
+        
+        if states_data:
+            states_array = np.array(states_data)
+            save_path = str(output_dir / 'states.npy')
+            np.save(save_path, states_array)
+            logger.info(f"Success save frames, totally {len(states_data)} frames")
+
+        logger.info(f"All data has been saved to: {output_dir}")
+
+        os.sync()
+        
+    except Exception as e:
+        logger.error(f"Error occurred while saving data: {str(e)}")
+    finally:
+        sys.exit(0)
+
+
+def to_torch(x, dtype=torch.float, device="cuda:0", requires_grad=False):
+    return torch.tensor(x, dtype=dtype, device=device, requires_grad=requires_grad)
+
 
 
 def main(args: argparse.Namespace):
