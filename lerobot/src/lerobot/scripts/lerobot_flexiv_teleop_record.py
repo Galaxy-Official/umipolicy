@@ -239,7 +239,7 @@ def record(
     _ui_debug_counter = 0
     visual_queue = None
     visual_process = None
-    if display_cameras:
+    if display_cameras and not is_headless():
         import threading
         import queue
         from lerobot.scripts.camera_viewer import viewer_thread_func
