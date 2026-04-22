@@ -15,7 +15,7 @@ export PYTHONWARNINGS="ignore"
 # 1. --mixed_precision=bf16 针对 Hopper 架构开启更快的 bfloat16 半精度加速计算。
 # 2. --batch_size=128：4 张显卡组成并行则总 Global Batch Size 为 512，保障扩散模型最好的收敛速度与稳定度。
 # 3. --num_workers=8：每张卡分配 8 个 CPU 线程进行数据加载，总共占用 32 核，平衡读图速度并防止死锁。
-# 4. --dataset.video_backend=video_reader：底层 C++ 解码，大大快于传统的 pyav 且避免了环境缺失 torchcodec 导致的问题。
+# 4. --dataset.video_backend=pyav：因系统缺乏 video_reader 和 torchcodec 编译支持，退回最稳定的 python 原生解码器。
 # ==========================================
 # 交互式训练控制逻辑：只有发现旧存档时才提示断点续训 (Resume)
 # ==========================================
@@ -49,7 +49,7 @@ echo "=========================================="
 accelerate launch --multi_gpu --num_processes=4 --num_machines=1 --mixed_precision=bf16 --dynamo_backend=inductor -m lerobot.scripts.lerobot_train \
   --dataset.repo_id=lihongcs/tool_to_cups_0415 \
   --dataset.root=Data/tool_to_cups_0415 \
-  --dataset.video_backend=video_reader \
+  --dataset.video_backend=pyav \
   --policy.type=diffusion \
   --batch_size=128 \
   --num_workers=8 \
