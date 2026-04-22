@@ -190,9 +190,12 @@ class FlexivRobot():
         """Move the robot to its home position"""
         self.flexiv.SwitchMode(flexivrdk.Mode.NRT_PRIMITIVE_EXECUTION)
         self.flexiv.ExecutePrimitive("Home", dict())
-        while self.flexiv.busy():
+        while not self.flexiv.primitive_states()["reachedTarget"]:
             time.sleep(1)
+            
         self.flexiv.ExecutePrimitive("ZeroFTSensor", dict())
+        while not self.flexiv.primitive_states()["terminated"]:
+            time.sleep(1)
 
         self.flexiv.SwitchMode(flexivrdk.Mode.NRT_JOINT_POSITION)
 
