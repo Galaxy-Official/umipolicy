@@ -29,9 +29,6 @@ from lerobot.processor.rename_processor import rename_stats
 from lerobot.datasets.feature_utils import build_dataset_frame
 
 # Flexiv imports (New RDK)
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../lib_py"))
 import flexivrdk
 import scipy.spatial.transform as st
 from lerobot.datasets.pose_utils import *

@@ -4,10 +4,7 @@ import os
 
 # from umi.common.pose_util import *
 # from umi.real_world.flexiv import *
-sys.path.append(os.path.join(os.path.dirname(__file__), "./../../lib_py"))
 from lerobot.umi.real_world.flexiv_controller import FlexivInterface
-
-sys.path.append("lib_py")
 
 import flexivrdk
 

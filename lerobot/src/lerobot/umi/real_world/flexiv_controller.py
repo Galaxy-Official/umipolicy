@@ -19,20 +19,12 @@ from lerobot.umi.common.pose_util import *
 
 from .flexiv import *
 
-sys.path.append(os.path.join(os.getcwd(), "flexiv_api/lib_py/"))
-
 try:
     import flexivrdk
-    print("================ DEBUG INFO ================")
-    print("Python Executable:", sys.executable)
-    print("Python Version:", sys.version)
-    print("Loaded flexivrdk from:", getattr(flexivrdk, "__file__", "UNKNOWN"))
-    print("Contains Log?:", hasattr(flexivrdk, "Log"))
-    print("sys.path:", sys.path)
-    print("============================================")
+    import spdlog
 except ModuleNotFoundError:
     import warnings
-    warnings.warn("No module named 'flexivrdk', but continue anyway")
+    warnings.warn("No module named 'flexivrdk' or 'spdlog'. Please pip install them.")
 
 class Command(enum.Enum):
     STOP = 0
@@ -221,14 +213,13 @@ class FlexivInterface:
         assert not _flexiv_lock
         _flexiv_lock = True
         
-        self.log = log = flexivrdk.Log()
+        self.log = log = spdlog.ConsoleLogger("Flexiv")
         self.mode = flexivrdk.Mode
 
         self.sim_rizon = sim_rizon = Rizon4(headless=True)
-        self.robot = robot = flexivrdk.Robot(robot_ip, local_ip)
-        self.robot_states = robot_states = flexivrdk.RobotStates()
+        robot_sn = os.environ.get("FLEXIV_ROBOT_SN", robot_ip)
+        self.robot = robot = flexivrdk.Robot(robot_sn)
         self.gripper = flexivrdk.Gripper(robot)
-        self.gripper_states = flexivrdk.GripperStates()
 
         if use_gripper_width_mapping:
             self.gripper_width_mapper = GripperWidthMapper()
@@ -241,18 +232,18 @@ class FlexivInterface:
         flange_lower_limits = torch.from_numpy(flange_lower_limits).to(device)
         flange_upper_limits = torch.from_numpy(flange_upper_limits).to(device)
 
-        if robot.isFault():
+        if robot.fault():
             log.warn("Fault occurred on robot server, trying to clear ...")
-            robot.clearFault()
+            robot.ClearFault()
             time.sleep(2)
-            if robot.isFault():
+            if robot.fault():
                 log.error("Fault cannot be cleared, exiting ...")
                 return
             log.info("Fault on robot server is cleared")
 
         log.info("Enabling robot ...")
-        robot.enable()
-        while not robot.isOperational():
+        robot.Enable()
+        while not robot.operational():
             time.sleep(1)
 
         self.last_send_pose = None
@@ -262,13 +253,12 @@ class FlexivInterface:
         # assert init_offset is None or init_qpos is None, "Only one of init_offset or init_qpos can be provided"
         assert not (init_offset is not None and not move_home), "init_offset is only valid when move_home is True"
 
-        self.robot.setMode(self.mode.NRT_JOINT_POSITION)
-        self.robot.getRobotStates(self.robot_states)
-        self.gripper.move(0.12, 0.1, 5)
+        self.robot.SwitchMode(self.mode.NRT_JOINT_POSITION)
+        self.gripper.Move(0.12, 0.1, 5)
         if move_home:
             self.move_to_home()
 
-        self.robot.setMode(self.mode.NRT_JOINT_POSITION)
+        self.robot.SwitchMode(self.mode.NRT_JOINT_POSITION)
 
         if init_qpos is not None:
             assert len(init_qpos) == 7
@@ -291,8 +281,7 @@ class FlexivInterface:
 
         self.log.info("Done robot initializing")
 
-        self.robot.getRobotStates(self.robot_states)
-        self.sim_rizon.set_joints(self.robot_states.q)
+        self.sim_rizon.set_joints(self.robot.states().q)
 
         # print(self.mode.__dict__)
         # self.robot.setMode(self.mode.RT_JOINT_POSITION)
@@ -300,14 +289,14 @@ class FlexivInterface:
     def move_to_home(self):
         self.log.info("Move to home")
         # robot
-        self.robot.setMode(self.mode.NRT_PRIMITIVE_EXECUTION)
-        self.robot.executePrimitive("Home()")
-        while self.robot.isBusy():
+        self.robot.SwitchMode(self.mode.NRT_PRIMITIVE_EXECUTION)
+        self.robot.ExecutePrimitive("Home()")
+        while self.robot.busy():
             time.sleep(1)
-        self.robot.executePrimitive("ZeroFTSensor()")
+        self.robot.ExecutePrimitive("ZeroFTSensor()")
 
         # gripper
-        self.gripper.move(0.12, 0.1, 5)
+        self.gripper.Move(0.12, 0.1, 5)
 
         time.sleep(1.0)
         self.log.info("Moved home")
@@ -317,7 +306,6 @@ class FlexivInterface:
 
     def get_flange_pose(self):
         """return pose in flexiv's coordinates"""
-        self.robot.getRobotStates(self.robot_states)
 
 
         # ## ABANDON: direct read flangePose from api
@@ -345,12 +333,10 @@ class FlexivInterface:
         return umi_tip_pose
 
     def get_joint_positions(self):
-        self.robot.getRobotStates(self.robot_states)
-        return np.array(self.robot_states.q)
+        return np.array(self.robot.states().q)
 
     def get_joint_velocities(self):
-        self.robot.getRobotStates(self.robot_states)
-        return np.array(self.robot_states.dq)
+        return np.array(self.robot.states().dq)
 
     def send_flange_pose(self, flange_pose: np.ndarray):
         
@@ -401,10 +387,9 @@ class FlexivInterface:
             target_vel = FlexivInterface.TARGET_VEL
 
         # for rizon4
-        self.robot.sendJointPosition(
+        self.robot.SendJointPosition(
             positions,
             target_vel,
-            FlexivInterface.TARGET_ACC,
             FlexivInterface.MAX_VEL,
             FlexivInterface.MAX_ACC,
         )
@@ -424,21 +409,18 @@ class FlexivInterface:
 
         if self.verbose:
             print("[FlexivInterface] [DEBUG] Gripper move to %.5f" % target_pos)
-        self.gripper.move(target_pos, vel, force)
+        self.gripper.Move(target_pos, vel, force)
 
     def get_gripper_width(self):
-        self.gripper.getGripperStates(self.gripper_states)
-
-        aruco_width = self.gripper_width_mapper.real_to_aruco(self.gripper_states.width)
+        aruco_width = self.gripper_width_mapper.real_to_aruco(self.gripper.states().width)
         return aruco_width
 
     def get_gripper_force(self):
-        self.gripper.getGripperStates(self.gripper_states)
-        return self.gripper_states.force
+        return self.gripper.states().force
 
     def get_gripper_state(self):
-        self.gripper.getGripperStates(self.gripper_states)
-        return self.gripper_states.width, self.gripper_states.force
+        states = self.gripper.states()
+        return states.width, states.force
 
 
 class FlexivInterpolationController(mp.Process):
