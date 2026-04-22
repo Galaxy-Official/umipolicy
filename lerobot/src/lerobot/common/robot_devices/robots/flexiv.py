@@ -157,9 +157,8 @@ class FlexivRobot():
             self.log.info(f"Enabling gripper [{self.gripper_name}]")
             try:
                 self.gripper.Enable(self.gripper_name)
-                self.log.info(f"Gripper [{self.gripper_name}] enabled successfully. Initializing...")
-                self.gripper.Init()
-                self.log.info("Gripper initialization complete.")
+                self.log.info(f"Gripper [{self.gripper_name}] enabled successfully.")
+                # self.gripper.Init()  # Removed: Hardware init closes too forcefully, only needed once per power-cycle
             except Exception as e:
                 self.log.error(f"Failed to enable or init gripper [{self.gripper_name}]: {e}")
                 print(f"\n\n[CRITICAL ERROR] Failed to enable gripper: {self.gripper_name}\nError: {e}\nPlease check if the gripper name in teleop.sh matches Flexiv Elements -> Settings -> Device!\n\n")
