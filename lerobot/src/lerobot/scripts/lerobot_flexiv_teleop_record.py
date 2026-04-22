@@ -74,14 +74,12 @@ def record(
     # ---------------------------------------------------------
     if hasattr(robot, "flexiv"):
         import math
-        import lib_py.flexivrdk as flexivrdk
+        import flexivrdk
         
         def fast_new_get_state(*args):
             # One single rapid pull directly from RDK
-            rs = flexivrdk.RobotStates()
-            robot.flexiv.getRobotStates(rs)
-            
-            pose = rs.tcpPose
+            states = robot.flexiv.states()
+            pose = states.tcp_pose
             qw, qx, qy, qz = pose[3], pose[4], pose[5], pose[6]
             
             # Pure native Python math for Quat -> RotVec (1000x faster than Scipy)
@@ -98,9 +96,7 @@ def record(
                 ry = qy / sin_half * angle
                 rz = qz / sin_half * angle
                 
-            robot_states_gripper = flexivrdk.GripperStates()
-            robot.gripper.getGripperStates(robot_states_gripper)
-            gripper = float(robot_states_gripper.width)
+            gripper = float(robot.gripper.states().width)
             
             eef_10d = [pose[0], pose[1], pose[2], rx, ry, rz, gripper, 0.0, 0.0, 0.0]
             return torch.tensor(eef_10d, dtype=torch.float32)
