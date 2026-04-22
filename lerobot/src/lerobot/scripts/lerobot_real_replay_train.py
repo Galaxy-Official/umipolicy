@@ -32,13 +32,14 @@ def compute_transform(raw_pose):
     
     pose_mat = pose_to_mat(quat_to_rot(raw_pose))
     
-    # x_rotation_clockwise_90 = Rotation.from_euler('x', -90, degrees=True).as_matrix()
-    
-    # transform_matrix = np.eye(4)
-    # transform_matrix[:3, :3] = x_rotation_clockwise_90
-    
-    # pose_mat_out = transform_matrix @ pose_mat
-    # pose_mat = transform_matrix @ pose_mat
+    # Apply base frame transformation: PyBullet URDF base to RDK Physical base
+    # (Rotate -90 deg around X axis so Left becomes Left again instead of Down)
+    x_rotation_clockwise_90 = Rotation.from_euler('x', -90, degrees=True).as_matrix()
+    transform_matrix = np.eye(4)
+    transform_matrix[:3, :3] = x_rotation_clockwise_90
+    pose_mat = transform_matrix @ pose_mat
+
+    # Apply end-effector local transformation
     additional_transform_matrix = np.eye(4)
     additional_R_y = Rotation.from_euler('y', 90, degrees=True).as_matrix()
     additional_R_z = Rotation.from_euler('z', 180, degrees=True).as_matrix()
