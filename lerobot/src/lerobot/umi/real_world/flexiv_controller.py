@@ -273,7 +273,9 @@ class FlexivInterface:
         assert not (init_offset is not None and not move_home), "init_offset is only valid when move_home is True"
 
         self.robot.SwitchMode(self.mode.NRT_JOINT_POSITION)
-        self.gripper.Move(0.12, 0.1, 5)
+        # GN01 and other grippers may have a max_width smaller than 0.12
+        max_width = self.gripper.params().max_width
+        self.gripper.Move(max_width, 0.1, 20)
         if move_home:
             self.move_to_home()
 
