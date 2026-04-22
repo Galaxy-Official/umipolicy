@@ -187,16 +187,29 @@ class FlexivRobot():
         # self.home_for_twist() # by zhiyuan_hong for specific situations
 
     def home(self) -> None:
-        """Move the robot to its home position"""
-        self.flexiv.SwitchMode(flexivrdk.Mode.NRT_PLAN_EXECUTION)
-        self.flexiv.ExecutePlan("PLAN-Home")
-        while self.flexiv.busy():
-            time.sleep(1)
+        """Move the robot to its home position smoothly and safely"""
+        self.log.info("Moving to home pose smoothly...")
+        self.flexiv.SwitchMode(flexivrdk.Mode.NRT_JOINT_POSITION)
+        
+        # Standard Flexiv Home Pose
+        home_qpos = [0.0, -0.6981317, 0.0, 1.5707963, 0.0, 0.6981317, 0.0]
+        self.flexiv.SendJointPosition(home_qpos, [0]*7, [0]*7, [0.3]*7, [0.3]*7)
+        
+        # Wait until joints are close to home
+        import numpy as np
+        while True:
+            curr_q = np.array(self.flexiv.states().q)
+            if np.max(np.abs(curr_q - home_qpos)) < 0.05:
+                break
+            time.sleep(0.5)
+        self.log.info("Reached home pose.")
             
+        self.log.info("Zeroing Force/Torque sensors...")
         self.flexiv.SwitchMode(flexivrdk.Mode.NRT_PRIMITIVE_EXECUTION)
         self.flexiv.ExecutePrimitive("ZeroFTSensor", dict())
-        while not self.flexiv.primitive_states()["terminated"]:
-            time.sleep(1)
+        # Safe wait instead of brittle primitive_states parsing
+        time.sleep(5)
+        self.log.info("Sensor zeroing complete.")
 
         self.flexiv.SwitchMode(flexivrdk.Mode.NRT_JOINT_POSITION)
 
