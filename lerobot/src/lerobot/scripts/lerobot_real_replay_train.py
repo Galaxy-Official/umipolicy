@@ -33,17 +33,18 @@ def compute_transform(raw_pose):
     pose_mat = pose_to_mat(quat_to_rot(raw_pose))
     
     # Apply base frame transformation: PyBullet URDF base to RDK Physical base
-    # (Rotate -90 deg around X axis so Left becomes Left again instead of Down)
-    x_rotation_clockwise_90 = Rotation.from_euler('x', -90, degrees=True).as_matrix()
-    transform_matrix = np.eye(4)
-    transform_matrix[:3, :3] = x_rotation_clockwise_90
-    pose_mat = transform_matrix @ pose_mat
+    # pose_mat = transform_matrix @ pose_mat
 
     # Apply end-effector local transformation
     additional_transform_matrix = np.eye(4)
+    # If the physical RDK flange's X/Y axes are rotated by 90 degrees compared to PyBullet URDF,
+    # we need to compensate for it here (before the UMI gripper transform).
+    # You may need to tune this to +90 or -90 around Z (or X/Y depending on the exact URDF definition).
+    rdk_urdf_offset = Rotation.from_euler('z', 90, degrees=True).as_matrix() # Example: +90 around local Z
+    
     additional_R_y = Rotation.from_euler('y', 90, degrees=True).as_matrix()
     additional_R_z = Rotation.from_euler('z', 180, degrees=True).as_matrix()
-    transform_mat =  additional_R_y @ additional_R_z
+    transform_mat =  rdk_urdf_offset @ additional_R_y @ additional_R_z
     additional_transform_matrix[:3, :3] = transform_mat
     pose_mat_out = pose_mat @ additional_transform_matrix
     
