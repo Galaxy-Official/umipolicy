@@ -32,6 +32,7 @@ def main():
     parser.add_argument("--num-episodes", type=int, default=10, help="Number of random episodes to evaluate")
     parser.add_argument("--output-video", type=str, default="offline_eval_eps", help="Output video file prefix")
     parser.add_argument("--fps", type=int, default=10, help="FPS of output video")
+    parser.add_argument("--video-backend", type=str, default="pyav", help="Video backend to use for decoding videos")
     
     args = parser.parse_args()
     init_logging()
@@ -49,7 +50,7 @@ def main():
 
     # Load full dataset metadata to pick episodes
     logging.info(f"Loading dataset {args.repo_id}")
-    dataset = LeRobotDataset(args.repo_id, root=args.root)
+    dataset = LeRobotDataset(args.repo_id, root=args.root, video_backend=args.video_backend)
     
     # Randomly select episodes
     total_episodes = dataset.meta.total_episodes
