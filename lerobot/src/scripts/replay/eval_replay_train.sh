@@ -24,5 +24,5 @@ echo "====================================================="
 # 切换到 src 目录执行
 cd "${SRC_DIR}"
 
-python -m lerobot.scripts.eval_real_replay_train_v2 \
+python -m lerobot.scripts.lerobot_real_replay_train \
     --task_name "test_replay"
