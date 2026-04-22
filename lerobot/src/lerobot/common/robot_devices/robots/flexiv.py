@@ -493,7 +493,16 @@ class FlexivRobot():
             self.flexiv.SendJointPosition(
                 action, self.target_vel, self.MAX_VEL, self.MAX_ACC
             )
-            self.gripper.Move(float(gripper_width), 0.1, 20)
+            
+            if not hasattr(self, "last_gripper_target"):
+                self.last_gripper_target = -1.0
+                
+            # Only send gripper command if the target width changes by more than 2mm
+            # Spamming Move() at 1000Hz freezes the gripper's motion controller
+            if abs(self.last_gripper_target - float(gripper_width)) > 0.002:
+                self.gripper.Move(float(gripper_width), 0.1, 20)
+                self.last_gripper_target = float(gripper_width)
+                
         except Exception as e:
             self.log.error(str(e))
             return False
