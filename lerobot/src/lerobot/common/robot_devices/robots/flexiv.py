@@ -465,8 +465,9 @@ class FlexivRobot():
         if eef_pos is None:
             return True
 
-        lowcost_lower_bound = np.array([-0.09, 0.09, 0.02])
-        lowcost_upper_bound = np.array([0.06, 0.24, 0.16])
+        # Relaxed bounds to allow free movement of Koch arm
+        lowcost_lower_bound = np.array([-0.5, -0.5, -0.5])
+        lowcost_upper_bound = np.array([0.5, 0.5, 0.5])
         return not (np.any(eef_pos > lowcost_upper_bound) or np.any(eef_pos < lowcost_lower_bound))
 
     def apply_teleop_target(self, action, gripper_width, eef_pos=None) -> bool:
