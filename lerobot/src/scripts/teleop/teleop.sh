@@ -45,6 +45,14 @@ echo ""
 # 使用 python -m 模块调用方式（与推理脚本保持一致）
 cd "${SRC_DIR}"
 
+# 确保串口权限 (需要 sudo 密码)
+if [ -e "${TELEOP_PORT}" ]; then
+    echo "Granting permissions to ${TELEOP_PORT}..."
+    sudo chmod 777 "${TELEOP_PORT}"
+else
+    echo "Warning: ${TELEOP_PORT} does not exist!"
+fi
+
 TACTILE_FLAG=""
 if [ "${USE_TACTILE}" = "true" ]; then
     TACTILE_FLAG="--use_tactile"
