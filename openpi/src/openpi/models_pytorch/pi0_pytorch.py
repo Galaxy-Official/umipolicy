@@ -316,6 +316,9 @@ class PI0Pytorch(nn.Module):
 
     def forward(self, observation, actions, noise=None, time=None) -> Tensor:
         """Do a full training forward pass and compute the loss (batch_size x num_steps x num_motors)"""
+        import time as timer
+        t_start = timer.perf_counter()
+
         images, img_masks, lang_tokens, lang_masks, state = self._preprocess_observation(observation, train=True)
 
         if noise is None:
@@ -330,6 +333,9 @@ class PI0Pytorch(nn.Module):
 
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, lang_tokens, lang_masks)
         suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(state, x_t, time)
+
+        t_encoder_end = timer.perf_counter()
+
         if (
             self.paligemma_with_expert.paligemma.language_model.layers[0].self_attn.q_proj.weight.dtype
             == torch.bfloat16
@@ -362,6 +368,8 @@ class PI0Pytorch(nn.Module):
             forward_func, prefix_embs, suffix_embs, att_2d_masks_4d, position_ids, adarms_cond
         )
 
+        t_transformer_end = timer.perf_counter()
+
         suffix_out = suffix_out[:, -self.config.action_horizon :]
         suffix_out = suffix_out.to(dtype=torch.float32)
 
@@ -371,7 +379,14 @@ class PI0Pytorch(nn.Module):
 
         v_t = self._apply_checkpoint(action_out_proj_func, suffix_out)
 
-        return F.mse_loss(u_t, v_t, reduction="none")
+        loss = F.mse_loss(u_t, v_t, reduction="none")
+
+        self._profiling = {
+            "encoder_s": t_encoder_end - t_start,
+            "unet_s": t_transformer_end - t_encoder_end,
+        }
+
+        return loss
 
     @torch.no_grad()
     def sample_actions(self, device, observation, noise=None, num_steps=10) -> Tensor:

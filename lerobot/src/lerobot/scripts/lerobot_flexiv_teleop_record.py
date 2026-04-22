@@ -117,12 +117,31 @@ def record(
                 target_action = obs["observation.state"].tolist() 
                 try:
                     if hasattr(robot, "teleop") and robot.teleop is not None:
-                        t_eef = robot.teleop.get_lead_arm_eef()
-                        if t_eef is not None and len(t_eef) > 0:
-                            t = t_eef[0]
-                            gripper = target_action[6]
-                            target_action = [t[0], t[1], t[2], t[3], t[4], t[5], gripper, 0.0, 0.0, 0.0]
-                except Exception:
+                        eef_tuple = robot.teleop.get_lead_arm_eef()
+                        if eef_tuple is not None and len(eef_tuple) >= 2:
+                            eef_pos, eef_orn, *_ = eef_tuple
+                            # Scale Koch positions to Flexiv space
+                            target_x, target_y, target_z = eef_pos[0] * 4.2, eef_pos[1] * 4.2, eef_pos[2] * 4.2
+                            
+                            qx, qy, qz, qw = eef_orn[0], eef_orn[1], eef_orn[2], eef_orn[3]
+                            norm = math.sqrt(qw*qw + qx*qx + qy*qy + qz*qz)
+                            if norm < 1e-12: norm = 1.0
+                            qw, qx, qy, qz = qw/norm, qx/norm, qy/norm, qz/norm
+                            
+                            angle = 2 * math.acos(max(min(qw, 1.0), -1.0))
+                            sin_half = math.sqrt(max(1.0 - qw * qw, 0.0))
+                            if sin_half < 1e-6:
+                                rx, ry, rz = 0.0, 0.0, 0.0
+                            else:
+                                rx = qx / sin_half * angle
+                                ry = qy / sin_half * angle
+                                rz = qz / sin_half * angle
+                            
+                            # Flexiv width was evaluated and stored in act["action"] natively natively (index 7 for 7 DOF)
+                            gripper_width = act.get("action", torch.zeros(8))[7].item() if "action" in act else target_action[6]
+                            target_action = [target_x, target_y, target_z, rx, ry, rz, gripper_width, 0.0, 0.0, 0.0]
+                except Exception as e:
+                    logger.error(f"Failed to generate 10D target action: {e}")
                     pass
                 act["action"] = torch.tensor(target_action, dtype=torch.float32)
             return res
@@ -306,6 +325,14 @@ def record(
     if listener:
         listener.stop()
         
+    try:
+        if dataset is not None:
+            logger.info("Finalizing LeRobot 3.0 Dataset (Flushing Videos & Parquet Footers)...")
+            dataset.finalize()
+            logger.success("Dataset finalized successfully!")
+    except Exception as e:
+        logger.error(f"Error finalizing dataset: {e}")
+        
     if visual_process is not None:
         try:
             visual_queue.put_nowait("STOP")
@@ -325,27 +352,38 @@ def record(
     logger.info("Injecting action_config for lingbot-va compatibility...")
     import json
     episodes_file = dataset.root / "meta" / "episodes.jsonl"
-    if episodes_file.exists():
+    try:
         new_lines = []
-        with open(episodes_file, 'r') as f:
-            for line in f:
-                if not line.strip(): continue
-                data = json.loads(line)
-                length = data.get("length", 0)
-                if "tasks" not in data or not data["tasks"]:
-                    data["tasks"] = [task if task else "perform the manipulation task"]
+        if hasattr(dataset, "meta") and getattr(dataset.meta, "episodes", None):
+            for ep_dict in dataset.meta.episodes:
+                length = ep_dict.get("length", 0)
+                tasks = ep_dict.get("tasks", [task if task else "perform the manipulation task"])
                 
+                # Create base valid json payload
+                data = {
+                    "episode_index": ep_dict.get("episode_index", 0),
+                    "tasks": tasks,
+                    "length": length,
+                }
+                
+                # LingBot required property
                 data["action_config"] = [
                     {
                         "start_frame": 0,
                         "end_frame": length,
-                        "action_text": data["tasks"][0],
+                        "action_text": tasks[0],
                     }
                 ]
                 new_lines.append(json.dumps(data) + "\n")
-        
-        with open(episodes_file, 'w') as f:
-            f.writelines(new_lines)
+                
+            episodes_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(episodes_file, 'w') as f:
+                f.writelines(new_lines)
+            logger.info(f"Successfully generated {episodes_file} for LingBot-VA.")
+        else:
+            logger.warning("No episodes found in dataset.meta. Skipping episodes.jsonl generation.")
+    except Exception as e:
+        logger.error(f"Failed to generate episodes.jsonl: {e}")
         logger.info(f"Successfully updated {episodes_file} to lingbot-va format.")
 
     logger.info(f"Exiting == {play_sounds}")

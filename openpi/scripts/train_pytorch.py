@@ -514,12 +514,10 @@ def train_loop(config: _config.TrainConfig):
     acc_time_forward = 0.0
     acc_time_backward = 0.0
     acc_time_optim = 0.0
+    acc_time_encoder = 0.0
+    acc_time_unet = 0.0
     acc_step_time_start = time.perf_counter()
-    profiler_log_path = config.checkpoint_dir / "train_profile.md"
-    if is_main and not profiler_log_path.exists():
-        with open(profiler_log_path, "w") as f:
-            f.write("| Step | LR | Data Proc | FWD | Backward | Optim | Total/Step | ETA |\n")
-            f.write("|---|---|---|---|---|---|---|---|\n")
+    profiler_log_path = config.checkpoint_dir / "performance_record.jsonl"
 
     last_loop_end = time.perf_counter()
 
@@ -557,6 +555,11 @@ def train_loop(config: _config.TrainConfig):
 
             loss = losses.mean()
             acc_time_forward += (time.perf_counter() - t_fwd_start)
+            
+            unwrapped_model = model.module if hasattr(model, "module") else model
+            prof = getattr(unwrapped_model, "_profiling", {})
+            acc_time_encoder += prof.get("encoder_s", 0.0)
+            acc_time_unet += prof.get("unet_s", 0.0)
 
             # Backward pass
             t_bwd_start = time.perf_counter()
@@ -635,19 +638,23 @@ def train_loop(config: _config.TrainConfig):
                     avg_time_forward = acc_time_forward / profile_log_interval
                     avg_time_backward = acc_time_backward / profile_log_interval
                     avg_time_optim = acc_time_optim / profile_log_interval
+                    avg_time_encoder = acc_time_encoder / profile_log_interval
+                    avg_time_unet = acc_time_unet / profile_log_interval
                     
                     eta_seconds = (config.num_train_steps - global_step - 1) * step_time_total
                     eta_str = f"{int(eta_seconds // 3600)}h {int((eta_seconds % 3600) // 60)}m"
 
-                    log_line = (f"| {global_step:<6} | {optim.param_groups[0]['lr']:<8.2e} | "
-                                f"{total_data_time:<8.2f}s | "
-                                f"{avg_time_forward:<10.2f}s | "
-                                f"{avg_time_backward:<7.2f}s | "
-                                f"{avg_time_optim:<8.2f}s | "
-                                f"{step_time_total:<9.2f}s | "
-                                f"{eta_str} |\n")
+                    import json
+                    json_log = {
+                        "step": global_step,
+                        "dataloading_s": round(total_data_time, 4),
+                        "encoder_s": round(avg_time_encoder, 4),
+                        "unet_s": round(avg_time_unet, 4),
+                        "update_s": round(avg_time_backward + avg_time_optim, 4),
+                        "avg_step_s": round(step_time_total, 4)
+                    }
                     with open(profiler_log_path, "a") as f:
-                        f.write(log_line)
+                        f.write(json.dumps(json_log) + "\n")
                     
                     # Reset timers
                     acc_time_data_load = 0.0
@@ -655,6 +662,8 @@ def train_loop(config: _config.TrainConfig):
                     acc_time_forward = 0.0
                     acc_time_backward = 0.0
                     acc_time_optim = 0.0
+                    acc_time_encoder = 0.0
+                    acc_time_unet = 0.0
                     acc_step_time_start = time.perf_counter()
                     profile_accum_count = 0
 

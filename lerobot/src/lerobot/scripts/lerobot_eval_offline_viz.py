@@ -12,7 +12,8 @@ import torch
 from tqdm import tqdm, trange
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
-from lerobot.policies.pretrained import PreTrainedPolicy
+from lerobot.configs.policies import PreTrainedConfig
+from lerobot.policies.factory import get_policy_class
 from lerobot.utils.utils import init_logging
 
 def get_figure_canvas(fig):
@@ -40,7 +41,9 @@ def main():
 
     # Load policy
     logging.info(f"Loading policy from {args.policy_path}")
-    policy = PreTrainedPolicy.from_pretrained(args.policy_path)
+    policy_config = PreTrainedConfig.from_pretrained(args.policy_path)
+    policy_cls = get_policy_class(policy_config.type)
+    policy = policy_cls.from_pretrained(args.policy_path, config=policy_config)
     policy.eval()
     policy.to(device)
 

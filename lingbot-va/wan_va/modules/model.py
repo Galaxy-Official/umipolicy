@@ -700,6 +700,9 @@ class WanTransformer3DModel(ModelMixin, ConfigMixin):
         return temb, timestep_proj
 
     def forward_train(self, input_dict):
+        import time as timer
+        t_start = timer.perf_counter()
+
         input_dict['latent_dict']['noisy_latents'] = input_dict['latent_dict']['noisy_latents'].to(torch.bfloat16)
         input_dict['latent_dict']['latent'] = input_dict['latent_dict']['latent'].to(torch.bfloat16)
         input_dict['latent_dict']['text_emb'] = input_dict['latent_dict']['text_emb'].to(torch.bfloat16)
@@ -773,6 +776,8 @@ class WanTransformer3DModel(ModelMixin, ConfigMixin):
                                device=hidden_states.device
                                )
 
+        t_encoder_end = timer.perf_counter()
+
         for i, block in enumerate(self.blocks):
             hidden_states = block(hidden_states,
                                          text_hidden_states,
@@ -797,6 +802,12 @@ class WanTransformer3DModel(ModelMixin, ConfigMixin):
         action_hidden_states = rearrange(action_hidden_states,
                                              '1 (b l) c -> b l c',
                                              b=batch_size)  #
+
+        t_unet_end = timer.perf_counter()
+        self._profiling = {
+            "encoder_s": t_encoder_end - t_start,
+            "unet_s": t_unet_end - t_encoder_end,
+        }
 
         return latent_hidden_states, action_hidden_states
 

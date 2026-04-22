@@ -489,11 +489,44 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
         if is_main_process:
             progbar.update(1)
             
-            if step % 50 == 0 and step > _step_start_idx:
+            # --- Automatic Profiling Record ---
+            unwrapped_policy = accelerator.unwrap_model(policy, keep_fp32_wrapper=True)
+            enc_s = 0.0
+            unet_s = 0.0
+            if hasattr(unwrapped_policy, "diffusion") and hasattr(unwrapped_policy.diffusion, "_profiling"):
+                prof = unwrapped_policy.diffusion._profiling
+                enc_s = prof.get("encoder_s", 0.0)
+                unet_s = prof.get("unet_s", 0.0)
+            
+            import json
+            import os
+            profile_log_path = cfg.output_dir / "performance_record.jsonl"
+            
+            if step == _step_start_idx + 1 or (step % 50 == 0 and step > _step_start_idx):
                 _t_now = time.perf_counter()
                 _t_50_diff = _t_now - _time_last_50_steps
-                logging.info(f">>> [Timing] Past 50 steps took: {_t_50_diff:.4f}s (Average: {_t_50_diff/50:.4f}s/step)")
-                _time_last_50_steps = _t_now
+                avg_step_s = _t_50_diff / 50 if step > _step_start_idx + 1 else _t_50_diff
+                
+                if step % 50 == 0 and step > _step_start_idx:
+                    logging.info(f">>> [Timing] Past 50 steps took: {_t_50_diff:.4f}s (Average: {avg_step_s:.4f}s/step)")
+                    _time_last_50_steps = _t_now
+                
+                # Append to file automatically
+                try:
+                    os.makedirs(cfg.output_dir, exist_ok=True)
+                    with open(profile_log_path, "a") as f:
+                        record = {
+                            "step": step,
+                            "dataloading_s": _t_dl,
+                            "encoder_s": enc_s,
+                            "unet_s": unet_s,
+                            "update_s": train_tracker.update_s,
+                            "avg_step_s": avg_step_s
+                        }
+                        f.write(json.dumps(record) + "\n")
+                except Exception as e:
+                    logging.warning(f"Failed to auto-save profiling record: {e}")
+            # ----------------------------------
 
         train_tracker.step()
         is_log_step = cfg.log_freq > 0 and step % cfg.log_freq == 0 and is_main_process

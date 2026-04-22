@@ -605,6 +605,12 @@ class DiffusionModel(nn.Module):
         pred = self.unet(noisy_trajectory, timesteps, global_cond=global_cond)
         _t_unet_end = time.perf_counter()
         
+        # Save profiling to an attribute for the training script to read
+        self._profiling = {
+            "encoder_s": _t_encoder - _t_start,
+            "unet_s": _t_unet_end - _t_unet_start,
+        }
+        
         if not hasattr(self, "_did_log_internal_timing"):
             import logging
             logging.info(f">>> [Timing] Step 1 internal -> Encoder took: {_t_encoder - _t_start:.4f}s | UNET forward took: {_t_unet_end - _t_unet_start:.4f}s")
