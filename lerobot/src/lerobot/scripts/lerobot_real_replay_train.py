@@ -33,18 +33,12 @@ def compute_transform(raw_pose):
     pose_mat = pose_to_mat(quat_to_rot(raw_pose))
     
     # Apply base frame transformation: PyBullet URDF base to RDK Physical base
-    # pose_mat = transform_matrix @ pose_mat
 
     # Apply end-effector local transformation
     additional_transform_matrix = np.eye(4)
-    # If the physical RDK flange's X/Y axes are rotated by 90 degrees compared to PyBullet URDF,
-    # we need to compensate for it here (before the UMI gripper transform).
-    # You may need to tune this to +90 or -90 around Z (or X/Y depending on the exact URDF definition).
-    # rdk_urdf_offset = Rotation.from_euler('z', 90, degrees=True).as_matrix() # Example: +90 around local Z
     
     additional_R_y = Rotation.from_euler('y', 90, degrees=True).as_matrix()
     additional_R_z = Rotation.from_euler('z', 180, degrees=True).as_matrix()
-    # transform_mat =  rdk_urdf_offset @ additional_R_y @ additional_R_z
     transform_mat = additional_R_y @ additional_R_z
     additional_transform_matrix[:3, :3] = transform_mat
     pose_mat_out = pose_mat @ additional_transform_matrix
@@ -124,7 +118,7 @@ def to_torch(x, dtype=torch.float, device="cuda:0", requires_grad=False):
 def main(args: argparse.Namespace):
     
     raw_data_path = "/home/rhos/umipolicy/lerobot/src/Data/replay/112501_2026032614"
-    episode_index = 8
+    episode_index = 1
 
     raw_pose = read_pose_from_raw_data(raw_data_path, episode_index)
 
