@@ -155,7 +155,7 @@ def main(args: argparse.Namespace):
     for frame_idx in range(len(raw_pose) -1):
             # get abs pose
             abs_pose = []
-            abs_eepose = env.robot.get_ee_pose()
+            abs_eepose = env.get_ee_pose()
             abs_pose.append(abs_eepose)
             
             # get reference start pose
@@ -170,7 +170,7 @@ def main(args: argparse.Namespace):
             refer_ee_vec = mat_to_certain_pose_type(refer_mat, env.pose_type)
             refer_obs_data['robot0_eef_pos'].append(refer_ee_vec[:3])
             refer_obs_data['robot0_eef_rot_axis_angle'].append(refer_ee_vec[3:])
-            refer_obs_data['robot0_gripper_width'].append(np.array([env.robot.get_gripper_width()]))
+            refer_obs_data['robot0_gripper_width'].append(np.array([env.get_gripper_width()]))
             
             episode_start_pose = np.concatenate([refer_obs_data['robot0_eef_pos'], refer_obs_data['robot0_eef_rot_axis_angle']], axis=-1)[-1]
             start_pose_mat = certain_pose_type_to_mat(episode_start_pose, pose_type="rotvec")
@@ -191,7 +191,7 @@ def main(args: argparse.Namespace):
 
             obs_data['robot0_eef_pos'].append(eepose[:3] )
             obs_data['robot0_eef_rot_axis_angle'].append( eepose[3:] )
-            obs_data['robot0_gripper_width'].append( np.array([env.robot.get_gripper_width()]) )
+            obs_data['robot0_gripper_width'].append( np.array([env.get_gripper_width()]) )
                 
             for key in obs_data.keys():
                 obs_data[key] = np.stack(obs_data[key], axis=0)
