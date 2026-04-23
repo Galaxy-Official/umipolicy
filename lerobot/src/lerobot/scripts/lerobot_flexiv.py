@@ -390,8 +390,11 @@ def main(args):
                 this_target_poses = this_target_poses[is_new]
                 action_timestamps = action_timestamps[is_new]
 
-            current_step += 1
-            
+            # Receding Horizon Control (RHC): Execute only a subset of predicted steps
+            steps_to_exec = min(args.steps_per_inference, len(this_target_poses))
+            this_target_poses = this_target_poses[:steps_to_exec]
+            action_timestamps = action_timestamps[:steps_to_exec]
+
             # Send Actions
             env.exec_actions(actions=this_target_poses, timestamps=action_timestamps)
             
@@ -417,7 +420,9 @@ def main(args):
             # Subtract 0.005s as a small frame capture latency tolerance
             t_cycle_end = eval_t_start + current_step * robot_dt
             precise_wait(t_cycle_end - 0.005, time_func=time.time)
-            current_step += 1
+            
+            # Advance the global clock by the number of steps we just executed
+            current_step += steps_to_exec
 
     except Exception as e:
         logger.error(f"Error when processing: {str(e)}\n{traceback.format_exc()}")
@@ -442,6 +447,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--obs_horizon", type=int, default=2)
     parser.add_argument("--ctrl_freq", action="store", type=int, default=30)
+    parser.add_argument("--steps_per_inference", type=int, default=2, help="Number of action steps to execute per inference loop (RHC)")
     parser.add_argument("--task_name", type=str, default="handcap_flexiv_mvs")
     parser.add_argument("--pretrained_model_name_or_path", type=str, required=True, help="HF Model or path to the pretrained policy")
     parser.add_argument("--use_tactile", action="store_true", help="Use tactile cameras")
