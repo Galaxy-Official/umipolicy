@@ -14,7 +14,7 @@ class FlexivEnv:
         self.init_qpos = init_qpos
         
         # New RDK 1.0+ Native Setup
-        robot_sn = os.environ.get("FLEXIV_ROBOT_SN", robot_ip)
+        robot_sn = os.environ.get("FLEXIV_ROBOT_SN", "Rizon4-062339")
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.connect((robot_ip, 1))
