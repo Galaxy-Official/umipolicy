@@ -64,7 +64,7 @@ class FlexivEnv:
 
     def reset(self):
         logger.info("Resetting robot to initial joint positions...")
-        self.robot.SendJointPosition(self.init_qpos, [0]*7, [0.2]*7, [0.2]*7)
+        self.robot.SendJointPosition(self.init_qpos, [0]*7, [0.1]*7, [0.1]*7)
         max_width = self.gripper.params().max_width
         self.gripper.Move(max_width, 0.1, 20)
         time.sleep(10) # Reduced from 15 to 10 for inference
@@ -87,7 +87,7 @@ class FlexivEnv:
             # Native IK calculation using RDK Model API
             result = self.model.reachable(target_tcp, self.robot.states().q, True)
             if result[0]:
-                self.robot.SendJointPosition(result[1], [0]*7, [0.2]*7, [0.2]*7)
+                self.robot.SendJointPosition(result[1], [0]*7, [0.1]*7, [0.1]*7)
             else:
                 logger.warning(f"Pose {target_tcp} is not reachable!")
             
