@@ -1,6 +1,6 @@
 
 import torch
-import utils3d
+
 from typing import *
 import torch.nn as nn
 import torch.nn.functional as F
