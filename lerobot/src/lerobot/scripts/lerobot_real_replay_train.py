@@ -118,7 +118,7 @@ def to_torch(x, dtype=torch.float, device="cuda:0", requires_grad=False):
 def main(args: argparse.Namespace):
     
     raw_data_path = "/home/rhos/umipolicy/lerobot/src/Data/replay/112501_2026032614"
-    episode_index = 1
+    episode_index = 0
 
     raw_pose = read_pose_from_raw_data(raw_data_path, episode_index)
 
