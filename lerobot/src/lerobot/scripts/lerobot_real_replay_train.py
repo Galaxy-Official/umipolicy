@@ -43,6 +43,22 @@ def compute_transform(raw_pose):
     additional_transform_matrix[:3, :3] = transform_mat
     pose_mat_out = pose_mat @ additional_transform_matrix
     
+    # ---------------------------------------------------------
+    # Apply position compensation (107.68, 39, -76.86) mm
+    # ---------------------------------------------------------
+    offset_mm = np.array([107.68, 39.0, -76.86])
+    offset_m = offset_mm / 1000.0
+    
+    # 构建纯平移的齐次矩阵
+    offset_transform = np.eye(4)
+    offset_transform[:3, 3] = offset_m
+    
+    # 如果该补偿是在"转换后的局部坐标系(Local Frame)"下定义的，请使用右乘：
+    pose_mat_out = pose_mat_out @ offset_transform
+    
+    # 注意：如果您的补偿值是相对于"世界/基坐标系(Base Frame)"的绝对偏移，
+    # 请将上面这行改为左乘：pose_mat_out = offset_transform @ pose_mat_out
+    
     return mat_to_certain_pose_type(pose_mat_out, pose_type="rotvec")
 
 def read_pose_from_raw_data(raw_root, eposide_index):
