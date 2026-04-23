@@ -417,6 +417,7 @@ def main(args):
             # Subtract 0.005s as a small frame capture latency tolerance
             t_cycle_end = eval_t_start + current_step * robot_dt
             precise_wait(t_cycle_end - 0.005, time_func=time.time)
+            current_step += 1
 
     except Exception as e:
         logger.error(f"Error when processing: {str(e)}\n{traceback.format_exc()}")
