@@ -91,7 +91,9 @@ class FlexivEnv:
             else:
                 logger.warning(f"Pose {target_tcp} is not reachable!")
             
-            self.gripper.Move(max(target_width, 0.005), 0.1, 20)
+            max_w = self.gripper.params().max_width
+            safe_width = min(max(target_width, 0.001), max_w - 0.001)
+            self.gripper.Move(safe_width, 0.1, 20)
             
             dt = new_timestamps[i] - time.time()
             if dt > 0:
