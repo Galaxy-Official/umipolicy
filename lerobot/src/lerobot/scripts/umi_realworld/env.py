@@ -24,22 +24,29 @@ class FlexivEnv:
             actual_local_ip = local_ip
 
         self.robot = flexivrdk.Robot(robot_sn, [actual_local_ip])
+        logger.info("Initializing Gripper API...")
         self.gripper = flexivrdk.Gripper(self.robot)
+        logger.info("Initializing Model API...")
         self.model = flexivrdk.Model(self.robot)
         
         gripper_name = os.environ.get("FLEXIV_GRIPPER_NAME", "Flexiv-GN01")
         try:
+            logger.info(f"Enabling gripper [{gripper_name}]...")
             self.gripper.Enable(gripper_name)
         except Exception as e:
             logger.warning(f"Failed to enable gripper [{gripper_name}]: {e}")
             
+        logger.info("Checking faults...")
         if self.robot.fault():
             self.robot.ClearFault()
             time.sleep(2)
+        logger.info("Enabling robot...")
         self.robot.Enable()
+        logger.info("Waiting for operational status...")
         while not self.robot.operational():
             time.sleep(1)
             
+        logger.info("Switching to NRT_JOINT_POSITION mode...")
         self.robot.SwitchMode(flexivrdk.Mode.NRT_JOINT_POSITION)
         
         max_width = self.gripper.params().max_width
