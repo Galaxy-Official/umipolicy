@@ -1,6 +1,7 @@
 import os
 import time
 import socket
+import numpy as np
 import flexivrdk
 import scipy.spatial.transform as st
 from loguru import logger
@@ -49,7 +50,7 @@ class FlexivEnv:
         pose = self.robot.states().tcp_pose
         qw, qx, qy, qz = pose[3], pose[4], pose[5], pose[6]
         rot = st.Rotation.from_quat([qx, qy, qz, qw], scalar_first=False)
-        return pos_rot_to_pose(pose[:3], rot)
+        return pos_rot_to_pose(np.array(pose[:3]), rot)
 
     def get_gripper_width(self):
         return self.gripper.states().width
