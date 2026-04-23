@@ -77,8 +77,8 @@ class ObservationThread(threading.Thread):
             if self.cam_tactile_right is not None:
                 right_tactile_img, _ = self.cam_tactile_right.get_data()
             
-            eepose = self.env.robot.get_ee_pose()
-            gripper_width = self.env.robot.get_gripper_width()
+            eepose = self.env.get_ee_pose()
+            gripper_width = self.env.get_gripper_width()
             
             with self.lock:
                 self.queue.append({
