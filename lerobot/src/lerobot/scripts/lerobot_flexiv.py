@@ -138,9 +138,7 @@ def signal_handler(sig, frame):
 def to_torch(x, dtype=torch.float, device="cuda:0", requires_grad=False):
     return torch.tensor(x, dtype=dtype, device=device, requires_grad=requires_grad)
 
-def self_exam(log):
-    # Setup from old script checking flexiv robot faults
-    pass
+
 
 # ---------------------------------------------------------------------
 # MAIN SCRIPT: Replicating lerobot_record functionality paired with handcap
@@ -198,8 +196,7 @@ def main(args):
     env = FlexivEnv(init_qpos, obs_horizon=obs_horizon, robot_ip=robot_ip, local_ip=local_ip, use_gripper_width_mapping=False, pose_type="rotvec")
 
     
-    # Check robot fault
-    self_exam(flexivrdk.Log())
+    # Check robot fault (Handled automatically in FlexivEnv init)
 
     # 3. Load Hugging Face Policy (LeRobot standard approach adapted for Handcap)
     logger.info("Initializing Hugging Face Policy using LeRobot factory mechanics...")
