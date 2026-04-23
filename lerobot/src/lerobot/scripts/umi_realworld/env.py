@@ -96,5 +96,5 @@ class FlexivEnv:
             self.gripper.Move(safe_width, 0.1, 20)
             
             dt = new_timestamps[i] - time.time()
-            if dt > 0:
-                time.sleep(dt)
+            # Removed time.sleep(dt) to make exec_actions non-blocking. 
+            # Timing is handled by precise_wait in the main control loop.

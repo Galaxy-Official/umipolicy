@@ -21,4 +21,5 @@ python -m lerobot.scripts.lerobot_flexiv \
     --pretrained_model_name_or_path "ckpt/020000/pretrained_model" \
     --task_name "simple_sorting" \
     --ctrl_freq 5 \
+    --steps_per_inference 4 \
     --obs_horizon 2

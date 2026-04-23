@@ -447,7 +447,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--obs_horizon", type=int, default=2)
     parser.add_argument("--ctrl_freq", action="store", type=int, default=30)
-    parser.add_argument("--steps_per_inference", type=int, default=2, help="Number of action steps to execute per inference loop (RHC)")
+    parser.add_argument("--steps_per_inference", type=int, default=1, help="Number of action steps to execute per inference loop (RHC)")
     parser.add_argument("--task_name", type=str, default="handcap_flexiv_mvs")
     parser.add_argument("--pretrained_model_name_or_path", type=str, required=True, help="HF Model or path to the pretrained policy")
     parser.add_argument("--use_tactile", action="store_true", help="Use tactile cameras")
