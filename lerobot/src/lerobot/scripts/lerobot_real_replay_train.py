@@ -40,11 +40,12 @@ def compute_transform(raw_pose):
     # If the physical RDK flange's X/Y axes are rotated by 90 degrees compared to PyBullet URDF,
     # we need to compensate for it here (before the UMI gripper transform).
     # You may need to tune this to +90 or -90 around Z (or X/Y depending on the exact URDF definition).
-    rdk_urdf_offset = Rotation.from_euler('z', 90, degrees=True).as_matrix() # Example: +90 around local Z
+    # rdk_urdf_offset = Rotation.from_euler('z', 90, degrees=True).as_matrix() # Example: +90 around local Z
     
     additional_R_y = Rotation.from_euler('y', 90, degrees=True).as_matrix()
     additional_R_z = Rotation.from_euler('z', 180, degrees=True).as_matrix()
-    transform_mat =  rdk_urdf_offset @ additional_R_y @ additional_R_z
+    # transform_mat =  rdk_urdf_offset @ additional_R_y @ additional_R_z
+    transform_mat = additional_R_y @ additional_R_z
     additional_transform_matrix[:3, :3] = transform_mat
     pose_mat_out = pose_mat @ additional_transform_matrix
     
