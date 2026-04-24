@@ -108,14 +108,14 @@ def main():
                 target_pos[2] -= STEP_Z_M
                 pose_changed = True
             elif key == 'a':
-                # Local rotation around Tool X axis
+                # Global rotation around Base X axis
                 delta = st.Rotation.from_euler('x', -STEP_ROT_DEG, degrees=True)
-                target_rot = target_rot * delta
+                target_rot = delta * target_rot
                 accum_roll_deg -= STEP_ROT_DEG
                 pose_changed = True
             elif key == 'd':
                 delta = st.Rotation.from_euler('x', STEP_ROT_DEG, degrees=True)
-                target_rot = target_rot * delta
+                target_rot = delta * target_rot
                 accum_roll_deg += STEP_ROT_DEG
                 pose_changed = True
             elif key == 'p':
@@ -132,11 +132,15 @@ def main():
             # Use strict IK (same as inference script)
             result = model.reachable(target_tcp, robot.states().q, True)
             if result[0]:
-                robot.SendJointPosition(result[1], [0]*7, [0.1]*7, [0.1]*7)
+                target_j = result[1]
+                curr_j = robot.states().q
+                max_diff = np.max(np.abs(np.array(target_j) - np.array(curr_j)))
+                
+                robot.SendJointPosition(target_j, [0]*7, [0.5]*7, [0.5]*7)
                 margin = target_pos[2] - 0.0715
-                sys.stdout.write(f"\r[Moving] Z: {target_pos[2]:.4f}m | Roll: {accum_roll_deg:>6.1f}° | Margin: {margin:+.4f}m       ")
+                sys.stdout.write(f"\r[Moving] Z: {target_pos[2]:.4f}m | Roll: {accum_roll_deg:>6.1f}° | Max Joint Diff: {np.degrees(max_diff):.1f}°       ")
                 sys.stdout.flush()
-                time.sleep(0.1) # Throttle movement to prevent crazy accumulation
+                time.sleep(0.1) # Throttle movement
             else:
                 sys.stdout.write(f"\r[WARNING] IK Unreachable! Z: {target_pos[2]:.4f}m | Roll: {accum_roll_deg:>6.1f}°       ")
                 sys.stdout.flush()
@@ -144,7 +148,6 @@ def main():
                 curr_p = robot.states().tcp_pose
                 target_pos[2] = curr_p[2]
                 target_rot = st.Rotation.from_quat([curr_p[4], curr_p[5], curr_p[6], curr_p[3]], scalar_first=False)
-                # We don't revert accum_roll_deg because it's just for display, but it might desync slightly.
 
     print("\nCalibration Ended.")
     robot.SwitchMode(flexivrdk.Mode.NRT_PLAN_EXECUTION) # safe idle
