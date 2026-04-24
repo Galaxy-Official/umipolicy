@@ -12,7 +12,7 @@ import flexivrdk
 
 # --- Calibration Settings ---
 STEP_ROT_DEG = 5.0      # 每次旋转 5 度
-STEP_Z_M = 0.0075        # 每次移动 0.5 cm
+STEP_Z_M = 0.005        # 每次移动 0.5 cm
 # ----------------------------
 
 def get_local_ip(robot_ip):
@@ -63,12 +63,8 @@ def main():
     while not robot.operational():
         time.sleep(1)
 
-    robot.SwitchMode(flexivrdk.Mode.NRT_JOINT_POSITION)
-
-    # Initial Pose (Z_UPPER joint positions)
-    z_upper_q = [0.2510, -0.6796, -0.1615, 1.8408, 0.1169, 0.9518, 0.1125]
-    print("Moving to initial Z_UPPER boundary...")
-    robot.SendJointPosition(z_upper_q, [0]*7, [0.1]*7, [0.1]*7)
+    # Skip moving to Z_UPPER automatically so user can start from current pose
+    print("Reading current robot pose...")
     
     # After reaching the initial pose, switch to Cartesian mode for easier rotation!
     robot.SwitchMode(flexivrdk.Mode.NRT_CARTESIAN_MOTION_FORCE)
@@ -117,7 +113,7 @@ def main():
                 pose_changed = True
             elif key == 'p':
                 z_val = target_pos[2]
-                margin = z_val - 0.0715
+                margin = z_val - 0.1
                 print(f"\n[Recorded] Z: {z_val:.4f} | Roll: {accum_roll_deg:.1f}° | Required Margin: {margin:+.4f}m\n")
             elif key == 'q' or key == '\x1b': # 'q' or ESC
                 exit_app = True
