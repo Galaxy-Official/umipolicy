@@ -84,6 +84,10 @@ class FlexivEnv:
             quat = rot.as_quat(scalar_first=False) # x,y,z,w
             target_tcp = [pos[0], pos[1], pos[2], quat[3], quat[0], quat[1], quat[2]]
             
+            # --- Safety Boundary Clip ---
+            from lerobot.common.robot_devices.robots.flexiv_safety import clip_target_pose_7d
+            target_tcp = clip_target_pose_7d(target_tcp)
+            
             # Native IK calculation using RDK Model API
             result = self.model.reachable(target_tcp, self.robot.states().q, True)
             if result[0]:

@@ -136,6 +136,11 @@ def record(
                             # Flexiv width was evaluated and stored in act["action"] natively natively (index 7 for 7 DOF)
                             gripper_width = act.get("action", torch.zeros(8))[7].item() if "action" in act else target_action[6]
                             target_action = [target_x, target_y, target_z, rx, ry, rz, gripper_width, 0.0, 0.0, 0.0]
+                            
+                            # --- Safety Boundary Clip ---
+                            from lerobot.common.robot_devices.robots.flexiv_safety import clip_target_pose_10d
+                            target_action = clip_target_pose_10d(target_action)
+                            
                 except Exception as e:
                     logger.error(f"Failed to generate 10D target action: {e}")
                     pass

@@ -466,13 +466,8 @@ class FlexivRobot():
         return None
 
     def is_eef_within_workspace(self, eef_pos) -> bool:
-        if eef_pos is None:
-            return True
-
-        # Relaxed bounds to allow free movement of Koch arm
-        lowcost_lower_bound = np.array([-0.5, -0.5, -0.5])
-        lowcost_upper_bound = np.array([0.5, 0.5, 0.5])
-        return not (np.any(eef_pos > lowcost_upper_bound) or np.any(eef_pos < lowcost_lower_bound))
+        from lerobot.common.robot_devices.robots.flexiv_safety import is_eef_within_workspace_strict
+        return is_eef_within_workspace_strict(eef_pos)
 
     def apply_teleop_target(self, action, gripper_width, eef_pos=None) -> bool:
         action_valid = (action is not None) and (gripper_width is not None) and self.is_eef_within_workspace(
