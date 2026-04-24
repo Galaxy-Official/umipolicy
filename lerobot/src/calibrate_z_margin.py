@@ -70,11 +70,8 @@ def main():
     print("Moving to initial Z_UPPER boundary...")
     robot.SendJointPosition(z_upper_q, [0]*7, [0.1]*7, [0.1]*7)
     
-    while True:
-        curr_q = np.array(robot.states().q)
-        if np.max(np.abs(curr_q - np.array(z_upper_q))) < 0.05:
-            break
-        time.sleep(0.5)
+    # After reaching the initial pose, switch to Cartesian mode for easier rotation!
+    robot.SwitchMode(flexivrdk.Mode.NRT_CARTESIAN_MOTION_FORCE)
     time.sleep(1) # Settle
     
     # Read Initial TCP Cartesian Pose
@@ -108,14 +105,14 @@ def main():
                 target_pos[2] -= STEP_Z_M
                 pose_changed = True
             elif key == 'a':
-                # Global rotation around Base X axis
+                # Local rotation around Tool X axis
                 delta = st.Rotation.from_euler('x', -STEP_ROT_DEG, degrees=True)
-                target_rot = delta * target_rot
+                target_rot = target_rot * delta
                 accum_roll_deg -= STEP_ROT_DEG
                 pose_changed = True
             elif key == 'd':
                 delta = st.Rotation.from_euler('x', STEP_ROT_DEG, degrees=True)
-                target_rot = delta * target_rot
+                target_rot = target_rot * delta
                 accum_roll_deg += STEP_ROT_DEG
                 pose_changed = True
             elif key == 'p':
@@ -126,23 +123,21 @@ def main():
                 exit_app = True
         
         if pose_changed:
-            new_quat = target_rot.as_quat(scalar_first=False) # x, y, z, w
-            target_tcp = [target_pos[0], target_pos[1], target_pos[2], new_quat[3], new_quat[0], new_quat[1], new_quat[2]]
-            
-            # Use strict IK (same as inference script)
-            result = model.reachable(target_tcp, robot.states().q, True)
-            if result[0]:
-                target_j = result[1]
-                curr_j = robot.states().q
-                max_diff = np.max(np.abs(np.array(target_j) - np.array(curr_j)))
+            try:
+                # Use scalar_first=False for compatibility, target_tcp wants w,x,y,z
+                new_quat = target_rot.as_quat(scalar_first=False) # x, y, z, w
+                target_tcp = [target_pos[0], target_pos[1], target_pos[2], new_quat[3], new_quat[0], new_quat[1], new_quat[2]]
                 
-                robot.SendJointPosition(target_j, [0]*7, [0.5]*7, [0.5]*7)
+                # Directly command cartesian motion instead of doing IK ourselves!
+                robot.SendCartesianMotionForce(target_tcp, 0.1, 0.5)
+                
                 margin = target_pos[2] - 0.0715
-                sys.stdout.write(f"\r[Moving] Z: {target_pos[2]:.4f}m | Roll: {accum_roll_deg:>6.1f}° | Max Joint Diff: {np.degrees(max_diff):.1f}°       ")
+                sys.stdout.write(f"\r[Moving] Z: {target_pos[2]:.4f}m | Roll: {accum_roll_deg:>6.1f}° | Margin: {margin:+.4f}m       ")
                 sys.stdout.flush()
                 time.sleep(0.1) # Throttle movement
-            else:
-                sys.stdout.write(f"\r[WARNING] IK Unreachable! Z: {target_pos[2]:.4f}m | Roll: {accum_roll_deg:>6.1f}°       ")
+                
+            except Exception as e:
+                sys.stdout.write(f"\r[WARNING] Motion Failed! {e}       ")
                 sys.stdout.flush()
                 # Revert change
                 curr_p = robot.states().tcp_pose
