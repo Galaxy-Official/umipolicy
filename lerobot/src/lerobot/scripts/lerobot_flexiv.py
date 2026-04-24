@@ -53,6 +53,33 @@ tactile_transforms = {
 }
 
 
+def compute_real_transform(raw_pose_10d):
+    """
+    Applies local coordinate compensation to a 10D action array: [x, y, z, r1, r2, r3, r4, r5, r6, width]
+    """
+    from lerobot.datasets.pose_utils import certain_pose_type_to_mat, mat_to_certain_pose_type
+    
+    pose_mat = certain_pose_type_to_mat(raw_pose_10d[:9], pose_type="10d")
+    
+    # Apply position compensation (107.68, 39, -76.86) mm
+    # ---------------------------------------------------------
+    offset_mm = np.array([107.68, 39.0, -76.86])
+    offset_m = offset_mm / 1000.0
+    
+    # 构建纯平移的齐次矩阵
+    offset_transform = np.eye(4)
+    offset_transform[:3, 3] = offset_m
+    
+    # 如果该补偿是在"转换后的局部坐标系(Local Frame)"下定义的，请使用右乘：
+    pose_mat_out = pose_mat @ offset_transform
+    
+    # 注意：如果您的补偿值是相对于"世界/基坐标系(Base Frame)"的绝对偏移，
+    # 请将上面这行改为左乘：pose_mat_out = offset_transform @ pose_mat
+    
+    out_pose_9d = mat_to_certain_pose_type(pose_mat_out, pose_type="10d")
+    
+    return np.concatenate([out_pose_9d, [raw_pose_10d[9]]])
+
 # ---------------------------------------------------------------------
 # Asynchronous Camera Observation Thread (Handcap Mode)
 # ---------------------------------------------------------------------
@@ -366,6 +393,10 @@ def main(args):
 
             # Handcap backwards logic: Action back to Original Absolute Coordinates
             abs_pose = np.concatenate([abs_pose, obs_data['robot0_gripper_width']], axis=-1)
+            # Apply user-defined real-world transformation compensation to the raw relative 10D actions
+            for idx in range(len(raw_action)):
+                raw_action[idx] = compute_real_transform(raw_action[idx])
+            
             abs_pose = np.array([abs_pose[-1] for _ in range(len(raw_action))])
             this_target_poses = get_real_umi_inference_action(raw_action, abs_pose, "relative")
             

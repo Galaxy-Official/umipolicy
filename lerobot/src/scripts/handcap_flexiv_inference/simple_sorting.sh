@@ -18,7 +18,7 @@ echo "$(nvcc -V || echo 'nvcc not locally found')"
 
 echo "Starting Real Robot Inference..."
 python -m lerobot.scripts.lerobot_flexiv \
-    --pretrained_model_name_or_path "ckpt/020000/pretrained_model" \
+    --pretrained_model_name_or_path "ckpt/050000/pretrained_model" \
     --task_name "simple_sorting" \
     --ctrl_freq 1 \
     --steps_per_inference 2 \
