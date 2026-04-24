@@ -1,26 +1,51 @@
-from scipy.spatial.transform import Rotation as R
 import sys
 import os
+import time
+import socket
 
-# from umi.common.pose_util import *
-# from umi.real_world.flexiv import *
-from lerobot.umi.real_world.flexiv_controller import FlexivInterface
-
+# Ensure flexivrdk can be found if it's in lib_py
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", "lib_py")))
 import flexivrdk
 
+def main():
+    robot_ip = os.environ.get("FLEXIV_ROBOT_IP", "192.168.2.100")
+    local_ip = os.environ.get("FLEXIV_LOCAL_IP", "192.168.2.102")
+    robot_sn = os.environ.get("FLEXIV_ROBOT_SN", "Rizon4-062339")
 
-robot = FlexivInterface("192.168.2.100", "192.168.2.102", move_home=False, init_offset=None, init_qpos=None)
-print(robot.get_ee_pose())
-print(robot.get_joint_positions())
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect((robot_ip, 1))
+        actual_local_ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        actual_local_ip = local_ip
 
-joints = robot.get_joint_positions()
-joints_str = ",".join(["%.4f"%j for j in joints])
-print('export FLEXIV_INIT_POSE="[%s]"'%joints_str)
+    # Initialize Robot interface (native RDK)
+    try:
+        robot = flexivrdk.Robot(robot_sn, [actual_local_ip])
+    except Exception as e:
+        print(f"Failed to connect to robot: {e}", file=sys.stderr)
+        sys.exit(1)
 
+    # Allow a moment for UDP state packets to arrive
+    time.sleep(0.5)
+    states = robot.states()
 
-### Set to specific joint positio
-# print(robot.send_joint_position([-1.3136, 0.0514, 1.3010, 2.2039, 0.2174, 1.2170, -0.18627563]))
+    # Export Joints
+    joints = states.q
+    if joints is not None and len(joints) > 0:
+        joints_str = ",".join(["%.4f" % j for j in joints])
+        print('export FLEXIV_INIT_POSE="[%s]"' % joints_str)
+    else:
+        print('export FLEXIV_INIT_POSE="[]"')
 
+    # Export TCP Pose (EEF)
+    ee_pose = states.tcp_pose
+    if ee_pose is not None and len(ee_pose) > 0:
+        ee_pose_str = ",".join(["%.4f" % p for p in ee_pose])
+        print('export FLEXIV_INIT_EEF_POSE="[%s]"' % ee_pose_str)
+    else:
+        print('export FLEXIV_INIT_EEF_POSE="[]"')
 
-### Set to flexiv home
-# robot = FlexivInterface("192.168.2.100", "192.168.2.103", move_home=True, init_offset=None, init_qpos=None)
+if __name__ == "__main__":
+    main()
