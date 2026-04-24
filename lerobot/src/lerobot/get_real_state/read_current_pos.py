@@ -3,8 +3,6 @@ import os
 import time
 import socket
 
-# Ensure flexivrdk can be found if it's in lib_py
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", "lib_py")))
 import flexivrdk
 
 def main():
