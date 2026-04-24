@@ -5,7 +5,6 @@ import socket
 import numpy as np
 import scipy.spatial.transform as st
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "lib_py")))
 import flexivrdk
 
 def get_local_ip(robot_ip):

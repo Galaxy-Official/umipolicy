@@ -4,24 +4,16 @@ import time
 import socket
 import numpy as np
 import scipy.spatial.transform as st
+import select
+import tty
+import termios
 
-try:
-    from pynput import keyboard
-except ImportError:
-    print("Please install pynput: pip install pynput")
-    sys.exit(1)
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "lib_py")))
 import flexivrdk
 
 # --- Calibration Settings ---
 STEP_ROT_DEG = 5.0      # 每次旋转 5 度
 STEP_Z_M = 0.005        # 每次移动 0.5 cm
 # ----------------------------
-
-target_pose = None  # [x, y, z, roll, pitch, yaw]
-pose_changed = False
-exit_app = False
 
 def get_local_ip(robot_ip):
     try:
@@ -33,38 +25,21 @@ def get_local_ip(robot_ip):
     except Exception:
         return "192.168.2.102"
 
-def on_press(key):
-    global target_pose, pose_changed, exit_app
-    if target_pose is None:
-        return
-        
+def getch():
+    """Reads a single character from standard input without requiring Enter."""
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
     try:
-        if key == keyboard.Key.up:
-            target_pose[2] += STEP_Z_M
-            pose_changed = True
-        elif key == keyboard.Key.down:
-            target_pose[2] -= STEP_Z_M
-            pose_changed = True
-        elif key == keyboard.Key.left:
-            target_pose[3] -= np.radians(STEP_ROT_DEG)
-            pose_changed = True
-        elif key == keyboard.Key.right:
-            target_pose[3] += np.radians(STEP_ROT_DEG)
-            pose_changed = True
-        elif key == keyboard.Key.enter:
-            # Print current Z and Roll
-            z = target_pose[2]
-            roll = np.degrees(target_pose[3])
-            margin = z - 0.0715
-            print(f"\n[Recorded] Z: {z:.4f} | Roll: {roll:.1f}° | Required Margin: {margin:+.4f}m")
-        elif key == keyboard.Key.esc:
-            exit_app = True
-    except Exception:
-        pass
+        tty.setraw(sys.stdin.fileno())
+        # Non-blocking read with 0.05s timeout
+        if select.select([sys.stdin], [], [], 0.05)[0]:
+            ch = sys.stdin.read(1)
+            return ch
+        return None
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 def main():
-    global target_pose, pose_changed, exit_app
-    
     robot_ip = os.environ.get("FLEXIV_ROBOT_IP", "192.168.2.100")
     robot_sn = os.environ.get("FLEXIV_ROBOT_SN", "Rizon4-062339")
     local_ip = get_local_ip(robot_ip)
@@ -110,21 +85,41 @@ def main():
     target_pose = [x, y, z, roll, pitch, yaw]
     
     print("\n================= CALIBRATION CONTROLS =================")
-    print(f" [LEFT/RIGHT] : Rotate X-axis (Roll) by {STEP_ROT_DEG}°")
-    print(f" [UP/DOWN]    : Move Z-axis by {STEP_Z_M*100} cm")
-    print(" [ENTER]      : Print current Required Z_ROT_MARGIN")
-    print(" [ESC]        : Exit Calibration")
+    print(f" [A] / [D] : Rotate X-axis (Roll) left/right by {STEP_ROT_DEG}°")
+    print(f" [W] / [S] : Move Z-axis UP/DOWN by {STEP_Z_M*100} cm")
+    print(" [P]       : Print current Required Z_ROT_MARGIN")
+    print(" [Q]       : Quit Calibration")
     print("========================================================")
-    print(f"Initial State: Z = {z:.4f}m | Roll = {np.degrees(roll):.1f}°")
+    print(f"Initial State: Z = {z:.4f}m | Roll = {np.degrees(roll):.1f}°\n")
 
-    listener = keyboard.Listener(on_press=on_press)
-    listener.start()
-
+    exit_app = False
     while not exit_app:
+        key = getch()
+        pose_changed = False
+        
+        if key:
+            key = key.lower()
+            if key == 'w':
+                target_pose[2] += STEP_Z_M
+                pose_changed = True
+            elif key == 's':
+                target_pose[2] -= STEP_Z_M
+                pose_changed = True
+            elif key == 'a':
+                target_pose[3] -= np.radians(STEP_ROT_DEG)
+                pose_changed = True
+            elif key == 'd':
+                target_pose[3] += np.radians(STEP_ROT_DEG)
+                pose_changed = True
+            elif key == 'p':
+                z_val = target_pose[2]
+                roll_val = np.degrees(target_pose[3])
+                margin = z_val - 0.0715
+                print(f"\n[Recorded] Z: {z_val:.4f} | Roll: {roll_val:.1f}° | Required Margin: {margin:+.4f}m\n")
+            elif key == 'q' or key == '\x1b': # 'q' or ESC
+                exit_app = True
+        
         if pose_changed:
-            pose_changed = False
-            
-            # Construct new TCP 7D list
             tx, ty, tz, troll, tpitch, tyaw = target_pose
             new_rot = st.Rotation.from_euler('xyz', [troll, tpitch, tyaw])
             new_quat = new_rot.as_quat(scalar_first=False) # x, y, z, w
@@ -142,16 +137,11 @@ def main():
                 sys.stdout.write(f"\r[WARNING] IK Unreachable! Z: {tz:.4f}m | Roll: {np.degrees(troll):>6.1f}°       ")
                 sys.stdout.flush()
                 # Revert change
-                # (You might need to press the opposite key to fully clear the error state in your mind,
-                # but target_pose remains at the unreachable value. We revert it to match robot state)
                 curr_p = robot.states().tcp_pose
                 target_pose[2] = curr_p[2]
                 rot2 = st.Rotation.from_quat([curr_p[4], curr_p[5], curr_p[6], curr_p[3]], scalar_first=False)
                 target_pose[3] = rot2.as_euler('xyz')[0]
-                
-        time.sleep(0.05)
 
-    listener.stop()
     print("\nCalibration Ended.")
     robot.SwitchMode(flexivrdk.Mode.NRT_PLAN_EXECUTION) # safe idle
     
