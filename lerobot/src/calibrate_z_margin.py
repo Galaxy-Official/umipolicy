@@ -12,7 +12,7 @@ import flexivrdk
 
 # --- Calibration Settings ---
 STEP_ROT_DEG = 5.0      # 每次旋转 5 度
-STEP_Z_M = 0.005        # 每次移动 0.5 cm
+STEP_Z_M = 0.0075        # 每次移动 0.5 cm
 # ----------------------------
 
 def get_local_ip(robot_ip):
