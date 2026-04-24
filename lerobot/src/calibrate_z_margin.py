@@ -140,7 +140,7 @@ def main():
                 # Directly command cartesian motion instead of doing IK ourselves!
                 robot.SendCartesianMotionForce(target_tcp, max_linear_vel=0.1, max_angular_vel=0.5)
                 
-                margin = target_pos[2] - 0.0715
+                margin = target_pos[2] - 0.1
                 sys.stdout.write(f"\r[Moving] Z: {target_pos[2]:.4f}m | Roll: {accum_roll_deg:>6.1f}° | Margin: {margin:+.4f}m       ")
                 sys.stdout.flush()
                 time.sleep(0.1) # Throttle movement
