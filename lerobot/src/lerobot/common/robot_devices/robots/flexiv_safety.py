@@ -13,7 +13,7 @@ Z_MAX = 0.6360
 
 # Safe margin (in meters) added to Z_MIN when the gripper rotates.
 # Assuming a 5cm buffer for the gripper finger edge hitting the table when rolled 90 degrees.
-Z_ROT_MARGIN = 0.035
+Z_ROT_MARGIN = 0.06
 
 def get_safe_z_min(roll_angle):
     """Calculate dynamic Z boundary based on Roll angle"""
