@@ -126,10 +126,12 @@ def main():
             try:
                 # Use scalar_first=False for compatibility, target_tcp wants w,x,y,z
                 new_quat = target_rot.as_quat(scalar_first=False) # x, y, z, w
-                target_tcp = [target_pos[0], target_pos[1], target_pos[2], new_quat[3], new_quat[0], new_quat[1], new_quat[2]]
+                # Must cast to python float because PyBind11 rejects np.float64
+                target_tcp = [float(target_pos[0]), float(target_pos[1]), float(target_pos[2]), 
+                              float(new_quat[3]), float(new_quat[0]), float(new_quat[1]), float(new_quat[2])]
                 
                 # Directly command cartesian motion instead of doing IK ourselves!
-                robot.SendCartesianMotionForce(target_tcp, 0.1, 0.5)
+                robot.SendCartesianMotionForce(target_tcp, max_linear_vel=0.1, max_angular_vel=0.5)
                 
                 margin = target_pos[2] - 0.0715
                 sys.stdout.write(f"\r[Moving] Z: {target_pos[2]:.4f}m | Roll: {accum_roll_deg:>6.1f}° | Margin: {margin:+.4f}m       ")
