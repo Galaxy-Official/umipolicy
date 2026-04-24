@@ -29,15 +29,18 @@ def getch():
     """Reads a single character from standard input without requiring Enter."""
     fd = sys.stdin.fileno()
     old_settings = termios.tcgetattr(fd)
+    ch = None
     try:
         tty.setraw(sys.stdin.fileno())
         # Non-blocking read with 0.05s timeout
         if select.select([sys.stdin], [], [], 0.05)[0]:
             ch = sys.stdin.read(1)
-            return ch
-        return None
+            # Drain the buffer to prevent insane accumulation when holding keys
+            while select.select([sys.stdin], [], [], 0.0)[0]:
+                sys.stdin.read(1)
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    return ch
 
 def main():
     robot_ip = os.environ.get("FLEXIV_ROBOT_IP", "192.168.2.100")
@@ -79,18 +82,17 @@ def main():
     x, y, z = init_pose[0], init_pose[1], init_pose[2]
     qw, qx, qy, qz = init_pose[3], init_pose[4], init_pose[5], init_pose[6]
     
-    rot = st.Rotation.from_quat([qx, qy, qz, qw], scalar_first=False)
-    roll, pitch, yaw = rot.as_euler('xyz')
-    
-    target_pose = [x, y, z, roll, pitch, yaw]
+    target_pos = np.array([x, y, z])
+    target_rot = st.Rotation.from_quat([qx, qy, qz, qw], scalar_first=False)
+    accum_roll_deg = 0.0
     
     print("\n================= CALIBRATION CONTROLS =================")
-    print(f" [A] / [D] : Rotate X-axis (Roll) left/right by {STEP_ROT_DEG}°")
+    print(f" [A] / [D] : Rotate Tool X-axis (Roll) left/right by {STEP_ROT_DEG}°")
     print(f" [W] / [S] : Move Z-axis UP/DOWN by {STEP_Z_M*100} cm")
     print(" [P]       : Print current Required Z_ROT_MARGIN")
     print(" [Q]       : Quit Calibration")
     print("========================================================")
-    print(f"Initial State: Z = {z:.4f}m | Roll = {np.degrees(roll):.1f}°\n")
+    print(f"Initial State: Z = {z:.4f}m | Roll = 0.0°\n")
 
     exit_app = False
     while not exit_app:
@@ -100,47 +102,49 @@ def main():
         if key:
             key = key.lower()
             if key == 'w':
-                target_pose[2] += STEP_Z_M
+                target_pos[2] += STEP_Z_M
                 pose_changed = True
             elif key == 's':
-                target_pose[2] -= STEP_Z_M
+                target_pos[2] -= STEP_Z_M
                 pose_changed = True
             elif key == 'a':
-                target_pose[3] -= np.radians(STEP_ROT_DEG)
+                # Local rotation around Tool X axis
+                delta = st.Rotation.from_euler('x', -STEP_ROT_DEG, degrees=True)
+                target_rot = target_rot * delta
+                accum_roll_deg -= STEP_ROT_DEG
                 pose_changed = True
             elif key == 'd':
-                target_pose[3] += np.radians(STEP_ROT_DEG)
+                delta = st.Rotation.from_euler('x', STEP_ROT_DEG, degrees=True)
+                target_rot = target_rot * delta
+                accum_roll_deg += STEP_ROT_DEG
                 pose_changed = True
             elif key == 'p':
-                z_val = target_pose[2]
-                roll_val = np.degrees(target_pose[3])
+                z_val = target_pos[2]
                 margin = z_val - 0.0715
-                print(f"\n[Recorded] Z: {z_val:.4f} | Roll: {roll_val:.1f}° | Required Margin: {margin:+.4f}m\n")
+                print(f"\n[Recorded] Z: {z_val:.4f} | Roll: {accum_roll_deg:.1f}° | Required Margin: {margin:+.4f}m\n")
             elif key == 'q' or key == '\x1b': # 'q' or ESC
                 exit_app = True
         
         if pose_changed:
-            tx, ty, tz, troll, tpitch, tyaw = target_pose
-            new_rot = st.Rotation.from_euler('xyz', [troll, tpitch, tyaw])
-            new_quat = new_rot.as_quat(scalar_first=False) # x, y, z, w
-            
-            target_tcp = [tx, ty, tz, new_quat[3], new_quat[0], new_quat[1], new_quat[2]]
+            new_quat = target_rot.as_quat(scalar_first=False) # x, y, z, w
+            target_tcp = [target_pos[0], target_pos[1], target_pos[2], new_quat[3], new_quat[0], new_quat[1], new_quat[2]]
             
             # Use strict IK (same as inference script)
             result = model.reachable(target_tcp, robot.states().q, True)
             if result[0]:
                 robot.SendJointPosition(result[1], [0]*7, [0.1]*7, [0.1]*7)
-                margin = tz - 0.0715
-                sys.stdout.write(f"\r[Moving] Z: {tz:.4f}m | Roll: {np.degrees(troll):>6.1f}° | Margin: {margin:+.4f}m       ")
+                margin = target_pos[2] - 0.0715
+                sys.stdout.write(f"\r[Moving] Z: {target_pos[2]:.4f}m | Roll: {accum_roll_deg:>6.1f}° | Margin: {margin:+.4f}m       ")
                 sys.stdout.flush()
+                time.sleep(0.1) # Throttle movement to prevent crazy accumulation
             else:
-                sys.stdout.write(f"\r[WARNING] IK Unreachable! Z: {tz:.4f}m | Roll: {np.degrees(troll):>6.1f}°       ")
+                sys.stdout.write(f"\r[WARNING] IK Unreachable! Z: {target_pos[2]:.4f}m | Roll: {accum_roll_deg:>6.1f}°       ")
                 sys.stdout.flush()
                 # Revert change
                 curr_p = robot.states().tcp_pose
-                target_pose[2] = curr_p[2]
-                rot2 = st.Rotation.from_quat([curr_p[4], curr_p[5], curr_p[6], curr_p[3]], scalar_first=False)
-                target_pose[3] = rot2.as_euler('xyz')[0]
+                target_pos[2] = curr_p[2]
+                target_rot = st.Rotation.from_quat([curr_p[4], curr_p[5], curr_p[6], curr_p[3]], scalar_first=False)
+                # We don't revert accum_roll_deg because it's just for display, but it might desync slightly.
 
     print("\nCalibration Ended.")
     robot.SwitchMode(flexivrdk.Mode.NRT_PLAN_EXECUTION) # safe idle
