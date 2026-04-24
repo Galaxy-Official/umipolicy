@@ -72,9 +72,12 @@ def main():
     
     while True:
         curr_q = np.array(robot.states().q)
-        if np.max(np.abs(curr_q - np.array(z_upper_q))) < 0.05:
+        if np.max(np.abs(curr_q - np.array(z_upper_q))) < 0.005:
             break
         time.sleep(0.5)
+    
+    # Wait for the physical movement to completely finish
+    time.sleep(2)
     
     # After reaching the initial pose, switch to Cartesian mode for easier rotation!
     robot.SwitchMode(flexivrdk.Mode.NRT_CARTESIAN_MOTION_FORCE)
