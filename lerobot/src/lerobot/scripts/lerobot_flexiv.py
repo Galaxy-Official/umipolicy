@@ -394,8 +394,8 @@ def main(args):
             # Handcap backwards logic: Action back to Original Absolute Coordinates
             abs_pose = np.concatenate([abs_pose, obs_data['robot0_gripper_width']], axis=-1)
             # Apply user-defined real-world transformation compensation to the raw relative 10D actions
-            for idx in range(len(raw_action)):
-                raw_action[idx] = compute_real_transform(raw_action[idx])
+            # for idx in range(len(raw_action)):
+            #     raw_action[idx] = compute_real_transform(raw_action[idx])
             
             abs_pose = np.array([abs_pose[-1] for _ in range(len(raw_action))])
             this_target_poses = get_real_umi_inference_action(raw_action, abs_pose, "relative")
