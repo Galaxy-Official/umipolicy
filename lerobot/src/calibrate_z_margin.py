@@ -63,11 +63,22 @@ def main():
     while not robot.operational():
         time.sleep(1)
 
-    # Skip moving to Z_UPPER automatically so user can start from current pose
-    print("Reading current robot pose...")
+    robot.SwitchMode(flexivrdk.Mode.NRT_JOINT_POSITION)
+
+    # Initial Pose (Z_UPPER joint positions)
+    z_upper_q = [0.2510, -0.6796, -0.1615, 1.8408, 0.1169, 0.9518, 0.1125]
+    print("Moving to initial Z_UPPER boundary...")
+    robot.SendJointPosition(z_upper_q, [0]*7, [0.1]*7, [0.1]*7)
+    
+    while True:
+        curr_q = np.array(robot.states().q)
+        if np.max(np.abs(curr_q - np.array(z_upper_q))) < 0.05:
+            break
+        time.sleep(0.5)
     
     # After reaching the initial pose, switch to Cartesian mode for easier rotation!
     robot.SwitchMode(flexivrdk.Mode.NRT_CARTESIAN_MOTION_FORCE)
+    time.sleep(1) # Settle
     time.sleep(1) # Settle
     
     # Read Initial TCP Cartesian Pose
