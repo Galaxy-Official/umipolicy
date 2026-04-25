@@ -37,7 +37,7 @@ if [ "$RESUME_PARAM" == "--resume=false" ] && [ -d "$OUTPUT_DIR" ]; then
 fi
 echo "=========================================="
 
-accelerate launch --multi_gpu --num_processes=2 --num_machines=1 --mixed_precision=bf16 --dynamo_backend=inductor -m lerobot.scripts.lerobot_train \
+accelerate launch --multi_gpu --num_processes=2 --num_machines=1 --main_process_port=29501 --mixed_precision=bf16 --dynamo_backend=inductor -m lerobot.scripts.lerobot_train \
   --dataset.repo_id=lihongcs/pick_block_into_box_handcap \
   --dataset.root=Data/pp425 \
   --dataset.video_backend=pyav \
