@@ -73,43 +73,39 @@ def main(args: argparse.Namespace):
     )
     
     num_frames = len(dataset)
-    logger.info(f"Episode {args.episode_index} has {num_frames} frames. Starting relative delta-control replay...")
+    logger.info(f"Episode {args.episode_index} has {num_frames} frames. Starting Initial-Offset Absolute Replay...")
+
+    # --- 核心修复：计算基准偏移 ---
+    # 获取数据集的第 0 帧作为基准
+    dataset_init_item = dataset.get_raw_item(0)["observation.state"].numpy()
+    dataset_init_mat = certain_pose_type_to_mat(dataset_init_item[:6], pose_type="rotvec")
+    
+    # 获取机器人当前真实的物理起始位姿作为基准
+    robot_init_pose = env.get_ee_pose()
+    robot_init_mat = certain_pose_type_to_mat(robot_init_pose, pose_type="rotvec")
 
     for frame_idx in range(num_frames - 1):
         s = time.time()
         
-        # 1. 获取当前帧和下一帧的未处理绝对状态 (10D: [xyz, rotvec, gripper, 0,0,0])
-        refer_item = dataset.get_raw_item(frame_idx)
+        # 1. 获取下一帧的目标状态
         next_item = dataset.get_raw_item(frame_idx + 1)
-        
-        obs_state_tensor = refer_item["observation.state"].clone().detach().to(torch.float32)
-        # 我们把下一帧当作目标 action
         action_tensor = next_item["observation.state"].clone().detach().to(torch.float32)
+        target_dataset_pose10d = action_tensor.numpy()
         
-        # --- DEBUG 打印数据集原始夹爪值 ---
-        dataset_gripper = action_tensor[6].item()
-        # ---------------------------------
+        # 2. 将目标状态转换为 4x4 矩阵
+        target_dataset_mat = certain_pose_type_to_mat(target_dataset_pose10d[:6], pose_type="rotvec")
         
-        # 2. 调用数据集内的标准方法，将绝对 10D 姿态转成 Relative 10d 姿态（基于 rot6d）
-        # 返回的 raw_action 包含了相对的 9 维轨迹差量和绝对的 1 维夹爪目标
-        _, raw_action = process_to_relative_rot6d(obs_state_tensor, action_tensor)
+        # 3. 计算从【数据集第 0 帧】到【当前目标帧】的完美纯净相对变换矩阵
+        # 这样可以彻底避免因为物理机械臂跟不上而导致每次 Delta 累加被“吃掉”从而缩小轨迹的问题
+        T_rel = np.linalg.inv(dataset_init_mat) @ target_dataset_mat
         
-        # 补充 sequence 维度，适配后续推理
-        if raw_action.ndim == 1:
-            raw_action = raw_action.unsqueeze(0)
-
-        # 3. 获取机器人的真实绝对位姿
-        abs_eepose = env.get_ee_pose()
+        # 4. 把这个完美的相对变换，叠加到【机械臂的初始位姿】上，得到机械臂应到达的绝对坐标
+        T_robot_target = robot_init_mat @ T_rel
         
-        # Form in_abs_pose 传入当前机器人的夹爪宽度只是为了凑足 UMI 推理的 7D 格式
-        # get_real_umi_inference_action 内部实际返回的夹爪依然会使用 raw_action 里的绝对夹爪目标
-        current_gripper = np.array([[env.get_gripper_width()]])
-        in_abs_pose = np.concatenate([[abs_eepose], current_gripper], axis=-1)
-
-        # 4. 根据当前的物理真实位姿和 Relative 动作，解算出最终发给机械臂的绝对动作
-        this_target_poses = get_real_umi_inference_action(raw_action.numpy(), in_abs_pose, "relative")
-        
-        print(f"Frame {frame_idx} | Dataset Raw Gripper: {dataset_gripper:.4f} | Target Sent to Robot: {this_target_poses[0][6]:.4f}")
+        # 5. 组装发给 env.exec_actions 的格式 (7D: 3Pos + 3Rotvec + 1Gripper)
+        target_robot_pose6d = mat_to_certain_pose_type(T_robot_target, pose_type="rotvec")
+        target_gripper = target_dataset_pose10d[6:7]
+        this_target_poses = np.concatenate([target_robot_pose6d, target_gripper], axis=-1)[np.newaxis, :]
         
         # Execute absolute action on robot
         action_timestamps = np.array([time.time() + robot_dt - action_latency])
