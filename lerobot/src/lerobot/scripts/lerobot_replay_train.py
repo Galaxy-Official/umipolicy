@@ -82,9 +82,13 @@ def main(args: argparse.Namespace):
         refer_item = dataset.get_raw_item(frame_idx)
         next_item = dataset.get_raw_item(frame_idx + 1)
         
-        obs_state_tensor = torch.tensor(refer_item["observation.state"], dtype=torch.float32)
+        obs_state_tensor = refer_item["observation.state"].clone().detach().to(torch.float32)
         # 我们把下一帧当作目标 action
-        action_tensor = torch.tensor(next_item["observation.state"], dtype=torch.float32)
+        action_tensor = next_item["observation.state"].clone().detach().to(torch.float32)
+        
+        # --- DEBUG 打印数据集原始夹爪值 ---
+        dataset_gripper = action_tensor[6].item()
+        # ---------------------------------
         
         # 2. 调用数据集内的标准方法，将绝对 10D 姿态转成 Relative 10d 姿态（基于 rot6d）
         # 返回的 raw_action 包含了相对的 9 维轨迹差量和绝对的 1 维夹爪目标
@@ -104,6 +108,8 @@ def main(args: argparse.Namespace):
 
         # 4. 根据当前的物理真实位姿和 Relative 动作，解算出最终发给机械臂的绝对动作
         this_target_poses = get_real_umi_inference_action(raw_action.numpy(), in_abs_pose, "relative")
+        
+        print(f"Frame {frame_idx} | Dataset Raw Gripper: {dataset_gripper:.4f} | Target Sent to Robot: {this_target_poses[0][6]:.4f}")
         
         # Execute absolute action on robot
         action_timestamps = np.array([time.time() + robot_dt - action_latency])
