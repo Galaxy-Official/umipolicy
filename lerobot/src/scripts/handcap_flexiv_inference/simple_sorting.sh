@@ -11,7 +11,7 @@ export PYTHONPATH="$(pwd)/lerobot/src:$(pwd):$PYTHONPATH"
 
 # 设定真实的机器人连接参数（安全保护下的初始归零点）
 export FLEXIV_ROBOT_IP="192.168.2.100"
-export FLEXIV_INIT_POSE="[0.2532,-0.2683,-0.1907,2.0341,0.0946,0.7968,0.0414]"
+export FLEXIV_INIT_POSE="[-0.0009,-0.1701,-0.0133,2.0214,-0.0058,0.6921,-0.0012]"
 
 echo "Checking CUDA version..."
 echo "$(nvcc -V || echo 'nvcc not locally found')"
