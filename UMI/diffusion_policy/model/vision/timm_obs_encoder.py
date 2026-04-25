@@ -86,10 +86,14 @@ class TimmObsEncoder(ModuleAttrMixin):
         model = timm.create_model(
             model_name=model_name,
             pretrained=pretrained,
-            checkpoint_path=checkpoint_path,
             global_pool=global_pool, # '' means no pooling
             num_classes=0            # remove classification layer
         )
+        if checkpoint_path:
+            state_dict = torch.load(checkpoint_path, map_location='cpu')
+            if 'state_dict' in state_dict:
+                state_dict = state_dict['state_dict']
+            model.load_state_dict(state_dict, strict=False)
 
         if frozen:
             assert pretrained
