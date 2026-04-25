@@ -13,7 +13,7 @@ export PYTHONWARNINGS="ignore"
 # 交互式训练控制逻辑：只有发现旧存档时才提示断点续训 (Resume)
 # ==========================================
 RESUME_PARAM="--resume=false"
-OUTPUT_DIR="outputs/train/simple_sorting_0426_resnet50"
+OUTPUT_DIR="outputs/train/pp_0426_resnet50"
 
 if [ -d "$OUTPUT_DIR/checkpoints" ]; then
     read -p "🤔 发现曾经的训练存档！是否从上一个断点恢复训练？[输入 r 继续训练(Resume) / 直接回车重新开始并且覆盖旧档案]: " choice < /dev/tty
@@ -38,8 +38,8 @@ fi
 echo "=========================================="
 
 accelerate launch --multi_gpu --num_processes=4 --num_machines=1 --mixed_precision=bf16 --dynamo_backend=inductor -m lerobot.scripts.lerobot_train \
-  --dataset.repo_id=lihongcs/simple_sorting_handcap \
-  --dataset.root=Data/simple_sorting_425train \
+  --dataset.repo_id=lihongcs/pick_block_into_box_handcap \
+  --dataset.root=Data/pp425 \
   --dataset.video_backend=pyav \
   --policy.type=diffusion \
   --batch_size=128 \
@@ -51,7 +51,7 @@ accelerate launch --multi_gpu --num_processes=4 --num_machines=1 --mixed_precisi
   --policy.use_group_norm=false \
   --optimizer.type=adamw \
   --output_dir=${OUTPUT_DIR} \
-  --job_name=dp_simple_sorting_resnet50_handcap \
+  --job_name=dp_pp_resnet50_handcap \
   --policy.device=cuda \
   --wandb.enable=true \
   --use_handcap=true \
@@ -60,7 +60,7 @@ accelerate launch --multi_gpu --num_processes=4 --num_machines=1 --mixed_precisi
   --eval_freq=10000 \
   --log_freq=100 \
   --wandb.mode="offline" \
-  --policy.repo_id=simple_sorting_0409/dp \
+  --policy.repo_id=pp_0426/dp \
   ${RESUME_PARAM}
 
 # 注意: 上面的 --batch_size=128 代表 "单卡 Batch Size"。
