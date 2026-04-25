@@ -12,7 +12,7 @@ import torch
 from lerobot.scripts.umi_realworld.utils.pose_util import *
 from lerobot.scripts.umi_realworld.real_inference_util import *
 from lerobot.scripts.umi_realworld.env import FlexivEnv
-from lerobot.datasets.lerobot_dataset_handcap import LeRobotDatasetHandcap
+from lerobot.datasets.lerobot_dataset_handcap import LeRobotDatasetHandcap, process_to_relative_rot6d
 
 
 states_data = None
@@ -71,51 +71,54 @@ def main(args: argparse.Namespace):
         root=args.data_root,
         episodes=[args.episode_index],
     )
-
+    
     num_frames = len(dataset)
-    logger.info(f"Episode {args.episode_index} has {num_frames} frames. Starting replay...")
+    logger.info(f"Episode {args.episode_index} has {num_frames} frames. Starting relative delta-control replay...")
 
     for frame_idx in range(num_frames - 1):
         s = time.time()
         
-        # Get frame from dataset
-        item = dataset[frame_idx]
+        # 1. 获取当前帧和下一帧的未处理绝对状态 (10D: [xyz, rotvec, gripper, 0,0,0])
+        refer_item = dataset.get_raw_item(frame_idx)
+        next_item = dataset.get_raw_item(frame_idx + 1)
         
-        # Get processed action from dataset
-        # In LeRobotDatasetHandcap, item["action"] is already converted to relative rot6d + gripper width
-        raw_action = item["action"]
+        obs_state_tensor = torch.tensor(refer_item["observation.state"], dtype=torch.float32)
+        # 我们把下一帧当作目标 action
+        action_tensor = torch.tensor(next_item["observation.state"], dtype=torch.float32)
         
-        # If raw_action is 1D, we add a sequence dimension for compatibility
+        # 2. 调用数据集内的标准方法，将绝对 10D 姿态转成 Relative 10d 姿态（基于 rot6d）
+        # 返回的 raw_action 包含了相对的 9 维轨迹差量和绝对的 1 维夹爪目标
+        _, raw_action = process_to_relative_rot6d(obs_state_tensor, action_tensor)
+        
+        # 补充 sequence 维度，适配后续推理
         if raw_action.ndim == 1:
             raw_action = raw_action.unsqueeze(0)
 
-        # Get absolute pose from current real robot state
-        abs_pose = []
+        # 3. 获取机器人的真实绝对位姿
         abs_eepose = env.get_ee_pose()
-        abs_pose.append(abs_eepose)
-
-        gripper_width = env.get_gripper_width()
         
-        # in_abs_pose expects shape [1, 7] (or [7] if 1 step)
-        # It concatenates [abs_pose, gripper_width]
-        in_abs_pose = np.concatenate([abs_pose, np.array([[gripper_width]])], axis=-1)
+        # Form in_abs_pose 传入当前机器人的夹爪宽度只是为了凑足 UMI 推理的 7D 格式
+        # get_real_umi_inference_action 内部实际返回的夹爪依然会使用 raw_action 里的绝对夹爪目标
+        current_gripper = np.array([[env.get_gripper_width()]])
+        in_abs_pose = np.concatenate([[abs_eepose], current_gripper], axis=-1)
 
-        # Convert back to absolute target poses
-        this_target_poses = get_real_umi_inference_action(raw_action.cpu().numpy(), in_abs_pose, "relative")
+        # 4. 根据当前的物理真实位姿和 Relative 动作，解算出最终发给机械臂的绝对动作
+        this_target_poses = get_real_umi_inference_action(raw_action.numpy(), in_abs_pose, "relative")
         
-        print(f"Step {frame_idx}: Computed target poses:")
-        print(this_target_poses)
-
-        # Execute actions on robot
-        action_timestamps = (1 + np.arange(len(this_target_poses), dtype=np.float64)) * robot_dt + time.time() - action_latency
+        # Execute absolute action on robot
+        action_timestamps = np.array([time.time() + robot_dt - action_latency])
         
         env.exec_actions(
             actions=this_target_poses,
             timestamps=action_timestamps
         )
-        print(f"Submitted {len(this_target_poses)} steps of actions.")
-        print('Action latency:', time.time() - s)
-
+        
+        # Track latency and wait if necessary to maintain roughly dataset FPS
+        elapsed = time.time() - s
+        if elapsed < robot_dt:
+            time.sleep(robot_dt - elapsed)
+            
+        # Record actual state for saving
         states_data.append(abs_eepose)
 
     # Save at end
