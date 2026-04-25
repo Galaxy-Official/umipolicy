@@ -44,9 +44,11 @@ lingbot-va/train_out
 
 umi/ckpt
 umi/data
+umi/wandb
 umi/diffusion_policy/env/
 UMI/ckpt
 UMI/data
+UMI/wandb
 UMI/diffusion_policy/env/
 
 
