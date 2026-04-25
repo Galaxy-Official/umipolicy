@@ -107,11 +107,11 @@ class TimmObsEncoder(ModuleAttrMixin):
             if downsample_ratio == 32:
                 modules = list(model.children())[:-2]
                 model = torch.nn.Sequential(*modules)
-                feature_dim = 512
+                feature_dim = 2048 if '50' in model_name or '101' in model_name or '152' in model_name else 512
             elif downsample_ratio == 16:
                 modules = list(model.children())[:-3]
                 model = torch.nn.Sequential(*modules)
-                feature_dim = 256
+                feature_dim = 1024 if '50' in model_name or '101' in model_name or '152' in model_name else 256
             else:
                 raise NotImplementedError(f"Unsupported downsample_ratio: {downsample_ratio}")
         elif model_name.startswith('convnext'):
