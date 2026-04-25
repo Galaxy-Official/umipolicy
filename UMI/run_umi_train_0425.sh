@@ -6,7 +6,7 @@ export CUDA_VISIBLE_DEVICES=0
 
 
 # 定义刚才生成好的 Zarr 数据集路径
-DATASET_PATH="/Users/macbookpro/Desktop/workspace/universal_manipulation_interface-main/data/umi_0425_dataset/combined_data.zarr"
+DATASET_PATH="data/combined_data.zarr"
 
 echo "=========================================="
 echo "🚀 准备开始 UMI Diffusion Policy 训练流水线"
