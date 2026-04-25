@@ -13,13 +13,17 @@ export FLEXIV_ROBOT_IP="192.168.2.100"
 export FLEXIV_ROBOT_SN="Rizon4-062339"
 export FLEXIV_GRIPPER_NAME="Flexiv-GN01"
 export FLEXIV_LOCAL_IP="192.168.2.102"
+
+# simple sorting 409
 export FLEXIV_INIT_POSE="[-0.0009,-0.1701,-0.0133,2.0214,-0.0058,0.6921,-0.0012]"
+
+
 
 echo "====================================================="
 echo " Starting LeRobot v3.0 Flexiv Replay Pipeline"
 echo "====================================================="
 
 python "${SRC_DIR}/lerobot/scripts/lerobot_replay_train.py" \
-    --data_root "Data/replay/simple_sorting_409/handcap" \
-    --episode_index 40 \
+    --data_root "Data/replay/tool_to_cups/handcap" \
+    --episode_index 0 \
     --task_name "eval_lerobot_replay"
