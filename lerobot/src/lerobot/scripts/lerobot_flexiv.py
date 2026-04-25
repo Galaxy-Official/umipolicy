@@ -52,6 +52,35 @@ tactile_transforms = {
     ]),
 }
 
+def resize_with_black_padding(image, target_h=480, target_w=640, is_depth=False):
+    """
+    Resize image to fit within (target_h, target_w) while preserving aspect ratio,
+    then pad with black borders to reach exactly (target_h, target_w).
+    Uses INTER_NEAREST for depth maps to avoid float interpolation artifacts.
+    """
+    h, w = image.shape[:2]
+    c = image.shape[2] if len(image.shape) == 3 else 1
+        
+    scale = min(target_w / w, target_h / h)
+    new_w = int(w * scale)
+    new_h = int(h * scale)
+    
+    interp = cv2.INTER_NEAREST if is_depth else cv2.INTER_LINEAR
+    resized = cv2.resize(image, (new_w, new_h), interpolation=interp)
+    
+    if len(resized.shape) == 2:
+        resized = np.expand_dims(resized, axis=-1)
+        
+    pad_w = (target_w - new_w) // 2
+    pad_h = (target_h - new_h) // 2
+    
+    if c == 3:
+        canvas = np.zeros((target_h, target_w, 3), dtype=image.dtype)
+    else:
+        canvas = np.zeros((target_h, target_w, 1), dtype=image.dtype)
+        
+    canvas[pad_h:pad_h+new_h, pad_w:pad_w+new_w] = resized
+    return canvas
 
 def compute_real_transform(raw_pose_10d):
     """
@@ -283,6 +312,14 @@ def main(args):
                 if not args.use_tactile:
                     left_tactile_img = np.zeros((480, 640, 3), dtype=np.uint8)
                     right_tactile_img = np.zeros((480, 640, 3), dtype=np.uint8)
+                
+                # Match Handcap Dataset Preprocessing for MVS wrist camera
+                if wrist_img is not None:
+                    # 1. Native reshape to (768, 768) via INTER_AREA
+                    if wrist_img.shape[0] != 768 or wrist_img.shape[1] != 768:
+                        wrist_img = cv2.resize(wrist_img, (768, 768), interpolation=cv2.INTER_AREA)
+                    # 2. Resize to 640x480 with aspect-preserving black padding
+                    wrist_img = resize_with_black_padding(wrist_img, target_h=480, target_w=640)
                 
                 wrist_frame_rgb = cv2.cvtColor(wrist_img, cv2.COLOR_BGR2RGB)
                 left_tactile_frame_rgb = cv2.cvtColor(left_tactile_img, cv2.COLOR_BGR2RGB)
