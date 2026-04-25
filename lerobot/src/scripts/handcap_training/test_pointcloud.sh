@@ -11,7 +11,7 @@ export PYTHONWARNINGS="ignore"
 # 交互式训练控制逻辑：只有发现旧存档时才提示断点续训 (Resume)
 # ==========================================
 RESUME_PARAM="--resume=false"
-OUTPUT_DIR="outputs/train/test_point_xyz_only"
+OUTPUT_DIR="outputs/train/test_point_xyz_only_1"
 
 if [ -d "$OUTPUT_DIR/checkpoints" ]; then
     read -p "🤔 发现曾经的训练存档！是否从上一个断点恢复训练？[输入 r 继续训练(Resume) / 直接回车重新开始并且覆盖旧档案]: " choice < /dev/tty
@@ -68,12 +68,12 @@ accelerate launch \
   --wandb.enable=true \
   --wandb.mode=offline \
   --use_handcap=true \
-  --steps=100000 \
-  --save_freq=500 \
+  --steps=200000 \
+  --save_freq=2000 \
   --policy.push_to_hub=false \
   --eval_freq=50 \
   --log_freq=10 \
   --resume=true  \
-  --config_path=/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/lerobot/src/outputs/train/test_point_xyz_only/checkpoints/last/pretrained_model/train_config.json \
+  --config_path=/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/lerobot/src/outputs/train/test_point_xyz_only/checkpoints/023000/pretrained_model \
   --policy.repo_id=test_point_xyz_only/dp \
   ${RESUME_PARAM}
