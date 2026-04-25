@@ -121,7 +121,7 @@ def main(args: argparse.Namespace):
             time.sleep(robot_dt - elapsed)
             
         # Record actual state for saving
-        states_data.append(abs_eepose)
+        states_data.append(env.get_ee_pose())
 
     # Save at end
     if states_data:
