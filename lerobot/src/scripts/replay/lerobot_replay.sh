@@ -25,5 +25,5 @@ echo "====================================================="
 
 python "${SRC_DIR}/lerobot/scripts/lerobot_replay_train.py" \
     --data_root "Data/replay/tool_to_cups/handcap" \
-    --episode_index 10 \
+    --episode_index 5 \
     --task_name "eval_lerobot_replay"
