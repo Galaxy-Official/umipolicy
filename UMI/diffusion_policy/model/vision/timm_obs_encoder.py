@@ -68,7 +68,7 @@ class TimmObsEncoder(ModuleAttrMixin):
             feature_aggregation: str='spatial_embedding',
             downsample_ratio: int=32,
             position_encording: str='learnable',
-
+            checkpoint_path: str='',
         ):
         """
         Assumes rgb input: B,T,C,H,W
@@ -86,6 +86,7 @@ class TimmObsEncoder(ModuleAttrMixin):
         model = timm.create_model(
             model_name=model_name,
             pretrained=pretrained,
+            checkpoint_path=checkpoint_path,
             global_pool=global_pool, # '' means no pooling
             num_classes=0            # remove classification layer
         )

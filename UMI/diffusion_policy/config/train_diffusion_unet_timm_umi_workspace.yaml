@@ -46,7 +46,8 @@ policy:
     # model_name: 'resnet34.a1_in1k'
     model_name: 'vit_base_patch16_clip_224.openai'
     # model_name: 'convnext_base.clip_laion2b_augreg_ft_in12k'
-    pretrained: True
+    pretrained: False # 使用本地权重时设为 False 防止它去连网下载
+    checkpoint_path: '这里填写您的绝对路径/例如/ckpt/vit_base.pth' # <--- 修改为您本地权重的实际路径
     frozen: False
 
     
