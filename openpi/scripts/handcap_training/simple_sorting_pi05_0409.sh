@@ -3,7 +3,7 @@ set -e
 
 
 # 修改为你要指定的显卡槽位 (例如使用 4 张卡则是 0,1,2,3)
-export CUDA_VISIBLE_DEVICES=0,1
+export CUDA_VISIBLE_DEVICES=0,1,2,3
 
 # OpenPI(JAX环境)不需要 accelerate，直接调用 python script 即可跑 DDP
 # conda activate umipolicy
@@ -16,9 +16,11 @@ python scripts/compute_norm_stats.py --config-name pi05_simple_sorting
 
 python scripts/train.py \
   pi05_simple_sorting \
-  --exp-name dp_simple_sorting_0409_handcap_pi05 \
+  --exp-name simple_sorting_0425_handcap_pi05 \
   --batch-size 128 \
   --num-train-steps 200000 \
+  --save-interval 10000 \
+  --num-workers 8 \
   --no-wandb-enabled \
   --fsdp-devices 1 \
   --overwrite

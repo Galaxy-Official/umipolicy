@@ -16,8 +16,6 @@ python scripts/compute_norm_stats.py --config-name pi0_simple_sorting
 
 python scripts/train.py \
   pi0_simple_sorting \
-  --exp-name dp_simple_sorting_0409_handcap_finetune \
-  --weight-loader.params-path /home/rhos/umipolicy/openpi/ckpt/99999/params \
   --batch-size 128 \
   --num-train-steps 100000 \
   --save-interval 10000 \
