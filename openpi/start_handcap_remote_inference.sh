@@ -80,8 +80,8 @@ PY
 
 POLICY_CONFIG=""
 POLICY_DIR=""
-ROBOT_IP=""
-PROMPT=""
+ROBOT_IP="192.168.1.100"
+PROMPT="simple sorting task"
 SERVER_PORT="8000"
 TASK_NAME="handcap_flexiv_mvs"
 CTRL_FREQ="30"
