@@ -219,7 +219,7 @@ if [[ ! -f "/home/rhos/miniconda3/bin/activate" ]]; then
 fi
 
 source /home/rhos/miniconda3/bin/activate
-conda activate umi310nojax
+conda activate umi
 
 if ! command -v uv >/dev/null 2>&1; then
   echo "uv is not available in the current environment." >&2
