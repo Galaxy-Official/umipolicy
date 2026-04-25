@@ -97,6 +97,7 @@ def create_policy(args: Args) -> _policy.Policy:
 
 
 def main(args: Args) -> None:
+    logging.info("Initializing model and starting JAX compilation (this may take a few minutes)...")
     policy = create_policy(args)
     policy_metadata = policy.metadata
 
