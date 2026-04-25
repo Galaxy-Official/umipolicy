@@ -221,10 +221,7 @@ fi
 source /home/rhos/miniconda3/bin/activate
 conda activate umi
 
-if ! command -v uv >/dev/null 2>&1; then
-  echo "uv is not available in the current environment." >&2
-  exit 1
-fi
+# uv check removed
 
 if ! command -v python >/dev/null 2>&1; then
   echo "python is not available in the current environment." >&2
@@ -250,8 +247,7 @@ PID_FILE="$LOG_DIR/pids.env"
 CMD_FILE="$LOG_DIR/run_command.txt"
 
 SERVER_CMD=(
-  uv
-  run
+  python
   scripts/serve_policy.py
   policy:checkpoint
   --policy.config="$POLICY_CONFIG"
