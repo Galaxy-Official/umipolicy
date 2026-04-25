@@ -35,7 +35,9 @@ class SequenceSampler:
         episode_ends = replay_buffer.episode_ends[:]
 
         # load gripper_width
-        gripper_width = replay_buffer['robot0_gripper_width'][:, 0]
+        gripper_width = replay_buffer['robot0_gripper_width'][:]
+        if len(gripper_width.shape) > 1:
+            gripper_width = gripper_width[:, 0]
         gripper_width_threshold = 0.08
         self.repeat_frame_prob = repeat_frame_prob
 
