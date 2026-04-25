@@ -59,9 +59,58 @@ def _load_base_camera() -> Any:
     return BaseCamera
 
 
+from scipy.spatial.transform import Rotation
+
 def encode_state_to_handcap_state(eepose_rotvec: np.ndarray, gripper_width: float) -> np.ndarray:
-    pose10d = mat_to_certain_pose_type(pose_to_mat(np.asarray(eepose_rotvec, dtype=np.float64)), "10d")
+    # Because the dataset's __getitem__ processes all states into RELATIVE states using process_to_relative_rot6d,
+    # the model was trained expecting the current observation.state to be the origin (Identity matrix).
+    # Therefore, we MUST feed it the identity pose (pos=0, rot=identity) during inference!
+    identity_pos = np.array([0.0, 0.0, 0.0])
+    identity_rot6d = np.array([1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
+    pose10d = np.concatenate([identity_pos, identity_rot6d])
     return np.concatenate([pose10d, np.array([gripper_width], dtype=np.float64)], axis=-1)
+
+def get_real_umi_inference_action(raw_action_rotvec: np.ndarray, abs_pose_rotvec: np.ndarray) -> np.ndarray:
+    # raw_action_rotvec is shape (6,) -> [pos, rotvec]
+    # abs_pose_rotvec is shape (7,) -> [pos, rotvec, gripper] or (6,) -> [pos, rotvec]
+    
+    current_pose_mat = pose_to_mat(abs_pose_rotvec[:6])
+    relative_action_mat = pose_to_mat(raw_action_rotvec[:6])
+    
+    # target_pose = current_pose @ relative_action
+    target_pose_mat = current_pose_mat @ relative_action_mat
+    
+    target_pose_rotvec = mat_to_certain_pose_type(target_pose_mat, "rotvec")
+    return target_pose_rotvec
+
+def resize_with_black_padding(image, target_h=480, target_w=640, is_depth=False):
+    """
+    Resize image to fit within (target_h, target_w) while preserving aspect ratio,
+    then pad with black borders to reach exactly (target_h, target_w).
+    """
+    h, w = image.shape[:2]
+    c = image.shape[2] if len(image.shape) == 3 else 1
+        
+    scale = min(target_w / w, target_h / h)
+    new_w = int(w * scale)
+    new_h = int(h * scale)
+    
+    interp = cv2.INTER_NEAREST if is_depth else cv2.INTER_LINEAR
+    resized = cv2.resize(image, (new_w, new_h), interpolation=interp)
+    
+    if len(resized.shape) == 2:
+        resized = np.expand_dims(resized, axis=-1)
+        
+    pad_w = (target_w - new_w) // 2
+    pad_h = (target_h - new_h) // 2
+    
+    if c == 3:
+        canvas = np.zeros((target_h, target_w, 3), dtype=image.dtype)
+    else:
+        canvas = np.zeros((target_h, target_w, 1), dtype=image.dtype)
+        
+    canvas[pad_h:pad_h+new_h, pad_w:pad_w+new_w] = resized
+    return canvas
 
 
 def decode_handcap_action_chunk(action_chunk: np.ndarray) -> np.ndarray:
@@ -269,6 +318,11 @@ class ObservationThread(threading.Thread):
                 right_tactile_img, _ = self.cam_tactile_right.get_data()
                 eepose = self.env.get_ee_pose()
                 gripper_width = self.env.get_gripper_width()
+
+                if wrist_img is not None:
+                    if wrist_img.shape[0] != 768 or wrist_img.shape[1] != 768:
+                        wrist_img = cv2.resize(wrist_img, (768, 768), interpolation=cv2.INTER_AREA)
+                    wrist_img = resize_with_black_padding(wrist_img, target_h=480, target_w=640)
 
                 with self.lock:
                     self.queue.append(
@@ -495,11 +549,19 @@ def main(args: Args) -> None:
             action_result = policy.infer(observation)
             action_chunk = np.asarray(action_result["actions"], dtype=np.float64)
             decoded_actions = decode_handcap_action_chunk(action_chunk)
+            
+            # Convert the decoded actions (which are SE(3) relative pose increments) back to absolute physical target poses
+            physical_actions = []
+            for action in decoded_actions:
+                abs_phys_pose = get_real_umi_inference_action(action[:6], eepose)
+                physical_actions.append(np.concatenate([abs_phys_pose, action[6:7]], axis=-1))
+            physical_actions = np.array(physical_actions)
+            
             action_timestamps = (
-                (1 + np.arange(len(decoded_actions), dtype=np.float64)) * robot_dt + time.time() - args.action_latency
+                (1 + np.arange(len(physical_actions), dtype=np.float64)) * robot_dt + time.time() - args.action_latency
             )
 
-            env.exec_actions(decoded_actions, action_timestamps)
+            env.exec_actions(physical_actions, action_timestamps)
 
             inference_latency = time.time() - loop_start
             recorder.record_frame(latest_frame)
