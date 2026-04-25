@@ -21,5 +21,5 @@ echo "====================================================="
 
 python "${SRC_DIR}/lerobot/scripts/lerobot_replay_train.py" \
     --data_root "Data/replay/pp425" \
-    --episode_index 1 \
+    --episode_index 2 \
     --task_name "eval_lerobot_replay"
