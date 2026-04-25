@@ -13,7 +13,7 @@ export FLEXIV_ROBOT_IP="192.168.2.100"
 export FLEXIV_ROBOT_SN="Rizon4-062339"
 export FLEXIV_GRIPPER_NAME="Flexiv-GN01"
 export FLEXIV_LOCAL_IP="192.168.2.102"
-export FLEXIV_INIT_POSE="[-0.0009,-0.1701,-0.0133,2.1333,-0.0058,0.7474,-0.0012]"
+export FLEXIV_INIT_POSE="[-0.0009,-0.1701,-0.0133,2.0214,-0.0058,0.6921,-0.0012]"
 
 echo "====================================================="
 echo " Starting LeRobot v3.0 Flexiv Replay Pipeline"
