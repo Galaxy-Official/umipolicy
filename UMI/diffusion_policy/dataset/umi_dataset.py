@@ -45,9 +45,11 @@ class UmiDataset(BaseDataset):
         
         if cache_dir is None:
             # load into memory store
-            with zarr.DirectoryStore(dataset_path) as directory_store:
+            store_cls = zarr.DirectoryStore if os.path.isdir(dataset_path) else zarr.ZipStore
+            kwargs = {} if os.path.isdir(dataset_path) else {'mode': 'r'}
+            with store_cls(dataset_path, **kwargs) as src_store:
                 replay_buffer = ReplayBuffer.copy_from_store(
-                    src_store=directory_store, 
+                    src_store=src_store, 
                     store=zarr.MemoryStore()
                 )
         else:
@@ -71,10 +73,12 @@ class UmiDataset(BaseDataset):
                         with zarr.LMDBStore(str(cache_path),     
                             writemap=True, metasync=False, sync=False, map_async=True, lock=False
                             ) as lmdb_store:
-                            with zarr.DirectoryStore(dataset_path) as directory_store:
+                            store_cls = zarr.DirectoryStore if os.path.isdir(dataset_path) else zarr.ZipStore
+                            kwargs = {} if os.path.isdir(dataset_path) else {'mode': 'r'}
+                            with store_cls(dataset_path, **kwargs) as src_store:
                                 print(f"Copying data to {str(cache_path)}")
                                 ReplayBuffer.copy_from_store(
-                                    src_store=directory_store,
+                                    src_store=src_store,
                                     store=lmdb_store
                                 )
                         print("Cache written to disk!")
