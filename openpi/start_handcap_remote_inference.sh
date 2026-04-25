@@ -234,6 +234,7 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 cd "$REPO_ROOT"
+export PYTHONPATH="$REPO_ROOT/src:$PYTHONPATH"
 
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 if [[ -z "$LOG_DIR" ]]; then
