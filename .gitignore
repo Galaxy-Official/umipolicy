@@ -42,9 +42,9 @@ lingbot-va/outputs
 lingbot-va/ckpt
 lingbot-va/train_out
 
-umi/ckpt
-umi/data
-umi/diffusion_policy/env/
+UMI/ckpt
+UMI/data
+UMI/diffusion_policy/env/
 
 
 third_party/
