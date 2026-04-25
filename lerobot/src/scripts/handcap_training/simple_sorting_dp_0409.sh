@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 修改为你要指定的显卡槽位 (例如使用 4 张卡则是 0,1,2,3)
-export CUDA_VISIBLE_DEVICES=0,1,2,3
+export CUDA_VISIBLE_DEVICES=2,3
 
 # 屏蔽烦人的 torchvision pyav 弃用警告刷屏问题
 export PYTHONWARNINGS="ignore"
