@@ -42,6 +42,8 @@ lingbot-va/checkpoints
 lingbot-va/outputs
 lingbot-va/ckpt
 lingbot-va/train_out
+lingbot-va/empty_emb.pt
+
 
 umi/ckpt
 umi/data
