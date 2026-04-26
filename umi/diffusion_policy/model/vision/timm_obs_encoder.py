@@ -90,10 +90,13 @@ class TimmObsEncoder(ModuleAttrMixin):
             num_classes=0            # remove classification layer
         )
         if checkpoint_path:
-            state_dict = torch.load(checkpoint_path, map_location='cpu')
-            if 'state_dict' in state_dict:
-                state_dict = state_dict['state_dict']
-            model.load_state_dict(state_dict, strict=False)
+            try:
+                state_dict = torch.load(checkpoint_path, map_location='cpu')
+                if 'state_dict' in state_dict:
+                    state_dict = state_dict['state_dict']
+                model.load_state_dict(state_dict, strict=False)
+            except FileNotFoundError:
+                logger.warning(f"Pretrained checkpoint {checkpoint_path} not found. Skipping. (This is normal during inference)")
 
         if frozen:
             assert pretrained
