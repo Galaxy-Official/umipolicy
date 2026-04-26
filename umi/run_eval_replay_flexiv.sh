@@ -32,7 +32,7 @@ export FLEXIV_INIT_POSE="[-0.0009,-0.1701,-0.0133,2.0214,-0.0058,0.6921,-0.0012]
 echo "▶️ 设置机械臂初始位姿: $FLEXIV_INIT_POSE"
 
 # 启动脚本
-python umi/scripts_real/eval_replay_flexiv.py \
+python scripts_real/eval_replay_flexiv.py \
     --data_root "$ZARR_PATH" \
     --episode_index "$EPISODE_IDX" \
     --ctrl_freq 5 \
