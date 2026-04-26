@@ -1,0 +1,190 @@
+import os
+import sys
+import time
+import argparse
+import datetime
+import numpy as np
+from pathlib import Path
+from loguru import logger
+import signal as signal_module
+import torch
+import zarr
+
+from lerobot.scripts.umi_realworld.utils.pose_util import certain_pose_type_to_mat, mat_to_certain_pose_type
+from lerobot.scripts.umi_realworld.env import FlexivEnv
+
+
+states_data = None
+output_dir = None
+
+
+def signal_handler(sig, frame):
+    global states_data, output_dir
+    logger.info("\nDetected interrupt signal, saving data...")
+    try:
+        if states_data:
+            states_array = np.array(states_data)
+            save_path = str(output_dir / 'states.npy')
+            np.save(save_path, states_array)
+            logger.info(f"Success save frames, totally {len(states_data)} frames")
+
+        if output_dir:
+            logger.info(f"All data has been saved to: {output_dir}")
+
+        os.sync()
+    except Exception as e:
+        logger.error(f"Error occurred while saving data: {str(e)}")
+    finally:
+        sys.exit(0)
+
+
+def to_torch(x, dtype=torch.float, device="cuda:0", requires_grad=False):
+    return torch.tensor(x, dtype=dtype, device=device, requires_grad=requires_grad)
+
+
+def main(args: argparse.Namespace):
+    global states_data, output_dir
+
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = Path(f"recordings/{args.task_name}/{timestamp}")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    states_data = []
+
+    signal_module.signal(signal_module.SIGINT, signal_handler)  # Ctrl+C
+    signal_module.signal(signal_module.SIGTERM, signal_handler)
+
+    logger.info(args)
+
+    # get init robot pose
+    init_qpos = eval(os.environ.get("FLEXIV_INIT_POSE", "[0, -40, 0, 90, 0, 40]"))
+    env = FlexivEnv(init_qpos, obs_horizon=args.obs_horizon, use_gripper_width_mapping=False, pose_type="rotvec")
+    env.reset()
+
+    robot_dt = 1. / args.ctrl_freq
+    action_latency = 0
+
+    logger.info(f"Loading Zarr dataset from: {args.data_root}")
+    
+    # 动态加载 Zarr，支持直接文件夹或者 Zip压缩包
+    store_cls = zarr.DirectoryStore if os.path.isdir(args.data_root) else zarr.ZipStore
+    kwargs = {} if os.path.isdir(args.data_root) else {'mode': 'r'}
+    
+    with store_cls(args.data_root, **kwargs) as store:
+        root = zarr.group(store=store)
+        
+        episode_ends = root['meta']['episode_ends'][:]
+        
+        if args.episode_index >= len(episode_ends):
+            logger.error(f"Episode index {args.episode_index} is out of bounds (max {len(episode_ends)-1}).")
+            sys.exit(1)
+            
+        start_idx = 0 if args.episode_index == 0 else episode_ends[args.episode_index - 1]
+        end_idx = episode_ends[args.episode_index]
+        num_frames = end_idx - start_idx
+        
+        logger.info(f"Episode {args.episode_index} ranges from idx {start_idx} to {end_idx}. Total {num_frames} frames.")
+        
+        pos = root['data']['robot0_eef_pos'][start_idx:end_idx]
+        rot = root['data']['robot0_eef_rot_axis_angle'][start_idx:end_idx]
+        
+        # 兼容处理 gripper 数据，防止 Zarr 广播错误
+        gripper_full = root['data']['robot0_gripper_width'][:]
+        if len(gripper_full.shape) > 1:
+            gripper_full = gripper_full[:, 0]
+        gripper = gripper_full[start_idx:end_idx]
+        
+        # 拼接成为 6D dataset poses: [x, y, z, rx, ry, rz]
+        dataset_poses = np.concatenate([pos, rot], axis=1)
+
+    logger.info("Starting Initial-Offset Absolute Replay...")
+
+    # --- 核心修复：计算基准偏移 ---
+    # 获取数据集的第 0 帧作为基准
+    dataset_init_pose = dataset_poses[0]
+    dataset_init_mat = certain_pose_type_to_mat(dataset_init_pose, pose_type="rotvec")
+    
+    # 获取机器人当前真实的物理起始位姿作为基准
+    robot_init_pose = env.get_ee_pose()
+    robot_init_mat = certain_pose_type_to_mat(robot_init_pose, pose_type="rotvec")
+
+    for frame_idx in range(num_frames - 1):
+        s = time.time()
+        
+        # 1. 获取下一帧的目标状态
+        target_dataset_pose = dataset_poses[frame_idx + 1]
+        
+        # 2. 将目标状态转换为 4x4 矩阵
+        target_dataset_mat = certain_pose_type_to_mat(target_dataset_pose, pose_type="rotvec")
+        
+        # 3. 计算从【数据集第 0 帧】到【当前目标帧】的完美纯净相对变换矩阵
+        # 这样可以彻底避免因为物理机械臂跟不上而导致每次 Delta 累加被“吃掉”从而缩小轨迹的问题
+        T_rel = np.linalg.inv(dataset_init_mat) @ target_dataset_mat
+        
+        # 4. 把这个完美的相对变换，叠加到【机械臂的初始位姿】上，得到机械臂应到达的绝对坐标
+        T_robot_target = robot_init_mat @ T_rel
+        
+        # 5. 组装发给 env.exec_actions 的格式 (7D: 3Pos + 3Rotvec + 1Gripper)
+        target_robot_pose6d = mat_to_certain_pose_type(T_robot_target, pose_type="rotvec")
+        target_gripper = np.array([gripper[frame_idx + 1]])
+        
+        this_target_poses = np.concatenate([target_robot_pose6d, target_gripper], axis=-1)[np.newaxis, :]
+        
+        # Execute absolute action on robot
+        action_timestamps = np.array([time.time() + robot_dt - action_latency])
+        
+        env.exec_actions(
+            actions=this_target_poses,
+            timestamps=action_timestamps
+        )
+        
+        # Track latency and wait if necessary to maintain roughly dataset FPS
+        elapsed = time.time() - s
+        if elapsed < robot_dt:
+            time.sleep(robot_dt - elapsed)
+            
+        # Record actual state for saving
+        states_data.append(env.get_ee_pose())
+
+    # Save at end
+    if states_data:
+        states_array = np.array(states_data)
+        np.save(str(output_dir / 'states.npy'), states_array)
+        
+    logger.info(f"Replay finished. Data saved to: {output_dir}")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--data_root",
+        type=str,
+        required=True,
+        help="Path to the UMI Zarr dataset (e.g. combined_data.zarr)",
+    )
+    parser.add_argument(
+        "--episode_index",
+        type=int,
+        required=True,
+        help="The index of the episode to replay",
+    )
+    parser.add_argument(
+        "--obs_horizon",
+        type=int,
+        default=2
+    )
+    parser.add_argument(
+        "--ctrl_freq",
+        action="store",
+        type=int,
+        help="The control frequency of the robot",
+        default=20,
+    )
+    parser.add_argument(
+        "--task_name",
+        type=str,
+        help="Name of the task",
+        default="umi_replay",
+    )
+    
+    args = parser.parse_args()
+    main(args)
