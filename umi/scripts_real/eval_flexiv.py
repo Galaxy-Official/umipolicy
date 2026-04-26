@@ -25,7 +25,29 @@ from diffusion_policy.common.cv2_util import get_image_transform
 from diffusion_policy.common.pytorch_util import dict_apply
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
 from umi.common.precise_sleep import precise_wait
-from umi.real_world.keystroke_counter import KeystrokeCounter, KeyCode, Key
+ENABLE_GUI = os.environ.get('DISPLAY', '') != ''
+if ENABLE_GUI:
+    try:
+        from umi.real_world.keystroke_counter import KeystrokeCounter, KeyCode, Key
+    except Exception as e:
+        print(f"Warning: Failed to load pynput ({e}). GUI disabled.")
+        ENABLE_GUI = False
+
+if not ENABLE_GUI:
+    print("Running in headless mode. OpenCV display and keyboard 'S' stop are disabled. Use Ctrl+C to stop.")
+    class KeyCode:
+        def __init__(self, char):
+            self.char = char
+    class DummyKey:
+        pass
+    Key = DummyKey()
+    class KeystrokeCounter:
+        def __enter__(self):
+            return self
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+        def get_press_events(self):
+            return []
 from umi.real_world.real_inference_util import (get_real_obs_resolution,
                                                 get_real_umi_obs_dict,
                                                 get_real_umi_action)
@@ -356,19 +378,19 @@ def main(input, output, robot_ip, local_ip, camera_config,
                         )
 
                         # visualize
-                        vis_img = obs['camera0_rgb'][-1]
-                        cv2.putText(
-                            vis_img,
-                            f'Policy Mode, Time: {time.monotonic() - t_start:.1f}',
-                            (10,20),
-                            fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                            fontScale=0.5,
-                            thickness=2,
-                            color=(0,255,0)
-                        )
-                        cv2.imshow('default', vis_img[...,::-1])
-
-                        _ = cv2.pollKey()
+                        if ENABLE_GUI:
+                            vis_img = obs['camera0_rgb'][-1]
+                            cv2.putText(
+                                vis_img,
+                                f'Policy Mode, Time: {time.monotonic() - t_start:.1f}',
+                                (10,20),
+                                fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                                fontScale=0.5,
+                                thickness=2,
+                                color=(0,255,0)
+                            )
+                            cv2.imshow('default', vis_img[...,::-1])
+                            _ = cv2.pollKey()
                         press_events = key_counter.get_press_events()
                         stop_episode = False
                         for key_stroke in press_events:
