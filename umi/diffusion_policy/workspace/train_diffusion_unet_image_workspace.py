@@ -15,7 +15,10 @@ import pathlib
 from torch.utils.data import DataLoader
 import copy
 import random
-import wandb
+try:
+    import wandb
+except ImportError:
+    pass
 import pickle
 import tqdm
 import numpy as np
