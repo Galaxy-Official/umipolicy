@@ -10,8 +10,8 @@ import signal as signal_module
 import torch
 import zarr
 
-from lerobot.scripts.umi_realworld.utils.pose_util import certain_pose_type_to_mat, mat_to_certain_pose_type
-from lerobot.scripts.umi_realworld.env import FlexivEnv
+from flexiv_env.pose_util import certain_pose_type_to_mat, mat_to_certain_pose_type
+from flexiv_env.env import FlexivEnv
 
 
 states_data = None
