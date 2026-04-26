@@ -128,9 +128,10 @@ def resize_with_black_padding(image, target_h=480, target_w=640):
 @click.option('--max_duration', '-md', default=60, help='Max duration for each epoch in seconds.')
 @click.option('--frequency', '-f', default=10, type=float, help="Control frequency in Hz.")
 @click.option('--command_latency', '-cl', default=0.01, type=float, help="Latency between receiving SpaceMouse command to executing on Robot in Sec.")
+@click.option('--use_tactile', is_flag=True, default=False, help="Whether to load tactile cameras.")
 def main(input, output, robot_ip, local_ip, camera_config,
     init_joints, steps_per_inference, max_duration,
-    frequency, command_latency):
+    frequency, command_latency, use_tactile):
     
     max_gripper_width = 0.09
     gripper_speed = 0.2
@@ -153,8 +154,25 @@ def main(input, output, robot_ip, local_ip, camera_config,
     print("Initializing MVS Cameras...")
     if camera_config is None:
         camera_config = os.path.join(ROOT_DIR, "../lerobot/src/perception/configs/camera/handcap_camera.json")
-    cam_dict = BaseCamera.create_cameras_from_config(config_path=camera_config)
+    
+    import tempfile
+    with open(camera_config, "r") as f:
+        cam_config_data = json.load(f)
+        
+    if not use_tactile:
+        cam_config_data.pop("left_tactile", None)
+        cam_config_data.pop("right_tactile", None)
+        
+    with tempfile.NamedTemporaryFile('w', delete=False, suffix='.json') as tmp_file:
+        json.dump(cam_config_data, tmp_file)
+        tmp_path = tmp_file.name
+        
+    cam_dict = BaseCamera.create_cameras_from_config(config_path=tmp_path)
+    os.remove(tmp_path)
+    
     cam_wrist = cam_dict["wrist"]
+    cam_left_tactile = cam_dict.get("left_tactile")
+    cam_right_tactile = cam_dict.get("right_tactile")
 
     with SharedMemoryManager() as shm_manager:
         # with Spacemouse(shm_manager=shm_manager) as sm, \
