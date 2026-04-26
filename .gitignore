@@ -25,6 +25,7 @@ lerobot/src/urdf
 lerobot/src/outputs
 lerobot/src/logs/
 lerobot/realworld_replay_recording
+lerobot/src/recordings
 
 # openpi specific
 openpi/ckpt/
