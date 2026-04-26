@@ -21,7 +21,7 @@ python scripts/compute_norm_stats.py --config-name pi05_pick_block_into_box
 python scripts/train.py \
   pi05_pick_block_into_box \
   --exp-name pick_block_into_box_0425_handcap_pi05 \
-  --batch-size 128 \
+  --batch-size 64 \
   --num-train-steps 200000 \
   --save-interval 10000 \
   --num-workers 8 \
