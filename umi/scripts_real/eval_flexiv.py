@@ -249,9 +249,11 @@ def main(input, output, robot_ip, local_ip, camera_config,
             with torch.no_grad():
                 policy.reset()
                 obs = get_formatted_obs()
+                episode_start_pose = [env.get_ee_pose()]
                 obs_dict_np = get_real_umi_obs_dict(
                     env_obs=obs, shape_meta=cfg.task.shape_meta, 
-                    obs_pose_repr=obs_pose_rep)
+                    obs_pose_repr=obs_pose_rep,
+                    episode_start_pose=episode_start_pose)
                 obs_dict = dict_apply(obs_dict_np, 
                     lambda x: torch.from_numpy(x).unsqueeze(0).to(device))
                 result = policy.predict_action(obs_dict)
@@ -348,6 +350,8 @@ def main(input, output, robot_ip, local_ip, camera_config,
                     print("Policy Started!")
                     iter_idx = 0
                     
+                    episode_start_pose = [env.get_ee_pose()]
+                    
                     while True:
                         t_cycle_end = t_start + (iter_idx + steps_per_inference) * dt
 
@@ -360,7 +364,8 @@ def main(input, output, robot_ip, local_ip, camera_config,
                             s = time.time()
                             obs_dict_np = get_real_umi_obs_dict(
                                 env_obs=obs, shape_meta=cfg.task.shape_meta, 
-                                obs_pose_repr=obs_pose_rep)
+                                obs_pose_repr=obs_pose_rep,
+                                episode_start_pose=episode_start_pose)
                             obs_dict = dict_apply(obs_dict_np, 
                                 lambda x: torch.from_numpy(x).unsqueeze(0).to(device))
                             result = policy.predict_action(obs_dict)
