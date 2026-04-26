@@ -51,7 +51,8 @@ if not ENABLE_GUI:
 from umi.real_world.real_inference_util import (get_real_obs_resolution,
                                                 get_real_umi_obs_dict,
                                                 get_real_umi_action)
-from umi.real_world.spacemouse_shared_memory import Spacemouse
+# 暂时屏蔽 SpaceMouse 导入，因为 Python 3.12 已经弃用了相关 C API 导致 spnav 报错
+# from umi.real_world.spacemouse_shared_memory import Spacemouse
 
 # 引入 Flexiv 环境 (本仓内的独立剥离版)
 from scripts_real.flexiv_env.env import FlexivEnv
