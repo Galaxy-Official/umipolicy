@@ -6,7 +6,7 @@ export CUDA_VISIBLE_DEVICES=0
 
 
 # 定义刚才生成好的 Zarr 数据集路径
-DATASET_PATH="data/combined_data.zarr"
+DATASET_PATH="data/yellow_to_pink_block.zarr"
 
 echo "=========================================="
 echo "🚀 准备开始 UMI Diffusion Policy 训练流水线"
