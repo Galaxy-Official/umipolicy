@@ -195,10 +195,10 @@ def resize_with_black_padding(image, target_h=480, target_w=640):
 @click.option('--frequency', '-f', default=10, type=float, help="Control frequency in Hz.")
 @click.option('--command_latency', '-cl', default=0.01, type=float, help="Latency between receiving SpaceMouse command to executing on Robot in Sec.")
 @click.option('--use_tactile', is_flag=True, default=False, help="Whether to load tactile cameras.")
-@click.option('--camera_fps', default=DEFAULT_MVS_FPS, type=float, help="MVS wrist capture and mp4 round-trip FPS. Keep 20 to match handcap_rgb.py.")
+@click.option('--data_capture_fps', '--camera_fps', default=DEFAULT_MVS_FPS, type=float, help="MVS wrist capture FPS, matching handcap_rgb.py --fps.")
 def main(input, output, robot_ip, local_ip, camera_config,
     init_joints, steps_per_inference, max_duration,
-    frequency, command_latency, use_tactile, camera_fps):
+    frequency, command_latency, use_tactile, data_capture_fps):
     
     max_gripper_width = 0.09
     gripper_speed = 0.2
@@ -215,7 +215,10 @@ def main(input, output, robot_ip, local_ip, camera_config,
     # setup experiment
     dt = 1/frequency
     obs_res = get_real_obs_resolution(cfg.task.shape_meta)
-    obs_horizon = cfg.task.shape_meta.obs.camera0_rgb.horizon
+    camera_shape_meta = cfg.task.shape_meta.obs.camera0_rgb
+    obs_horizon = int(camera_shape_meta.horizon)
+    camera_down_sample_steps = int(camera_shape_meta.down_sample_steps)
+    obs_history_len = (obs_horizon - 1) * camera_down_sample_steps + 1
 
     # 1. Initialize Cameras
     print("Initializing MVS Cameras...")
@@ -255,12 +258,13 @@ def main(input, output, robot_ip, local_ip, camera_config,
 
             # 3. Start Camera Observation Thread
             obs_thread = ObservationThread(
-                cam_wrist, env, maxlen=obs_horizon, camera_fps=camera_fps)
+                cam_wrist, env, maxlen=obs_history_len,
+                camera_fps=data_capture_fps)
             obs_thread.start()
             
             print("Waiting for observation queue to fill...")
             while True:
-                if obs_thread.get_obs(obs_horizon) is not None:
+                if obs_thread.get_obs(obs_history_len) is not None:
                     break
                 time.sleep(0.01)
 
@@ -283,13 +287,20 @@ def main(input, output, robot_ip, local_ip, camera_config,
 
             print('Ready!')
             mp4_round_trip = Mp4RoundTrip(
-                resolution=MVS_CAPTURE_RESOLUTION, fps=camera_fps)
+                resolution=MVS_CAPTURE_RESOLUTION, fps=data_capture_fps)
+            print(
+                "MVS capture matched to handcap data collection: "
+                f"{data_capture_fps:g}Hz, down_sample_steps={camera_down_sample_steps}, "
+                f"history_len={obs_history_len}, codec={MVS_VIDEO_FOURCC}")
             
             # Helper to fetch formatted obs
             def get_formatted_obs():
-                frames = obs_thread.get_obs(obs_horizon)
-                if frames is None:
+                raw_frames = obs_thread.get_obs(obs_history_len)
+                if raw_frames is None:
                     raise RuntimeError("Observation queue is not ready.")
+                selected_idxs = list(range(
+                    0, obs_history_len, camera_down_sample_steps))
+                frames = [raw_frames[idx] for idx in selected_idxs]
                 env_obs = {
                     'camera0_rgb': [],
                     'robot0_eef_pos': [],
@@ -299,7 +310,7 @@ def main(input, output, robot_ip, local_ip, camera_config,
                 }
 
                 wrist_frames_bgr = []
-                for frame in frames:
+                for frame in raw_frames:
                     wrist_img = frame['wrist_img']
                     if (wrist_img.shape[1], wrist_img.shape[0]) != MVS_CAPTURE_RESOLUTION:
                         wrist_img = cv2.resize(
@@ -308,7 +319,9 @@ def main(input, output, robot_ip, local_ip, camera_config,
                     wrist_frames_bgr.append(wrist_img)
 
                 decoded_wrist_frames = mp4_round_trip(wrist_frames_bgr)
-                for frame, wrist_img in zip(frames, decoded_wrist_frames):
+                selected_wrist_frames = [
+                    decoded_wrist_frames[idx] for idx in selected_idxs]
+                for frame, wrist_img in zip(frames, selected_wrist_frames):
                     wrist_img_rgb = cv2.cvtColor(wrist_img, cv2.COLOR_BGR2RGB)
                     wrist_img_rgb = resize_with_black_padding(
                         wrist_img_rgb, target_h=obs_res[1], target_w=obs_res[0])
