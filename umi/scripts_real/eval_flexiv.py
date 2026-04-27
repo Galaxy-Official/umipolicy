@@ -8,6 +8,7 @@ os.chdir(ROOT_DIR)
 import pathlib
 import time
 import threading
+import tempfile
 from collections import deque
 from multiprocessing.managers import SharedMemoryManager
 
@@ -65,11 +66,70 @@ from perception.cameras.base_camera import BaseCamera
 
 OmegaConf.register_new_resolver("eval", eval, replace=True)
 
+MVS_CAPTURE_RESOLUTION = (768, 768)
+MVS_VIDEO_FOURCC = "mp4v"
+DEFAULT_MVS_FPS = 20.0
+
+
+class Mp4RoundTrip:
+    """Match the handcap offline path: VideoWriter(mp4v) then VideoCapture decode."""
+
+    def __init__(self, resolution=MVS_CAPTURE_RESOLUTION, fps=DEFAULT_MVS_FPS):
+        self.resolution = tuple(resolution)
+        self.fps = float(fps)
+        self.fourcc = cv2.VideoWriter_fourcc(*MVS_VIDEO_FOURCC)
+
+    def __call__(self, frames):
+        if len(frames) == 0:
+            return []
+
+        tmp_file = tempfile.NamedTemporaryFile(
+            prefix="eval_flexiv_mvs_", suffix=".mp4", delete=False)
+        tmp_path = tmp_file.name
+        tmp_file.close()
+
+        writer = None
+        cap = None
+        try:
+            writer = cv2.VideoWriter(
+                tmp_path, self.fourcc, self.fps, self.resolution)
+            if not writer.isOpened():
+                raise RuntimeError(f"Failed to open temporary mp4 writer: {tmp_path}")
+
+            for frame in frames:
+                writer.write(np.ascontiguousarray(frame))
+            writer.release()
+            writer = None
+
+            cap = cv2.VideoCapture(tmp_path)
+            if not cap.isOpened():
+                raise RuntimeError(f"Failed to open temporary mp4 reader: {tmp_path}")
+
+            decoded = []
+            for frame_idx in range(len(frames)):
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                ret, frame = cap.read()
+                if not ret:
+                    raise RuntimeError(
+                        f"Failed to decode mp4 round-trip frame {frame_idx}")
+                decoded.append(frame)
+            return decoded
+        finally:
+            if writer is not None:
+                writer.release()
+            if cap is not None:
+                cap.release()
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
 # ---------------------------------------------------------------------
 # Asynchronous Camera Observation Thread (MVS Mode)
 # ---------------------------------------------------------------------
 class ObservationThread(threading.Thread):
-    def __init__(self, cam_wrist, env, maxlen=2):
+    def __init__(self, cam_wrist, env, maxlen=2, camera_fps=DEFAULT_MVS_FPS):
         super().__init__()
         self.cam_wrist = cam_wrist
         self.env = env
@@ -77,9 +137,12 @@ class ObservationThread(threading.Thread):
         self.running = True
         self.daemon = True
         self.lock = threading.Lock()
+        self.camera_fps = float(camera_fps)
+        self.camera_dt = 1.0 / self.camera_fps if self.camera_fps > 0 else 0.0
         
     def run(self):
         while self.running:
+            iter_start_time = time.monotonic()
             cam_state, wrist_img, cam_cap_time = self.cam_wrist.read()
             
             eepose = self.env.get_ee_pose()
@@ -92,6 +155,9 @@ class ObservationThread(threading.Thread):
                     'eepose': eepose,
                     'gripper_width': gripper_width
                 })
+
+            if self.camera_dt > 0:
+                precise_wait(iter_start_time + self.camera_dt, time_func=time.monotonic)
 
     def get_obs(self, n=2):
         with self.lock:
@@ -129,9 +195,10 @@ def resize_with_black_padding(image, target_h=480, target_w=640):
 @click.option('--frequency', '-f', default=10, type=float, help="Control frequency in Hz.")
 @click.option('--command_latency', '-cl', default=0.01, type=float, help="Latency between receiving SpaceMouse command to executing on Robot in Sec.")
 @click.option('--use_tactile', is_flag=True, default=False, help="Whether to load tactile cameras.")
+@click.option('--camera_fps', default=DEFAULT_MVS_FPS, type=float, help="MVS wrist capture and mp4 round-trip FPS. Keep 20 to match handcap_rgb.py.")
 def main(input, output, robot_ip, local_ip, camera_config,
     init_joints, steps_per_inference, max_duration,
-    frequency, command_latency, use_tactile):
+    frequency, command_latency, use_tactile, camera_fps):
     
     max_gripper_width = 0.09
     gripper_speed = 0.2
@@ -187,7 +254,8 @@ def main(input, output, robot_ip, local_ip, camera_config,
             env.reset()
 
             # 3. Start Camera Observation Thread
-            obs_thread = ObservationThread(cam_wrist, env, maxlen=obs_horizon)
+            obs_thread = ObservationThread(
+                cam_wrist, env, maxlen=obs_horizon, camera_fps=camera_fps)
             obs_thread.start()
             
             print("Waiting for observation queue to fill...")
@@ -214,10 +282,14 @@ def main(input, output, robot_ip, local_ip, camera_config,
             policy.eval().to(device)
 
             print('Ready!')
+            mp4_round_trip = Mp4RoundTrip(
+                resolution=MVS_CAPTURE_RESOLUTION, fps=camera_fps)
             
             # Helper to fetch formatted obs
             def get_formatted_obs():
                 frames = obs_thread.get_obs(obs_horizon)
+                if frames is None:
+                    raise RuntimeError("Observation queue is not ready.")
                 env_obs = {
                     'camera0_rgb': [],
                     'robot0_eef_pos': [],
@@ -225,14 +297,21 @@ def main(input, output, robot_ip, local_ip, camera_config,
                     'robot0_gripper_width': [],
                     'timestamp': []
                 }
+
+                wrist_frames_bgr = []
                 for frame in frames:
                     wrist_img = frame['wrist_img']
-                    # Resize logic matching UMI / Handcap
-                    if wrist_img.shape[0] != 768 or wrist_img.shape[1] != 768:
-                        wrist_img = cv2.resize(wrist_img, (768, 768), interpolation=cv2.INTER_AREA)
-                    wrist_img = resize_with_black_padding(wrist_img, target_h=obs_res[1], target_w=obs_res[0])
-                    
+                    if (wrist_img.shape[1], wrist_img.shape[0]) != MVS_CAPTURE_RESOLUTION:
+                        wrist_img = cv2.resize(
+                            wrist_img, MVS_CAPTURE_RESOLUTION,
+                            interpolation=cv2.INTER_AREA)
+                    wrist_frames_bgr.append(wrist_img)
+
+                decoded_wrist_frames = mp4_round_trip(wrist_frames_bgr)
+                for frame, wrist_img in zip(frames, decoded_wrist_frames):
                     wrist_img_rgb = cv2.cvtColor(wrist_img, cv2.COLOR_BGR2RGB)
+                    wrist_img_rgb = resize_with_black_padding(
+                        wrist_img_rgb, target_h=obs_res[1], target_w=obs_res[0])
                     env_obs['camera0_rgb'].append(wrist_img_rgb)
                     env_obs['robot0_eef_pos'].append(frame['eepose'][:3])
                     env_obs['robot0_eef_rot_axis_angle'].append(frame['eepose'][3:])
