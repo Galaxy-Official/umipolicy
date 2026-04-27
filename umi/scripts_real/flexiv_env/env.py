@@ -86,7 +86,9 @@ class FlexivEnv:
         new_actions = actions[is_new]
         new_timestamps = timestamps[is_new]
         
-        for i in range(len(new_actions)):
+        if len(new_actions) > 0:
+            # Execute the last target in the chunk to avoid constant re-planning stutter
+            i = len(new_actions) - 1
             tip_pose = new_actions[i, 0:6]
             target_width = new_actions[i, 6]
             
@@ -99,8 +101,9 @@ class FlexivEnv:
             from .flexiv_safety import clip_target_pose_7d
             target_tcp = clip_target_pose_7d(target_tcp)
             
-            # Directly send Cartesian pose (Internal IK handled by RDK)
-            self.robot.SendCartesianMotionForce(target_tcp)
+            # Reduced velocity and acceleration scales for slower, smoother motion
+            # Signature: SendCartesianMotionForce(pose, wrench, velocity, max_linear_vel, max_angular_vel, max_linear_acc, max_angular_acc)
+            self.robot.SendCartesianMotionForce(target_tcp, [0]*6, [0]*6, 0.15, 0.5, 0.3, 1.0)
             
             max_w = self.gripper.params().max_width
             safe_width = min(max(target_width, 0.001), max_w - 0.001)
