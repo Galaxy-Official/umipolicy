@@ -261,9 +261,11 @@ class MVSCamera(BaseCamera):
         ret = self.cam.MV_CC_SetEnumValue("ExposureAuto", MV_EXPOSURE_AUTO_MODE_OFF)
         ret = self.cam.MV_CC_SetIntValue("ExposureTime", exposure) # 20000
 
-        ret = self.cam.MV_CC_SetFloatValue("AutoGainLowerLimit", 0.0)
-        ret = self.cam.MV_CC_SetFloatValue("AutoGainUpperLimit", 16.9807)
-        ret = self.cam.MV_CC_SetEnumValue("GainAuto", MV_GAIN_MODE_CONTINUOUS)
+        # 1. 关闭自动增益模式 (Off)
+        ret = self.cam.MV_CC_SetEnumValue("GainAuto", 0) 
+        
+        # 2. 设置固定增益值为 14.0
+        ret = self.cam.MV_CC_SetFloatValue("Gain", 14.0)
 
         ret = self.cam.MV_CC_SetEnumValue("BalanceWhiteAuto", MV_BALANCEWHITE_AUTO_CONTINUOUS)
 
