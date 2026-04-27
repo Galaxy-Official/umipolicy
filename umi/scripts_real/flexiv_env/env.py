@@ -46,8 +46,9 @@ class FlexivEnv:
         while not self.robot.operational():
             time.sleep(1)
             
-        logger.info("Switching to NRT_JOINT_POSITION mode...")
-        self.robot.SwitchMode(flexivrdk.Mode.NRT_JOINT_POSITION)
+        logger.info("Switching to NRT_CARTESIAN_MOTION_FORCE mode...")
+        self.robot.SwitchMode(flexivrdk.Mode.NRT_CARTESIAN_MOTION_FORCE)
+        self.robot.SetForceControlAxis([False, False, False, False, False, False])
         
         max_width = self.gripper.params().max_width
         self.gripper.Move(max_width, 0.1, 20)
@@ -88,12 +89,8 @@ class FlexivEnv:
             from .flexiv_safety import clip_target_pose_7d
             target_tcp = clip_target_pose_7d(target_tcp)
             
-            # Native IK calculation using RDK Model API
-            result = self.model.reachable(target_tcp, self.robot.states().q, True)
-            if result[0]:
-                self.robot.SendJointPosition(result[1], [0]*7, [0.1]*7, [0.1]*7)
-            else:
-                logger.warning(f"Pose {target_tcp} is not reachable!")
+            # Directly send Cartesian pose (Internal IK handled by RDK)
+            self.robot.SendCartesianMotionForce(target_tcp)
             
             max_w = self.gripper.params().max_width
             safe_width = min(max(target_width, 0.001), max_w - 0.001)
