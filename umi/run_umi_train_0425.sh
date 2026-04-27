@@ -9,13 +9,15 @@ export CUDA_VISIBLE_DEVICES=0
 DATASET_PATH="data/yellow_to_pink_block.zarr"
 # 定义训练输出路径 (存放 Checkpoints, Logs 等)
 OUTPUT_PATH="outputs/yellow_to_pink_block_train_0425"
-# 定义视觉主干网络 (Vision Backbone) 的预训练权重路径
-VISION_CKPT="data/outputs/resnet18_weights.ckpt"
+# 定义视觉主干网络 (Vision Backbone)
+VISION_BACKBONE="vit_base_patch16_224"
+VISION_CKPT=""
 
 echo "=========================================="
 echo "🚀 准备开始 UMI Diffusion Policy 训练流水线"
 echo "📂 数据集路径: ${DATASET_PATH}"
-echo "📂 视觉权重路径: ${VISION_CKPT}"
+echo "👁️ 视觉主干网络: ${VISION_BACKBONE}"
+echo "📂 视觉权重路径: ${VISION_CKPT:-从头训练}"
 echo "📂 输出路径: ${OUTPUT_PATH}"
 echo "=========================================="
 
@@ -23,10 +25,12 @@ echo "=========================================="
 export HYDRA_FULL_ERROR=1
 
 # 启动训练
-# --config-name 指定了我们刚才修改了本地 resnet 权重的那个配置文件
+# --config-name 指定 UMI 的 timm 视觉编码器训练配置
 python train.py --config-name=train_diffusion_unet_timm_umi_workspace \
     hydra.run.dir="${OUTPUT_PATH}" \
-    policy.obs_encoder.pretrained_path="${VISION_CKPT}" \
+    policy.obs_encoder.model_name="${VISION_BACKBONE}" \
+    policy.obs_encoder.checkpoint_path="${VISION_CKPT}" \
+    policy.obs_encoder.feature_aggregation=null \
     task.dataset.dataset_path="${DATASET_PATH}" \
     training.device="cuda:0" \
     dataloader.batch_size=128 \
