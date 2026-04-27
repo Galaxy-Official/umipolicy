@@ -64,11 +64,21 @@ class FlexivEnv:
         return self.gripper.states().width
 
     def reset(self):
+        # Temporarily switch to joint mode for reset
+        logger.info("Switching to NRT_JOINT_POSITION for reset...")
+        self.robot.SwitchMode(flexivrdk.Mode.NRT_JOINT_POSITION)
+        
         logger.info("Resetting robot to initial joint positions...")
         self.robot.SendJointPosition(self.init_qpos, [0]*7, [0.1]*7, [0.1]*7)
+        
         max_width = self.gripper.params().max_width
         self.gripper.Move(max_width, 0.1, 20)
-        time.sleep(10) # Reduced from 15 to 10 for inference
+        time.sleep(10) 
+        
+        # Switch back to Cartesian mode for subsequent actions
+        logger.info("Switching back to NRT_CARTESIAN_MOTION_FORCE...")
+        self.robot.SwitchMode(flexivrdk.Mode.NRT_CARTESIAN_MOTION_FORCE)
+        self.robot.SetForceControlAxis([False, False, False, False, False, False])
 
     def exec_actions(self, actions, timestamps):
         receive_time = time.time()
