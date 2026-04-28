@@ -59,14 +59,33 @@ is_port_open() {
   local port="$2"
 
   python3 - "$host" "$port" <<'PY' >/dev/null 2>&1
+import base64
+import os
 import socket
 import sys
 
 host = sys.argv[1]
 port = int(sys.argv[2])
 
-with socket.create_connection((host, port), timeout=1):
-    pass
+key = base64.b64encode(os.urandom(16)).decode("ascii")
+request = (
+    f"GET / HTTP/1.1\r\n"
+    f"Host: {host}:{port}\r\n"
+    "Upgrade: websocket\r\n"
+    "Connection: Upgrade\r\n"
+    f"Sec-WebSocket-Key: {key}\r\n"
+    "Sec-WebSocket-Version: 13\r\n"
+    "\r\n"
+)
+
+with socket.create_connection((host, port), timeout=1) as sock:
+    sock.settimeout(1)
+    sock.sendall(request.encode("ascii"))
+    response = sock.recv(1024)
+
+status_line = response.split(b"\r\n", 1)[0]
+if b" 101 " not in status_line:
+    raise SystemExit(1)
 PY
 }
 
