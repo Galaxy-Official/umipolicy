@@ -4,7 +4,7 @@
 
 # 获取当前工作目录的上级目录 (用于动态定位)
 BASE_DIR=$(pwd)
-ZARR_PATH="data/yellow_to_pink_block.zarr"
+ZARR_PATH="data/yellow_umi_428.zarr"
 
 # 检查数据集是否存在
 if [ ! -f "$ZARR_PATH" ] && [ ! -d "$ZARR_PATH" ]; then
