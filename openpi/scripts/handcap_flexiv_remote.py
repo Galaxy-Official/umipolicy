@@ -643,8 +643,9 @@ def main(args: Args) -> None:
             
             # Convert the decoded actions (which are SE(3) relative pose increments) back to absolute physical target poses
             physical_actions = []
+            current_eepose = latest_frame["eepose"]
             for action in decoded_actions:
-                abs_phys_pose = get_real_umi_inference_action(action[:6], eepose)
+                abs_phys_pose = get_real_umi_inference_action(action[:6], current_eepose)
                 physical_actions.append(np.concatenate([abs_phys_pose, action[6:7]], axis=-1))
             physical_actions = np.array(physical_actions)
             
