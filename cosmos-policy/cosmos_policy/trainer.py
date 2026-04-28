@@ -87,7 +87,8 @@ class CosmosPolicyTrainer(ImaginaireTrainer):
         import time as timer
         import os
         import json
-        out_dir = os.environ.get("OUTPUT_DIR", self.config.trainer.get("log_dir", "."))
+        out_dir = os.environ.get("OUTPUT_DIR") or self.config.job.path_local
+        os.makedirs(out_dir, exist_ok=True)
         performance_log_path = os.path.join(out_dir, "performance_record.jsonl")
 
         with (
