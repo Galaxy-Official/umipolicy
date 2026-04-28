@@ -698,6 +698,27 @@ def run(args):
         config.transformer_ckpt_path = transformer_ckpt_path
     if args.enable_offload is not None:
         config.enable_offload = args.enable_offload
+    if args.attn_window is not None:
+        config.attn_window = args.attn_window
+    if args.guidance_scale is not None:
+        config.guidance_scale = args.guidance_scale
+    if args.action_guidance_scale is not None:
+        config.action_guidance_scale = args.action_guidance_scale
+    if args.num_inference_steps is not None:
+        config.num_inference_steps = args.num_inference_steps
+    if args.action_num_inference_steps is not None:
+        config.action_num_inference_steps = args.action_num_inference_steps
+    if args.use_tactile is not None:
+        config.use_tactile = args.use_tactile
+        if getattr(config, "env_type", None) == "handcap":
+            if args.use_tactile:
+                config.obs_cam_keys = [
+                    "observation.images.wrist",
+                    "observation.tactiles.left",
+                    "observation.tactiles.right",
+                ]
+            else:
+                config.obs_cam_keys = ["observation.images.wrist"]
     rank = int(os.getenv("RANK", 0))
     local_rank = int(os.environ.get('LOCAL_RANK', 0))
     world_size = int(os.environ.get("WORLD_SIZE", 1))
@@ -762,6 +783,42 @@ def main():
         action=argparse.BooleanOptionalAction,
         default=None,
         help="Keep VAE and text encoder on CPU to reduce GPU memory usage.",
+    )
+    parser.add_argument(
+        "--attn-window",
+        type=int,
+        default=None,
+        help="Transformer KV-cache attention window. Lower values use less GPU memory.",
+    )
+    parser.add_argument(
+        "--guidance-scale",
+        type=float,
+        default=None,
+        help="Video classifier-free guidance scale. Use 1.0 to disable CFG and save memory.",
+    )
+    parser.add_argument(
+        "--action-guidance-scale",
+        type=float,
+        default=None,
+        help="Action classifier-free guidance scale. Use 1.0 to disable CFG and save memory.",
+    )
+    parser.add_argument(
+        "--num-inference-steps",
+        type=int,
+        default=None,
+        help="Number of video diffusion inference steps.",
+    )
+    parser.add_argument(
+        "--action-num-inference-steps",
+        type=int,
+        default=None,
+        help="Number of action diffusion inference steps.",
+    )
+    parser.add_argument(
+        "--use-tactile",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Use tactile observation streams for handcap. Disable for wrist-only inference.",
     )
     args = parser.parse_args()
     run(args)
