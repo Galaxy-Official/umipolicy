@@ -37,6 +37,8 @@ from utils import (
     save_async,
 )
 
+PROGRESS_LOG_INTERVAL = 1
+
 
 class VA_Server:
 
@@ -446,10 +448,17 @@ class VA_Server:
         torch.cuda.empty_cache()
 
     def _infer(self, obs, frame_st_id=0):
+        infer_start_time = time.time()
         frame_chunk_size = self.job_config.frame_chunk_size
         if frame_st_id == 0:
+            encode_start_time = time.time()
             init_latent = self._encode_obs(obs)
             self.init_latent = init_latent
+            logger.info(
+                "Encoded initial observation for chunk %d in %.2fs",
+                frame_st_id,
+                time.time() - encode_start_time,
+            )
 
         latents = torch.randn(1,
                               48,
@@ -487,10 +496,21 @@ class VA_Server:
             mode='constant',
             value=0)
 
+        logger.info(
+            "Start chunk inference: frame_st_id=%d frame_chunk_size=%d video_steps=%d action_steps=%d latent_hw=(%d,%d)",
+            frame_st_id,
+            frame_chunk_size,
+            len(timesteps),
+            len(action_timesteps),
+            self.latent_height,
+            self.latent_width,
+        )
+
         with (
                 torch.no_grad(),
         ):
             # 1. Video Generation Loop
+            video_loop_start_time = time.time()
             for i, t in enumerate(tqdm(timesteps)):
                 last_step = i == len(timesteps) - 1
                 latent_cond = init_latent[:, :, 0:1].to(
@@ -524,8 +544,17 @@ class VA_Server:
                                                   latents,
                                                   return_dict=False)
 
+                if ((i + 1) % PROGRESS_LOG_INTERVAL == 0) or last_step:
+                    logger.info(
+                        "Video diffusion progress: %d/%d steps finished (%.2fs elapsed)",
+                        i + 1,
+                        len(timesteps),
+                        time.time() - video_loop_start_time,
+                    )
+
                 latents[:, :, 0:1] = latent_cond if frame_st_id == 0 else latents[:, :, 0:1]
 
+            action_loop_start_time = time.time()
             for i, t in enumerate(tqdm(action_timesteps)):
                 last_step = i == len(action_timesteps) - 1
                 action_cond = torch.zeros(
@@ -563,6 +592,14 @@ class VA_Server:
                                                          actions,
                                                          return_dict=False)
 
+                if ((i + 1) % PROGRESS_LOG_INTERVAL == 0) or last_step:
+                    logger.info(
+                        "Action diffusion progress: %d/%d steps finished (%.2fs elapsed)",
+                        i + 1,
+                        len(action_timesteps),
+                        time.time() - action_loop_start_time,
+                    )
+
                 actions[:, :, 0:1] = action_cond if frame_st_id == 0 else actions[:, :, 0:1]
 
         actions[:, ~self.action_mask] *= 0
@@ -572,6 +609,11 @@ class VA_Server:
 
         actions = self.postprocess_action(actions)
         torch.cuda.empty_cache()
+        logger.info(
+            "Finished chunk inference: frame_st_id=%d total_time=%.2fs",
+            frame_st_id,
+            time.time() - infer_start_time,
+        )
         return actions, latents
 
     def _compute_kv_cache(self, obs):

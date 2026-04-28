@@ -4,19 +4,19 @@
 # ==============================================================================
 
 # 1. 设置系统所使用的 GPU 数量 (单机多卡)
-NUM_GPUS=2
+NUM_GPUS=4
 
 # 2. 设置您的预处理数据集所在的根目录
 # (注: 下一级的目录应该是您转换好的类似于 ALOHA 或者 Handcap 的全量数据集)
-export BASE_DATASETS_DIR="data/handcap_cosmos"
+export BASE_DATASETS_DIR="data/yellow_cosmos_428"
 
 # 3. 指定您想要跑的实验配置名称 (来源于 cosmos_policy/config/experiment/)
 # 我们创建了新的 cosmos_predict2_handcap 用于处理类似 ALOHA HDF5 结构的 handcapcosmos:
-EXPERIMENT_NAME="cosmos_predict2_handcap"
+EXPERIMENT_NAME="cosmos_yellow_pink_cosmos_22k"
 
 # 4. 指定您的数据集的全局语言指令 (Prompt)
 # 这句话将被嵌入并替代未知的文件夹名，传给文本编码大模型
-TASK_PROMPT="put box and block into paper box"
+TASK_PROMPT="put yellow block onto pink block"
 
 # 5. 指定开放的内部主节点通讯端口 (防止与其他训练任务冲突)
 MASTER_PORT=12341

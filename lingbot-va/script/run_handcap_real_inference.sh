@@ -36,8 +36,8 @@ LINGBOT_ENABLE_OFFLOAD="${LINGBOT_ENABLE_OFFLOAD:-true}"
 LINGBOT_ATTN_WINDOW="${LINGBOT_ATTN_WINDOW:-16}"
 LINGBOT_GUIDANCE_SCALE="${LINGBOT_GUIDANCE_SCALE:-1.0}"
 LINGBOT_ACTION_GUIDANCE_SCALE="${LINGBOT_ACTION_GUIDANCE_SCALE:-1.0}"
-LINGBOT_NUM_INFERENCE_STEPS="${LINGBOT_NUM_INFERENCE_STEPS:-10}"
-LINGBOT_ACTION_NUM_INFERENCE_STEPS="${LINGBOT_ACTION_NUM_INFERENCE_STEPS:-10}"
+LINGBOT_NUM_INFERENCE_STEPS="${LINGBOT_NUM_INFERENCE_STEPS:-4}"
+LINGBOT_ACTION_NUM_INFERENCE_STEPS="${LINGBOT_ACTION_NUM_INFERENCE_STEPS:-4}"
 PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
 
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
@@ -257,15 +257,10 @@ fi
 
 SERVER_PID=""
 CLIENT_PID=""
-CLIENT_LOG_TAIL_PID=""
 
 cleanup() {
   local exit_code=$?
   trap - EXIT INT TERM
-  if [[ -n "${CLIENT_LOG_TAIL_PID:-}" ]] && kill -0 "$CLIENT_LOG_TAIL_PID" >/dev/null 2>&1; then
-    kill "$CLIENT_LOG_TAIL_PID" >/dev/null 2>&1 || true
-    wait "$CLIENT_LOG_TAIL_PID" 2>/dev/null || true
-  fi
   if [[ -n "${CLIENT_PID:-}" ]] && kill -0 "$CLIENT_PID" >/dev/null 2>&1; then
     kill "$CLIENT_PID" >/dev/null 2>&1 || true
     wait "$CLIENT_PID" 2>/dev/null || true
@@ -283,7 +278,9 @@ echo "Starting LingBot-VA policy server..."
 echo "Server log: $SERVER_LOG"
 echo "Server command: $(join_cmd "${SERVER_CMD[@]}")"
 PYTHONUNBUFFERED=1 PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True" TORCHFT_LIGHTHOUSE="$TORCHFT_LIGHTHOUSE" \
-  "${SERVER_CMD[@]}" >"$SERVER_LOG" 2>&1 &
+  "${SERVER_CMD[@]}" \
+  > >(tee "$SERVER_LOG") \
+  2> >(tee -a "$SERVER_LOG" >&2) &
 SERVER_PID=$!
 
 echo "Waiting for server on 127.0.0.1:$SERVER_PORT ..."
@@ -303,9 +300,13 @@ fi
 echo "Starting Flexiv real-robot LingBot client..."
 if [[ -n "$CLIENT_LD_PRELOAD" ]]; then
   echo "Client LD_PRELOAD: $CLIENT_LD_PRELOAD"
-  LD_PRELOAD="$CLIENT_LD_PRELOAD" PYTHONUNBUFFERED=1 "${CLIENT_CMD[@]}" >"$CLIENT_LOG" 2>&1 &
+  LD_PRELOAD="$CLIENT_LD_PRELOAD" PYTHONUNBUFFERED=1 "${CLIENT_CMD[@]}" \
+    > >(tee "$CLIENT_LOG") \
+    2> >(tee -a "$CLIENT_LOG" >&2) &
 else
-  PYTHONUNBUFFERED=1 "${CLIENT_CMD[@]}" >"$CLIENT_LOG" 2>&1 &
+  PYTHONUNBUFFERED=1 "${CLIENT_CMD[@]}" \
+    > >(tee "$CLIENT_LOG") \
+    2> >(tee -a "$CLIENT_LOG" >&2) &
 fi
 CLIENT_PID=$!
 
@@ -327,10 +328,6 @@ PID file:
 Press Ctrl+C to stop both processes.
 EOF
 
-echo "==== live logs (server + client) ===="
-tail -n 0 -F "$SERVER_LOG" "$CLIENT_LOG" &
-CLIENT_LOG_TAIL_PID=$!
-
 EXITED_PROCESS=""
 EXIT_STATUS=0
 while true; do
@@ -346,11 +343,6 @@ while true; do
   fi
   sleep 1
 done
-
-if [[ -n "${CLIENT_LOG_TAIL_PID:-}" ]] && kill -0 "$CLIENT_LOG_TAIL_PID" >/dev/null 2>&1; then
-  kill "$CLIENT_LOG_TAIL_PID" >/dev/null 2>&1 || true
-  wait "$CLIENT_LOG_TAIL_PID" 2>/dev/null || true
-fi
 
 if [[ "$EXIT_STATUS" == "0" ]]; then
   echo "$EXITED_PROCESS process exited normally. Stopping the remaining process..."
