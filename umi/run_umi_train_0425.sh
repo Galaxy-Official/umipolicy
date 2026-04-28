@@ -33,6 +33,6 @@ python train.py --config-name=train_diffusion_unet_timm_umi_workspace \
     policy.obs_encoder.feature_aggregation=null \
     task.dataset.dataset_path="${DATASET_PATH}" \
     training.device="cuda:0" \
-    dataloader.batch_size=128 \
+    dataloader.batch_size=64 \
     training.num_epochs=500 \
     logging.mode=offline
