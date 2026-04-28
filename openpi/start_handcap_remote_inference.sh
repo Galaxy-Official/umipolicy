@@ -364,7 +364,7 @@ fi
 
 CLIENT_LD_PRELOAD="${LD_PRELOAD:-}"
 SYSTEM_LIBSTDCXX="/usr/lib/x86_64-linux-gnu/libstdc++.so.6"
-if [[ -f "$SYSTEM_LIBSTDCXX" ]] && strings "$SYSTEM_LIBSTDCXX" | grep -q "GLIBCXX_3.4.30"; then
+if [[ -f "$SYSTEM_LIBSTDCXX" ]] && grep -a -q "GLIBCXX_3.4.30" "$SYSTEM_LIBSTDCXX"; then
   CLIENT_LD_PRELOAD="$SYSTEM_LIBSTDCXX${CLIENT_LD_PRELOAD:+:$CLIENT_LD_PRELOAD}"
 fi
 
