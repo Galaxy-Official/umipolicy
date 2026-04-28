@@ -229,6 +229,8 @@ class TimmObsEncoder(ModuleAttrMixin):
     def aggregate_feature(self, feature):
         if self.model_name.startswith('vit'):
             assert self.feature_aggregation is None # vit uses the CLS token
+            if len(feature.shape) == 2:
+                return feature
             return feature[:, 0, :]
         
         # resnet
