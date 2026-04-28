@@ -16,7 +16,8 @@ Usage:
     [--local-ip <local_ip>] \
     [--server-port 8000] \
     [--task-name handcap_flexiv_mvs] \
-    [--ctrl-freq 30] \
+    [--ctrl-freq 20] \
+    [--steps-per-inference 4] \
     [--obs-horizon 2] \
     [--camera-config-path <path>] \
     [--use-tactile | --no-use-tactile] \
@@ -144,7 +145,8 @@ LOCAL_IP="${FLEXIV_LOCAL_IP:-192.168.2.102}"
 PROMPT="simple sorting task"
 SERVER_PORT="8000"
 TASK_NAME="handcap_flexiv_mvs"
-CTRL_FREQ="30"
+CTRL_FREQ="20"
+STEPS_PER_INFERENCE="4"
 OBS_HORIZON="2"
 CAMERA_CONFIG_PATH=""
 USE_TACTILE="true"
@@ -196,6 +198,11 @@ while [[ $# -gt 0 ]]; do
     --ctrl-freq)
       require_value "$1" "${2-}"
       CTRL_FREQ="$2"
+      shift 2
+      ;;
+    --steps-per-inference)
+      require_value "$1" "${2-}"
+      STEPS_PER_INFERENCE="$2"
       shift 2
       ;;
     --obs-horizon)
@@ -344,6 +351,7 @@ CLIENT_CMD=(
   --prompt "$PROMPT"
   --task-name "$TASK_NAME"
   --ctrl-freq "$CTRL_FREQ"
+  --steps-per-inference "$STEPS_PER_INFERENCE"
   --obs-horizon "$OBS_HORIZON"
   --action-latency "$ACTION_LATENCY"
 )
@@ -391,10 +399,16 @@ fi
 
 SERVER_PID=""
 CLIENT_PID=""
+CLIENT_LOG_TAIL_PID=""
 
 cleanup() {
   local exit_code=$?
   trap - EXIT INT TERM
+
+  if [[ -n "${CLIENT_LOG_TAIL_PID:-}" ]] && kill -0 "$CLIENT_LOG_TAIL_PID" >/dev/null 2>&1; then
+    kill "$CLIENT_LOG_TAIL_PID" >/dev/null 2>&1 || true
+    wait "$CLIENT_LOG_TAIL_PID" 2>/dev/null || true
+  fi
 
   if [[ -n "${CLIENT_PID:-}" ]] && kill -0 "$CLIENT_PID" >/dev/null 2>&1; then
     kill "$CLIENT_PID" >/dev/null 2>&1 || true
@@ -440,9 +454,9 @@ fi
 echo "Starting Flexiv real-robot client..."
 if [[ -n "$CLIENT_LD_PRELOAD" ]]; then
   echo "Client LD_PRELOAD: $CLIENT_LD_PRELOAD"
-  LD_PRELOAD="$CLIENT_LD_PRELOAD" "${CLIENT_CMD[@]}" >"$CLIENT_LOG" 2>&1 &
+  LD_PRELOAD="$CLIENT_LD_PRELOAD" PYTHONUNBUFFERED=1 "${CLIENT_CMD[@]}" >"$CLIENT_LOG" 2>&1 &
 else
-  "${CLIENT_CMD[@]}" >"$CLIENT_LOG" 2>&1 &
+  PYTHONUNBUFFERED=1 "${CLIENT_CMD[@]}" >"$CLIENT_LOG" 2>&1 &
 fi
 CLIENT_PID=$!
 
@@ -463,6 +477,10 @@ PID file:
 
 Press Ctrl+C to stop both processes.
 EOF
+
+echo "==== live client.log ===="
+tail -n 0 -F "$CLIENT_LOG" &
+CLIENT_LOG_TAIL_PID=$!
 
 EXITED_PROCESS=""
 EXIT_STATUS=0
@@ -489,6 +507,11 @@ while true; do
 
   sleep 1
 done
+
+if [[ -n "${CLIENT_LOG_TAIL_PID:-}" ]] && kill -0 "$CLIENT_LOG_TAIL_PID" >/dev/null 2>&1; then
+  kill "$CLIENT_LOG_TAIL_PID" >/dev/null 2>&1 || true
+  wait "$CLIENT_LOG_TAIL_PID" 2>/dev/null || true
+fi
 
 if [[ "$EXIT_STATUS" == "0" ]]; then
   echo "$EXITED_PROCESS process exited normally. Stopping the remaining process..."

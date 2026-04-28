@@ -199,7 +199,8 @@ class Args:
     host: str = "0.0.0.0"
     port: int = 8000
     obs_horizon: int = 2
-    ctrl_freq: int = 30
+    ctrl_freq: float = 20.0
+    steps_per_inference: int = 4
     action_latency: float = 0.0
     task_name: str = "handcap_flexiv_mvs"
     prompt: str = ""
@@ -593,6 +594,13 @@ def main(args: Args) -> None:
     LOGGER.info("Connecting to remote policy server at ws://%s:%d", args.host, args.port)
     prompt = args.prompt or args.task_name
     robot_dt = 1.0 / args.ctrl_freq
+    LOGGER.info(
+        "Control config: ctrl_freq=%.3fHz, robot_dt=%.4fs, steps_per_inference=%d, action_latency=%.4fs",
+        args.ctrl_freq,
+        robot_dt,
+        args.steps_per_inference,
+        args.action_latency,
+    )
 
     camera_config_path = args.camera_config_path
     if not camera_config_path.is_absolute():
@@ -650,6 +658,7 @@ def main(args: Args) -> None:
             action_result = policy.infer(observation)
             action_chunk = np.asarray(action_result["actions"], dtype=np.float64)
             decoded_actions = decode_handcap_action_chunk(action_chunk)
+            policy_chunk_size = len(decoded_actions)
             
             # Convert the decoded actions (which are SE(3) relative pose increments) back to absolute physical target poses
             physical_actions = []
@@ -658,6 +667,8 @@ def main(args: Args) -> None:
                 abs_phys_pose = get_real_umi_inference_action(action[:6], current_eepose)
                 physical_actions.append(np.concatenate([abs_phys_pose, action[6:7]], axis=-1))
             physical_actions = np.array(physical_actions)
+            if args.steps_per_inference > 0:
+                physical_actions = physical_actions[: args.steps_per_inference]
             
             action_timestamps = (
                 (1 + np.arange(len(physical_actions), dtype=np.float64)) * robot_dt + time.time() - args.action_latency
@@ -677,13 +688,23 @@ def main(args: Args) -> None:
                 policy_timing=action_result.get("policy_timing"),
             )
 
-            if step % 10 == 0:
-                LOGGER.info(
-                    "[%d] Inference cycle %.1f ms | chunk=%d",
-                    step,
-                    inference_latency * 1000.0,
-                    action_chunk.shape[0],
-                )
+            first_target = physical_actions[0]
+            LOGGER.info(
+                "[step=%d] infer=%.1fms policy_chunk=%d exec_steps=%d eef_xyz=(%.3f, %.3f, %.3f) "
+                "gripper=%.4f target_xyz=(%.3f, %.3f, %.3f) target_gripper=%.4f",
+                step,
+                inference_latency * 1000.0,
+                policy_chunk_size,
+                len(physical_actions),
+                float(current_eepose[0]),
+                float(current_eepose[1]),
+                float(current_eepose[2]),
+                float(latest_frame["gripper_width"]),
+                float(first_target[0]),
+                float(first_target[1]),
+                float(first_target[2]),
+                float(first_target[6]),
+            )
     finally:
         obs_thread.stop()
         recorder.flush()
