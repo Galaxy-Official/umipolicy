@@ -482,14 +482,34 @@ def _init_cameras(camera_config_path: Path, use_tactile: bool) -> tuple[Any, Any
         if no_tactile_config_path.exists():
             config_path = no_tactile_config_path
             LOGGER.info("use_tactile=False: using wrist-only camera config %s", config_path)
+            cam_dict = BaseCamera.create_cameras_from_config(config_path=str(config_path))
         else:
             LOGGER.info("use_tactile=False: using wrist camera only from %s", config_path)
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            wrist_config = config.get("wrist")
+            if wrist_config is None:
+                raise KeyError(f"Camera config must contain a 'wrist' camera: {config_path}")
+            if wrist_config.get("type") != "mvs_cam":
+                raise ValueError("use_tactile=False expects the wrist camera to be type 'mvs_cam'")
+            _bootstrap_lerobot_src()
+            from perception.cameras.mvs_cam import MVSCamera
+
+            cam_dict = {
+                "wrist": MVSCamera(
+                    {
+                        "serial": wrist_config.get("serial"),
+                        "exposure": wrist_config.get("exposure"),
+                    }
+                )
+            }
+        if "wrist" not in cam_dict:
+            raise KeyError(f"Camera config must contain a 'wrist' camera: {config_path}")
+        return cam_dict["wrist"], None, None
 
     cam_dict = BaseCamera.create_cameras_from_config(config_path=str(config_path))
     if "wrist" not in cam_dict:
         raise KeyError(f"Camera config must contain a 'wrist' camera: {config_path}")
-    if not use_tactile:
-        return cam_dict["wrist"], None, None
     return cam_dict["wrist"], cam_dict["left_tactile"], cam_dict["right_tactile"]
 
 
