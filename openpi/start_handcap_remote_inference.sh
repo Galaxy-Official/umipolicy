@@ -422,8 +422,44 @@ PID file:
 Press Ctrl+C to stop both processes.
 EOF
 
-if wait -n "$SERVER_PID" "$CLIENT_PID"; then
-  echo "One process exited normally. Stopping the remaining process..."
+EXITED_PROCESS=""
+EXIT_STATUS=0
+while true; do
+  if ! is_process_running "$SERVER_PID"; then
+    if wait "$SERVER_PID"; then
+      EXIT_STATUS=0
+    else
+      EXIT_STATUS=$?
+    fi
+    EXITED_PROCESS="server"
+    break
+  fi
+
+  if ! is_process_running "$CLIENT_PID"; then
+    if wait "$CLIENT_PID"; then
+      EXIT_STATUS=0
+    else
+      EXIT_STATUS=$?
+    fi
+    EXITED_PROCESS="client"
+    break
+  fi
+
+  sleep 1
+done
+
+if [[ "$EXIT_STATUS" == "0" ]]; then
+  echo "$EXITED_PROCESS process exited normally. Stopping the remaining process..."
 else
-  echo "One process exited with an error. Stopping the remaining process..." >&2
+  echo "$EXITED_PROCESS process exited with status $EXIT_STATUS. Stopping the remaining process..." >&2
+fi
+
+if [[ -f "$SERVER_LOG" ]]; then
+  echo "==== server.log (tail) ===="
+  tail -n 80 "$SERVER_LOG" || true
+fi
+
+if [[ -f "$CLIENT_LOG" ]]; then
+  echo "==== client.log (tail) ===="
+  tail -n 80 "$CLIENT_LOG" || true
 fi
