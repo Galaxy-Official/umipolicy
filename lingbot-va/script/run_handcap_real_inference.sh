@@ -17,7 +17,8 @@ MASTER_PORT="${MASTER_PORT:-29501}"
 LOG_RANK="${LOG_RANK:-0}"
 TORCHFT_LIGHTHOUSE="${TORCHFT_LIGHTHOUSE:-http://localhost:29510}"
 SAVE_ROOT="${SAVE_ROOT:-./train_out}"
-LINGBOT_VA_CKPT="${LINGBOT_VA_CKPT:-$REPO_ROOT/ckpt/lingbot-va-base}"
+LINGBOT_VA_BASE_CKPT="${LINGBOT_VA_BASE_CKPT:-${LINGBOT_VA_CKPT:-$REPO_ROOT/ckpt/lingbot-va-base}}"
+LINGBOT_VA_TRANSFORMER_CKPT="${LINGBOT_VA_TRANSFORMER_CKPT:-}"
 
 PROMPT="${PROMPT:-simple sorting task}"
 CTRL_FREQ="${CTRL_FREQ:-20}"
@@ -113,16 +114,31 @@ wait_for_server() {
 cd "$REPO_ROOT"
 export PYTHONPATH="$REPO_ROOT:$PYTHONPATH"
 export TOKENIZERS_PARALLELISM=false
-export LINGBOT_VA_CKPT
+export LINGBOT_VA_BASE_CKPT
+export LINGBOT_VA_TRANSFORMER_CKPT
 
 for required_path in \
-  "$LINGBOT_VA_CKPT/vae/config.json" \
-  "$LINGBOT_VA_CKPT/tokenizer" \
-  "$LINGBOT_VA_CKPT/text_encoder/config.json" \
-  "$LINGBOT_VA_CKPT/transformer/config.json"; do
+  "$LINGBOT_VA_BASE_CKPT/vae/config.json" \
+  "$LINGBOT_VA_BASE_CKPT/tokenizer" \
+  "$LINGBOT_VA_BASE_CKPT/text_encoder/config.json"; do
   if [[ ! -e "$required_path" ]]; then
     echo "Cannot find required LingBot-VA model file or directory: $required_path" >&2
-    echo "Set LINGBOT_VA_CKPT to the model root that contains vae, tokenizer, text_encoder, and transformer." >&2
+    echo "Set LINGBOT_VA_BASE_CKPT to the pretrained model root that contains vae, tokenizer, text_encoder, and transformer." >&2
+    exit 1
+  fi
+done
+
+if [[ -z "$LINGBOT_VA_TRANSFORMER_CKPT" ]]; then
+  LINGBOT_VA_TRANSFORMER_CKPT="$LINGBOT_VA_BASE_CKPT/transformer"
+fi
+
+for required_path in \
+  "$LINGBOT_VA_TRANSFORMER_CKPT/config.json" \
+  "$LINGBOT_VA_TRANSFORMER_CKPT/diffusion_pytorch_model.safetensors"; do
+  if [[ ! -e "$required_path" ]]; then
+    echo "Cannot find required LingBot-VA transformer file: $required_path" >&2
+    echo "For pretrained inference, use LINGBOT_VA_TRANSFORMER_CKPT=$LINGBOT_VA_BASE_CKPT/transformer." >&2
+    echo "For your trained model, set LINGBOT_VA_TRANSFORMER_CKPT to a checkpoint transformer directory." >&2
     exit 1
   fi
 done
@@ -137,7 +153,8 @@ SERVER_CMD=(
   --config-name "$CONFIG_NAME"
   --port "$SERVER_PORT"
   --save_root "$SAVE_ROOT"
-  --ckpt-path "$LINGBOT_VA_CKPT"
+  --base-ckpt-path "$LINGBOT_VA_BASE_CKPT"
+  --transformer-ckpt-path "$LINGBOT_VA_TRANSFORMER_CKPT"
 )
 
 CLIENT_CMD=(

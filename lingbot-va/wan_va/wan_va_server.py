@@ -77,9 +77,14 @@ class VA_Server:
             torch_device='cpu' if self.enable_offload else self.device,
         )
 
+        transformer_path = getattr(job_config, "transformer_ckpt_path", None)
+        if transformer_path is None:
+            transformer_path = os.path.join(
+                job_config.wan22_pretrained_model_name_or_path,
+                'transformer',
+            )
         self.transformer = load_transformer(
-            os.path.join(job_config.wan22_pretrained_model_name_or_path,
-                         'transformer'),
+            transformer_path,
             torch_dtype=self.dtype,
             torch_device=self.device,
             attn_mode="torch"
@@ -680,9 +685,17 @@ def run(args):
     port = config.port if args.port is None else args.port
     if args.save_root is not None:
         config.save_root = args.save_root
-    ckpt_path = args.ckpt_path or os.environ.get("LINGBOT_VA_CKPT")
-    if ckpt_path:
-        config.wan22_pretrained_model_name_or_path = ckpt_path
+    base_ckpt_path = (
+        args.base_ckpt_path
+        or args.ckpt_path
+        or os.environ.get("LINGBOT_VA_BASE_CKPT")
+        or os.environ.get("LINGBOT_VA_CKPT")
+    )
+    transformer_ckpt_path = args.transformer_ckpt_path or os.environ.get("LINGBOT_VA_TRANSFORMER_CKPT")
+    if base_ckpt_path:
+        config.wan22_pretrained_model_name_or_path = base_ckpt_path
+    if transformer_ckpt_path:
+        config.transformer_ckpt_path = transformer_ckpt_path
     rank = int(os.getenv("RANK", 0))
     local_rank = int(os.environ.get('LOCAL_RANK', 0))
     world_size = int(os.environ.get("WORLD_SIZE", 1))
@@ -728,7 +741,19 @@ def main():
         "--ckpt-path",
         type=str,
         default=None,
-        help="Path to LingBot-VA base/post-trained model directory containing vae, tokenizer, text_encoder, and transformer.",
+        help="Deprecated alias for --base-ckpt-path.",
+    )
+    parser.add_argument(
+        "--base-ckpt-path",
+        type=str,
+        default=None,
+        help="Path to LingBot-VA pretrained base directory containing vae, tokenizer, text_encoder, and transformer.",
+    )
+    parser.add_argument(
+        "--transformer-ckpt-path",
+        type=str,
+        default=None,
+        help="Optional path to a fine-tuned transformer directory. Defaults to <base-ckpt-path>/transformer.",
     )
     args = parser.parse_args()
     run(args)
