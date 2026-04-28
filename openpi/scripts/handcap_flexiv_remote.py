@@ -4,6 +4,7 @@ import logging
 import os
 from pathlib import Path
 import signal as signal_module
+import socket
 import sys
 import threading
 import time
@@ -193,6 +194,7 @@ class Args:
     task_name: str = "handcap_flexiv_mvs"
     prompt: str = ""
     robot_ip: str = "192.168.2.100"
+    local_ip: str = dataclasses.field(default_factory=lambda: os.environ.get("FLEXIV_LOCAL_IP", "192.168.2.102"))
     init_qpos: tuple[float, ...] = (-0.0, -0.698, -0.0, 1.571, -0.0, 0.698, -0.0)
     camera_config_path: Path = dataclasses.field(default_factory=_default_camera_config_path)
     record_root: str = "realworld_replay_recording"
@@ -369,29 +371,49 @@ class ObservationThread(threading.Thread):
 
 
 class FlexivRealEnv:
-    tx_flange_tip = np.identity(4)
-    tx_flange_tip[:3, 3] = np.array([0.0, 0.0, 0.185], dtype=np.float64)
-    tx_tip_flange = np.linalg.inv(tx_flange_tip)
-
-    @staticmethod
-    def tip_to_flange_pose(tip_pose: np.ndarray) -> np.ndarray:
-        return mat_to_pose(pose_to_mat(tip_pose) @ FlexivRealEnv.tx_tip_flange)
-
     def __init__(
         self,
         init_qpos: list[float] | tuple[float, ...],
         *,
         robot_ip: str,
+        local_ip: str,
         dry_run: bool,
     ) -> None:
         import flexivrdk
 
         self._flexivrdk = flexivrdk
-        self._robot = flexivrdk.Robot(robot_ip)
-        self._model = flexivrdk.Model(self._robot)
-        self._gripper = flexivrdk.Gripper(self._robot)
         self._mode = flexivrdk.Mode
         self._dry_run = dry_run
+        self._init_qpos = list(init_qpos) if init_qpos is not None else None
+
+        robot_sn = os.environ.get("FLEXIV_ROBOT_SN", "Rizon4-062339")
+        gripper_name = os.environ.get("FLEXIV_GRIPPER_NAME", "Flexiv-GN01")
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.connect((robot_ip, 1))
+            actual_local_ip = sock.getsockname()[0]
+            sock.close()
+        except Exception:
+            actual_local_ip = local_ip
+
+        LOGGER.info(
+            "Initializing Flexiv Robot SN=%s, robot_ip=%s, local_ip=%s",
+            robot_sn,
+            robot_ip,
+            actual_local_ip,
+        )
+        self._robot = flexivrdk.Robot(robot_sn, [actual_local_ip])
+
+        LOGGER.info("Initializing Gripper API.")
+        self._gripper = flexivrdk.Gripper(self._robot)
+        LOGGER.info("Initializing Model API.")
+        self._model = flexivrdk.Model(self._robot)
+
+        try:
+            LOGGER.info("Enabling gripper [%s].", gripper_name)
+            self._gripper.Enable(gripper_name)
+        except Exception as exc:
+            LOGGER.warning("Failed to enable gripper [%s]: %s", gripper_name, exc)
 
         if self._robot.fault():
             self._robot.ClearFault()
@@ -401,32 +423,42 @@ class FlexivRealEnv:
         while not self._robot.operational():
             time.sleep(1)
 
+        LOGGER.info("Switching to NRT_CARTESIAN_MOTION_FORCE mode.")
+        self._robot.SwitchMode(self._mode.NRT_CARTESIAN_MOTION_FORCE)
+        self._robot.SetForceControlAxis([False, False, False, False, False, False])
+
         if not self._dry_run:
-            self._gripper.Move(0.12, 0.1, 10)
+            max_width = self._gripper.params().max_width
+            self._gripper.Move(max_width, 0.1, 20)
+            time.sleep(1)
 
+    def reset(self) -> None:
+        if self._init_qpos is None:
+            return
+
+        LOGGER.info("Switching to NRT_JOINT_POSITION for reset.")
         self._robot.SwitchMode(self._mode.NRT_JOINT_POSITION)
-        dof = self._robot.info().DoF
-        self.target_vel = [0.0] * dof
-        self.max_vel = [0.5] * dof
-        self.max_acc = [2.0] * dof
+        dof = len(self._init_qpos)
+        if not self._dry_run:
+            LOGGER.info("Resetting robot to initial joint positions: %s", self._init_qpos)
+            self._robot.SendJointPosition(self._init_qpos, [0.0] * dof, [0.1] * dof, [0.1] * dof)
+            max_width = self._gripper.params().max_width
+            self._gripper.Move(max_width, 0.1, 20)
+            time.sleep(10)
 
-        if init_qpos is not None:
-            self._robot.SendJointPosition(list(init_qpos), self.target_vel, self.max_vel, self.max_acc)
-            time.sleep(3)
-        time.sleep(1)
+        LOGGER.info("Switching back to NRT_CARTESIAN_MOTION_FORCE mode.")
+        self._robot.SwitchMode(self._mode.NRT_CARTESIAN_MOTION_FORCE)
+        self._robot.SetForceControlAxis([False, False, False, False, False, False])
 
     def get_ee_pose(self) -> np.ndarray:
         flange_pose_raw = self._robot.states().tcp_pose.copy()
         pos = flange_pose_raw[:3]
         qw, qx, qy, qz = flange_pose_raw[3:]
         rot = st.Rotation.from_quat([qx, qy, qz, qw])
-        tip_pose_mat = pos_rot_to_mat(np.array(pos, dtype=np.float64), rot) @ self.tx_flange_tip
-        return mat_to_certain_pose_type(tip_pose_mat, "rotvec")
+        return mat_to_certain_pose_type(pos_rot_to_mat(np.array(pos, dtype=np.float64), rot), "rotvec")
 
     def get_gripper_width(self) -> float:
-        states = self._flexivrdk.GripperStates()
-        self._gripper.GetGripperStates(states)
-        return float(states.width)
+        return float(self._gripper.states().width)
 
     def exec_actions(self, actions: np.ndarray, timestamps: np.ndarray) -> None:
         receive_time = time.time()
@@ -435,13 +467,12 @@ class FlexivRealEnv:
         new_timestamps = timestamps[is_new]
 
         for i in range(len(new_actions)):
-            tip_pose = new_actions[i, :6]
+            target_pose = new_actions[i, :6]
             target_width = float(new_actions[i, 6])
 
-            flange_pose = self.tip_to_flange_pose(tip_pose)
-            pos, rot = pose_to_pos_rot(flange_pose)
+            pos, rot = pose_to_pos_rot(target_pose)
             quat_xyzw = rot.as_quat(scalar_first=False)
-            flexiv_target_pose = [
+            target_tcp = [
                 float(pos[0]),
                 float(pos[1]),
                 float(pos[2]),
@@ -451,17 +482,13 @@ class FlexivRealEnv:
                 float(quat_xyzw[2]),
             ]
 
-            current_q = self._robot.states().q.copy()
-            reachable, target_q = self._model.reachable(flexiv_target_pose, current_q, True)
-            if not reachable:
-                LOGGER.warning("Target pose is unreachable: %s", flexiv_target_pose)
-                continue
-
             if self._dry_run:
                 LOGGER.info("Dry run: skipping joint/gripper command for action %d/%d", i + 1, len(new_actions))
             else:
-                self._robot.SendJointPosition(target_q, self.target_vel, self.max_vel, self.max_acc)
-                self._gripper.Move(max(target_width - 0.01, 0.005), 0.1, 10)
+                self._robot.SendCartesianMotionForce(target_tcp, [0.0] * 6, [0.0] * 6, 0.15, 0.5, 0.3, 1.0)
+                max_width = self._gripper.params().max_width
+                safe_width = min(max(target_width, 0.001), max_width - 0.001)
+                self._gripper.Move(safe_width, 0.1, 20)
 
             dt = new_timestamps[i] - time.time()
             if dt > 0:
@@ -587,7 +614,9 @@ def main(args: Args) -> None:
     signal_module.signal(signal_module.SIGTERM, _signal_handler)
 
     LOGGER.info("Initializing Flexiv environment at %s", args.robot_ip)
-    env = FlexivRealEnv(args.init_qpos, robot_ip=args.robot_ip, dry_run=args.dry_run)
+    env = FlexivRealEnv(args.init_qpos, robot_ip=args.robot_ip, local_ip=args.local_ip, dry_run=args.dry_run)
+    LOGGER.info("Moving to init pose: %s", args.init_qpos)
+    env.reset()
 
     obs_thread = ObservationThread(cam_wrist, cam_tactile_left, cam_tactile_right, env, maxlen=args.obs_horizon)
     obs_thread.start()
