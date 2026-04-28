@@ -362,13 +362,23 @@ if [[ "$DRY_RUN" == "true" ]]; then
   CLIENT_CMD+=(--dry-run)
 fi
 
+CLIENT_LD_PRELOAD="${LD_PRELOAD:-}"
+SYSTEM_LIBSTDCXX="/usr/lib/x86_64-linux-gnu/libstdc++.so.6"
+if [[ -f "$SYSTEM_LIBSTDCXX" ]] && strings "$SYSTEM_LIBSTDCXX" | grep -q "GLIBCXX_3.4.30"; then
+  CLIENT_LD_PRELOAD="$SYSTEM_LIBSTDCXX${CLIENT_LD_PRELOAD:+:$CLIENT_LD_PRELOAD}"
+fi
+
 {
   echo "# Generated at $(date --iso-8601=seconds)"
   echo "Server command:"
   join_cmd "${SERVER_CMD[@]}"
   echo
   echo "Client command:"
-  join_cmd "${CLIENT_CMD[@]}"
+  if [[ -n "$CLIENT_LD_PRELOAD" ]]; then
+    echo "LD_PRELOAD=$(printf '%q' "$CLIENT_LD_PRELOAD") $(join_cmd "${CLIENT_CMD[@]}")"
+  else
+    join_cmd "${CLIENT_CMD[@]}"
+  fi
 } > "$CMD_FILE"
 
 SERVER_PID=""
@@ -420,7 +430,12 @@ if [[ "$WAIT_STATUS" != "0" ]]; then
 fi
 
 echo "Starting Flexiv real-robot client..."
-"${CLIENT_CMD[@]}" >"$CLIENT_LOG" 2>&1 &
+if [[ -n "$CLIENT_LD_PRELOAD" ]]; then
+  echo "Client LD_PRELOAD: $CLIENT_LD_PRELOAD"
+  LD_PRELOAD="$CLIENT_LD_PRELOAD" "${CLIENT_CMD[@]}" >"$CLIENT_LOG" 2>&1 &
+else
+  "${CLIENT_CMD[@]}" >"$CLIENT_LOG" 2>&1 &
+fi
 CLIENT_PID=$!
 
 {
