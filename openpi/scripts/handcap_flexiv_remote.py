@@ -174,11 +174,21 @@ def _make_policy_observation(latest_frame: dict[str, Any], prompt: str, use_tact
     if use_tactile and latest_frame["right_tactile_img"] is None:
         raise ValueError("Latest right tactile image is missing")
 
+    wrist_image = _prepare_camera_image(latest_frame["wrist_img"])
+    left_tactile = _prepare_tactile_image(latest_frame["left_tactile_img"], use_tactile)
+    right_tactile = _prepare_tactile_image(latest_frame["right_tactile_img"], use_tactile)
     state = encode_state_to_handcap_state(latest_frame["eepose"], float(latest_frame["gripper_width"]))
+
     return {
-        "observation.images.wrist": _prepare_camera_image(latest_frame["wrist_img"]),
-        "observation.tactiles.left": _prepare_tactile_image(latest_frame["left_tactile_img"], use_tactile),
-        "observation.tactiles.right": _prepare_tactile_image(latest_frame["right_tactile_img"], use_tactile),
+        "observation/wrist_image": wrist_image,
+        "observation/left_tactile": left_tactile,
+        "observation/right_tactile": right_tactile,
+        "observation/state": state,
+        # Keep LeRobot-style names too, in case this script is used with a server
+        # configuration that includes HandcapRepackTransform.
+        "observation.images.wrist": wrist_image,
+        "observation.tactiles.left": left_tactile,
+        "observation.tactiles.right": right_tactile,
         "observation.state": state,
         "prompt": prompt,
     }
