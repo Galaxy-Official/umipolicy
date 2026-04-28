@@ -15,7 +15,7 @@ export FLEXIV_GRIPPER_NAME="Flexiv-GN01"
 
 # 设置机械臂初始安全位姿 [关节弧度制]
 # 启动推理前，机械臂会自动运动到此位置
-export FLEXIV_INIT_POSE="[-0.0009,-0.3386,-0.0133,1.9673,-0.0058,0.6746,-0.0012]"
+export FLEXIV_INIT_POSE="[-0.0009,-0.3386,-0.0133,2.0663,-0.0058,0.8170,-0.0012]"
 
 # 预训练模型 Checkpoint 路径
 CKPT_PATH="ckpt/epoch=0110-train_loss=0.027.ckpt"
