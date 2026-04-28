@@ -37,5 +37,5 @@ python scripts_real/eval_flexiv.py \
     --output "${OUTPUT_DIR}" \
     --robot_ip "${FLEXIV_ROBOT_IP}" \
     --local_ip "${FLEXIV_LOCAL_IP}" \
-    --frequency 20 \
+    --frequency 5 \
     --steps_per_inference 4
