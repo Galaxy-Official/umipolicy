@@ -13,6 +13,20 @@ from collections import deque
 from multiprocessing.managers import SharedMemoryManager
 
 import click
+
+if 'QT_QPA_FONTDIR' not in os.environ:
+    for font_dir in (
+        '/usr/share/fonts',
+        '/usr/local/share/fonts',
+        '/usr/share/fonts/truetype',
+        '/usr/share/fonts/truetype/dejavu',
+        '/System/Library/Fonts',
+        '/Library/Fonts',
+    ):
+        if os.path.isdir(font_dir):
+            os.environ['QT_QPA_FONTDIR'] = font_dir
+            break
+
 import cv2
 import dill
 import hydra

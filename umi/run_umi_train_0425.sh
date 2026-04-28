@@ -6,12 +6,12 @@ export CUDA_VISIBLE_DEVICES=0
 
 
 # 定义刚才生成好的 Zarr 数据集路径
-DATASET_PATH="data/yellow_to_pink_block.zarr"
+DATASET_PATH="data/yellow_umi_428.zarr"
 # 定义训练输出路径 (存放 Checkpoints, Logs 等)
-OUTPUT_PATH="outputs/yellow_to_pink_block_train_0425"
+OUTPUT_PATH="outputs/yellow_to_pink_block_train_0428"
 # 定义视觉主干网络 (Vision Backbone)
 VISION_BACKBONE="vit_base_patch16_224"
-VISION_CKPT=""
+VISION_CKPT="ckpt/vit_b_16.pth"
 
 echo "=========================================="
 echo "🚀 准备开始 UMI Diffusion Policy 训练流水线"
