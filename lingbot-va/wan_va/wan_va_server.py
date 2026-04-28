@@ -696,6 +696,8 @@ def run(args):
         config.wan22_pretrained_model_name_or_path = base_ckpt_path
     if transformer_ckpt_path:
         config.transformer_ckpt_path = transformer_ckpt_path
+    if args.enable_offload is not None:
+        config.enable_offload = args.enable_offload
     rank = int(os.getenv("RANK", 0))
     local_rank = int(os.environ.get('LOCAL_RANK', 0))
     world_size = int(os.environ.get("WORLD_SIZE", 1))
@@ -754,6 +756,12 @@ def main():
         type=str,
         default=None,
         help="Optional path to a fine-tuned transformer directory. Defaults to <base-ckpt-path>/transformer.",
+    )
+    parser.add_argument(
+        "--enable-offload",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Keep VAE and text encoder on CPU to reduce GPU memory usage.",
     )
     args = parser.parse_args()
     run(args)

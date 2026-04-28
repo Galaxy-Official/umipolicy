@@ -32,6 +32,8 @@ INIT_QPOS="${INIT_QPOS:-[-0.0, -0.698, -0.0, 1.571, -0.0, 0.698, -0.0]}"
 CAMERA_CONFIG_PATH="${CAMERA_CONFIG_PATH:-}"
 DRY_RUN="${DRY_RUN:-false}"
 STARTUP_TIMEOUT="${STARTUP_TIMEOUT:-1800}"
+LINGBOT_ENABLE_OFFLOAD="${LINGBOT_ENABLE_OFFLOAD:-true}"
+PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
 
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 LOG_DIR="${LOG_DIR:-$REPO_ROOT/logs/handcap_lingbot_real/$TIMESTAMP}"
@@ -114,6 +116,7 @@ wait_for_server() {
 cd "$REPO_ROOT"
 export PYTHONPATH="$REPO_ROOT:$PYTHONPATH"
 export TOKENIZERS_PARALLELISM=false
+export PYTORCH_ALLOC_CONF
 export LINGBOT_VA_BASE_CKPT
 export LINGBOT_VA_TRANSFORMER_CKPT
 
@@ -156,6 +159,10 @@ if [[ "${#TRANSFORMER_WEIGHT_FILES[@]}" -eq 0 ]]; then
   exit 1
 fi
 
+echo "LingBot-VA base checkpoint: $LINGBOT_VA_BASE_CKPT"
+echo "LingBot-VA transformer checkpoint: $LINGBOT_VA_TRANSFORMER_CKPT"
+echo "Found ${#TRANSFORMER_WEIGHT_FILES[@]} transformer weight file(s)."
+
 SERVER_CMD=(
   python -m torch.distributed.run
   --nproc_per_node="$NGPU"
@@ -169,6 +176,12 @@ SERVER_CMD=(
   --base-ckpt-path "$LINGBOT_VA_BASE_CKPT"
   --transformer-ckpt-path "$LINGBOT_VA_TRANSFORMER_CKPT"
 )
+
+if [[ "$LINGBOT_ENABLE_OFFLOAD" == "true" ]]; then
+  SERVER_CMD+=(--enable-offload)
+else
+  SERVER_CMD+=(--no-enable-offload)
+fi
 
 CLIENT_CMD=(
   python scripts/handcap_flexiv_lingbot_remote.py
