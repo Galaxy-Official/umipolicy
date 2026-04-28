@@ -12,6 +12,7 @@ from .va_libero_train_cfg import va_libero_train_cfg
 from .va_libero_i2va import va_libero_i2va_cfg
 from .va_handcap_cfg import va_handcap_cfg
 from .va_handcap_train_cfg import va_handcap_train_cfg
+from .va_yellow_lerobot_428_train_cfg import va_yellow_lerobot_428_train_cfg
 
 VA_CONFIGS = {
     'robotwin': va_robotwin_cfg,
@@ -27,4 +28,5 @@ VA_CONFIGS = {
     'libero_i2av': va_libero_i2va_cfg,
     'handcap': va_handcap_cfg,
     'handcap_train': va_handcap_train_cfg,
+    'yellow_lerobot_428_train': va_yellow_lerobot_428_train_cfg,
 }
