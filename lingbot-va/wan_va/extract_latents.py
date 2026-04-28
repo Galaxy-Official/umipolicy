@@ -24,6 +24,12 @@ def get_args():
     parser.add_argument("--chunk_size", type=int, default=2, help="VAE chunk size (num frames to encode at once)")
     parser.add_argument("--height", type=int, default=256, help="Target height for latents")
     parser.add_argument("--width", type=int, default=320, help="Target width for latents")
+    parser.add_argument(
+        "--video_keys",
+        nargs="*",
+        default=None,
+        help="Optional image/tactile keys to extract. Supports space-separated or comma-separated values.",
+    )
     parser.add_argument("--shard_id", type=int, default=0, help="Shard ID for parallel extraction (0 to num_shards-1)")
     parser.add_argument("--num_shards", type=int, default=1, help="Total number of shards for parallel extraction")
     return parser.parse_args()
@@ -114,6 +120,16 @@ def main():
         return
 
     used_video_keys = [k for k in ds.meta.features if ("observation.images" in k or "observation.tactiles" in k) and "depth" not in k.lower()]
+    if args.video_keys:
+        requested_video_keys = []
+        for item in args.video_keys:
+            requested_video_keys.extend([key.strip() for key in item.split(",") if key.strip()])
+        missing_video_keys = [key for key in requested_video_keys if key not in ds.meta.features]
+        if missing_video_keys:
+            print(f"Requested video keys are missing from dataset metadata: {missing_video_keys}")
+            print(f"Available keys: {list(ds.meta.features.keys())}")
+            return
+        used_video_keys = requested_video_keys
     if len(used_video_keys) == 0:
         print("No image/tactile keys found in dataset!")
         return

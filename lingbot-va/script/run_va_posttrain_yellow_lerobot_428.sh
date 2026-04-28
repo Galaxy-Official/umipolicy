@@ -1,5 +1,6 @@
 #!/usr/bin/bash
 
+set -eo pipefail
 set -x
 
 umask 007
@@ -13,6 +14,9 @@ CONFIG_NAME=${CONFIG_NAME:-"yellow_lerobot_428_train"}
 DATASET_PATH=${DATASET_PATH:-"Data/yellow_lerobot_428"}
 CKPT_PATH=${CKPT_PATH:-"./ckpt/lingbot-va-base"}
 REBUILD_EMPTY_EMB=${REBUILD_EMPTY_EMB:-"1"}
+AUTO_EXTRACT_LATENTS=${AUTO_EXTRACT_LATENTS:-"1"}
+EXTRACT_WORKERS_PER_GPU=${EXTRACT_WORKERS_PER_GPU:-"1"}
+EXTRACT_VIDEO_KEYS=${EXTRACT_VIDEO_KEYS:-"observation.images.wrist"}
 
 overrides=""
 if [ $# -ne 0 ]; then
@@ -40,6 +44,46 @@ if [ "${REBUILD_EMPTY_EMB}" = "1" ] || [ ! -f "${dataset_path}/empty_emb.pt" ]; 
         --dataset_path "${dataset_path}" \
         --ckpt_path "${ckpt_path}" \
         --force
+fi
+
+latent_probe=$(find "${dataset_path}/latents" -path "*/observation.images.wrist/*.pth" -print -quit 2>/dev/null || true)
+if [ "${AUTO_EXTRACT_LATENTS}" = "1" ] && [ -z "${latent_probe}" ]; then
+    IFS=',' read -r -a extract_gpu_ids <<< "${CUDA_VISIBLE_DEVICES}"
+    total_shards=$(( ${#extract_gpu_ids[@]} * EXTRACT_WORKERS_PER_GPU ))
+    shard_id=0
+    pids=()
+
+    echo "No wrist latents found under ${dataset_path}/latents. Extracting latents with ${total_shards} shards..."
+    for gpu_id in "${extract_gpu_ids[@]}"; do
+        for (( worker_id=0; worker_id<EXTRACT_WORKERS_PER_GPU; worker_id++ )); do
+            CUDA_VISIBLE_DEVICES="${gpu_id}" python wan_va/extract_latents.py \
+                --dataset_path "${dataset_path}" \
+                --ckpt_path "${ckpt_path}" \
+                --chunk_size 2 \
+                --height 256 \
+                --width 320 \
+                --video_keys "${EXTRACT_VIDEO_KEYS}" \
+                --shard_id "${shard_id}" \
+                --num_shards "${total_shards}" &
+            pids+=("$!")
+            shard_id=$(( shard_id + 1 ))
+        done
+    done
+
+    extract_failed=0
+    for pid in "${pids[@]}"; do
+        wait "${pid}" || extract_failed=1
+    done
+    if [ "${extract_failed}" -ne 0 ]; then
+        echo "Latent extraction failed. Stop before training." >&2
+        exit 1
+    fi
+fi
+
+latent_probe=$(find "${dataset_path}/latents" -path "*/observation.images.wrist/*.pth" -print -quit 2>/dev/null || true)
+if [ -z "${latent_probe}" ]; then
+    echo "No wrist latent files found. Run with AUTO_EXTRACT_LATENTS=1 or check dataset video key/path." >&2
+    exit 1
 fi
 
 PYTORCH_ALLOC_CONF="expandable_segments:True" TORCHFT_LIGHTHOUSE=${torchft_lighthouse} \
