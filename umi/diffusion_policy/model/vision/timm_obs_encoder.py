@@ -86,7 +86,6 @@ class TimmObsEncoder(ModuleAttrMixin):
         model = timm.create_model(
             model_name=model_name,
             pretrained=pretrained,
-            global_pool=global_pool, # '' means no pooling
             num_classes=0            # remove classification layer
         )
         if checkpoint_path:
