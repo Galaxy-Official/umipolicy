@@ -298,14 +298,14 @@ CMD_FILE="$LOG_DIR/run_command.txt"
 SERVER_CMD=(
   python
   scripts/serve_policy.py
+  --port="$SERVER_PORT"
   policy:checkpoint
   --policy.config="$POLICY_CONFIG"
   --policy.dir="$POLICY_DIR"
-  --port="$SERVER_PORT"
 )
 
 if [[ -n "$SERVER_DEFAULT_PROMPT" ]]; then
-  SERVER_CMD+=(--default_prompt="$SERVER_DEFAULT_PROMPT")
+  SERVER_CMD=("${SERVER_CMD[@]:0:3}" --default-prompt="$SERVER_DEFAULT_PROMPT" "${SERVER_CMD[@]:3}")
 fi
 
 CLIENT_CMD=(
