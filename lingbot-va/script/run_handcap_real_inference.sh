@@ -133,8 +133,7 @@ if [[ -z "$LINGBOT_VA_TRANSFORMER_CKPT" ]]; then
 fi
 
 for required_path in \
-  "$LINGBOT_VA_TRANSFORMER_CKPT/config.json" \
-  "$LINGBOT_VA_TRANSFORMER_CKPT/diffusion_pytorch_model.safetensors"; do
+  "$LINGBOT_VA_TRANSFORMER_CKPT/config.json"; do
   if [[ ! -e "$required_path" ]]; then
     echo "Cannot find required LingBot-VA transformer file: $required_path" >&2
     echo "For pretrained inference, use LINGBOT_VA_TRANSFORMER_CKPT=$LINGBOT_VA_BASE_CKPT/transformer." >&2
@@ -142,6 +141,20 @@ for required_path in \
     exit 1
   fi
 done
+
+shopt -s nullglob
+TRANSFORMER_WEIGHT_FILES=(
+  "$LINGBOT_VA_TRANSFORMER_CKPT"/diffusion_pytorch_model*.safetensors
+  "$LINGBOT_VA_TRANSFORMER_CKPT"/model*.safetensors
+  "$LINGBOT_VA_TRANSFORMER_CKPT"/*.bin
+)
+shopt -u nullglob
+if [[ "${#TRANSFORMER_WEIGHT_FILES[@]}" -eq 0 ]]; then
+  echo "Cannot find LingBot-VA transformer weights in: $LINGBOT_VA_TRANSFORMER_CKPT" >&2
+  echo "Expected diffusion_pytorch_model*.safetensors, model*.safetensors, or *.bin." >&2
+  echo "Your pretrained download is incomplete; re-download lingbot-va-base or run git lfs pull in that directory." >&2
+  exit 1
+fi
 
 SERVER_CMD=(
   python -m torch.distributed.run
