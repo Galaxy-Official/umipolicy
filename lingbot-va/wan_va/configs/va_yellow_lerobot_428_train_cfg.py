@@ -16,6 +16,7 @@ va_yellow_lerobot_428_train_cfg.empty_emb_path = os.path.join(
 # This yellow_to_pink run is wrist-camera only for now.
 va_yellow_lerobot_428_train_cfg.use_tactile = False
 va_yellow_lerobot_428_train_cfg.obs_cam_keys = ['observation.images.wrist']
+va_yellow_lerobot_428_train_cfg.convert_action_to_relative_rot6d = True
 
 va_yellow_lerobot_428_train_cfg.enable_wandb = True
 va_yellow_lerobot_428_train_cfg.load_worker = 16

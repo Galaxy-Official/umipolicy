@@ -18,6 +18,7 @@ va_handcap_cfg.height = 256
 va_handcap_cfg.width = 320
 va_handcap_cfg.action_dim = 10
 va_handcap_cfg.action_per_frame = 16
+va_handcap_cfg.convert_action_to_relative_rot6d = False
 va_handcap_cfg.obs_cam_keys = [
     'observation.images.wrist', 'observation.tactiles.left',
     'observation.tactiles.right'

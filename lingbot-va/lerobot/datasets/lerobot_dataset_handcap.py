@@ -19,12 +19,14 @@ from collections.abc import Callable
 from pathlib import Path
 
 
+import numpy as np
 import torch
 import datasets
 import torch.utils
 from huggingface_hub import HfApi, snapshot_download
 from huggingface_hub.errors import RevisionNotFoundError
 
+from lerobot.datasets.pose_utils import mat_to_certain_pose_type, pose_to_mat
 from lerobot.datasets.dataset_metadata import CODEBASE_VERSION, LeRobotDatasetMetadata
 from lerobot.datasets.dataset_reader import DatasetReader
 from lerobot.datasets.dataset_writer import DatasetWriter
@@ -41,6 +43,45 @@ from lerobot.datasets.video_utils import (
 from lerobot.utils.constants import HF_LEROBOT_HUB_CACHE
 
 logger = logging.getLogger(__name__)
+
+def process_to_relative_rot6d(obs_state_tensor, action_tensor):
+    """
+    Converts absolute rotvec 10D data to relative rot6d 10D data.
+    Input:
+        obs_state_tensor: Shape [10] or [N, 10]
+        action_tensor: Shape [10] or [C, 10]
+    Output:
+        obs_state_new, action_new as torch.Tensors
+    """
+    obs_is_1d = obs_state_tensor.ndim == 1
+    act_is_1d = action_tensor.ndim == 1
+
+    obs_state = obs_state_tensor.unsqueeze(0) if obs_is_1d else obs_state_tensor
+    act_state = action_tensor.unsqueeze(0) if act_is_1d else action_tensor
+
+    obs_np = obs_state.detach().cpu().numpy()
+    act_np = act_state.detach().cpu().numpy()
+
+    n_obs = obs_np.shape[0]
+    combined_np = np.concatenate([obs_np, act_np], axis=0)
+    combined_pose_mat = pose_to_mat(combined_np[..., :-4])
+
+    base_pose_mat = combined_pose_mat[n_obs - 1]
+    combined_rel_mat = np.linalg.inv(base_pose_mat) @ combined_pose_mat
+    combined_pose_10d = mat_to_certain_pose_type(combined_rel_mat, "10d")
+
+    combined_gripper = combined_np[:, -4:-3]
+    combined_new = np.concatenate([combined_pose_10d, combined_gripper], axis=-1)
+
+    obs_new = combined_new[:n_obs]
+    act_new = combined_new[n_obs:]
+
+    if obs_is_1d:
+        obs_new = obs_new[0]
+    if act_is_1d:
+        act_new = act_new[0]
+
+    return torch.from_numpy(obs_new).float(), torch.from_numpy(act_new).float()
 
 
 class LeRobotDatasetHandcap(torch.utils.data.Dataset):
@@ -450,7 +491,12 @@ class LeRobotDatasetHandcap(torch.utils.data.Dataset):
         if reader.hf_dataset is None:
             # One-shot load after finalize()
             reader.load_and_activate()
-        return reader.get_item(idx)
+        item = reader.get_item(idx)
+        item["observation.state"], item["action"] = process_to_relative_rot6d(
+            item["observation.state"],
+            item["action"],
+        )
+        return item
 
     def select_columns(self, column_names: str | list[str]):
         """Select specific columns from the underlying dataset.

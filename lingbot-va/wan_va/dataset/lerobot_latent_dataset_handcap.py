@@ -24,6 +24,7 @@ import torch
 from einops import rearrange
 from torch.utils.data import DataLoader
 from scipy.spatial.transform import Rotation as R
+from lerobot.datasets.pose_utils import mat_to_certain_pose_type, pose_to_mat
 from lerobot.utils.constants import HF_LEROBOT_HOME
 
 def recursive_find_file(directory, filename='info.json'):
@@ -77,6 +78,52 @@ def get_relative_pose(pose):
 
     relative_pose = np.concatenate([relative_trans, relative_quat], axis=1)
     return torch.from_numpy(relative_pose)
+
+def process_to_relative_rot6d(obs_state_tensor, action_tensor):
+    """
+    Converts absolute rotvec 10D data to relative rot6d 10D data.
+
+    Input:
+        obs_state_tensor: Shape [10] or [N, 10].
+        action_tensor: Shape [10] or [C, 10].
+    Output:
+        obs_state_new, action_new as torch.Tensors.
+    """
+    obs_state_tensor = torch.as_tensor(obs_state_tensor)
+    action_tensor = torch.as_tensor(action_tensor)
+    obs_is_1d = obs_state_tensor.ndim == 1
+    act_is_1d = action_tensor.ndim == 1
+
+    obs_state = obs_state_tensor.unsqueeze(0) if obs_is_1d else obs_state_tensor
+    act_state = action_tensor.unsqueeze(0) if act_is_1d else action_tensor
+    if obs_state.shape[-1] != 10 or act_state.shape[-1] != 10:
+        raise ValueError(
+            f"Expected 10D obs/action for relative rot6d conversion, got "
+            f"obs={tuple(obs_state.shape)} action={tuple(act_state.shape)}"
+        )
+
+    obs_np = obs_state.detach().cpu().numpy()
+    act_np = act_state.detach().cpu().numpy()
+
+    n_obs = obs_np.shape[0]
+    combined_np = np.concatenate([obs_np, act_np], axis=0)
+    combined_pose_mat = pose_to_mat(combined_np[..., :-4])
+
+    base_pose_mat = combined_pose_mat[n_obs - 1]
+    combined_rel_mat = np.linalg.inv(base_pose_mat) @ combined_pose_mat
+    combined_pose_10d = mat_to_certain_pose_type(combined_rel_mat, "10d")
+
+    combined_gripper = combined_np[:, -4:-3]
+    combined_new = np.concatenate([combined_pose_10d, combined_gripper], axis=-1)
+
+    obs_new = combined_new[:n_obs]
+    act_new = combined_new[n_obs:]
+    if obs_is_1d:
+        obs_new = obs_new[0]
+    if act_is_1d:
+        act_new = act_new[0]
+
+    return torch.from_numpy(obs_new).float(), torch.from_numpy(act_new).float()
 
 class MultiLatentLeRobotDatasetHandcap(torch.utils.data.Dataset):
     def __init__(
@@ -149,11 +196,15 @@ class LatentLeRobotDatasetHandcap(LeRobotDataset):
         self.config = config
         self.cfg_prob = config.cfg_prob
         self.used_video_keys = config.obs_cam_keys
+        self.convert_action_to_relative_rot6d = getattr(config, 'convert_action_to_relative_rot6d', False)
         self.q01 = np.array(config.norm_stat['q01'], dtype='float')[None]
         self.q99 = np.array(config.norm_stat['q99'], dtype='float')[None]
+        hf_columns = ['action']
+        if self.convert_action_to_relative_rot6d:
+            hf_columns.append('observation.state')
         self._hf_torch_view = self.hf_dataset.with_format(
                 type='torch',
-                columns=['action'],
+                columns=hf_columns,
                 output_all_columns=False
             )
         self.parse_meta()
@@ -302,14 +353,20 @@ class LatentLeRobotDatasetHandcap(LeRobotDataset):
         )
         return out_dict
     
-    def _action_post_process(self, local_start_frame, local_end_frame, latent_frame_ids, action):
+    def _action_post_process(self, local_start_frame, local_end_frame, latent_frame_ids, action, obs_state=None):
         act_shift = int(latent_frame_ids[0] - local_start_frame)
         frame_stride = latent_frame_ids[1] - latent_frame_ids[0]
         action = action[act_shift:]
+        if self.convert_action_to_relative_rot6d:
+            if obs_state is None:
+                raise ValueError("observation.state is required when convert_action_to_relative_rot6d=True")
+            _, action = process_to_relative_rot6d(obs_state, action)
         if self.config.env_type == 'robotwin_tshape': ## TODO support get_relative_pose for other dataset, currently only support robotwin 
             left_action = get_relative_pose(action[:, :7])
             right_action = get_relative_pose(action[:, 8:15])
             action = np.concatenate([left_action, action[:, 7:8], right_action, action[:, 15:16]], axis=1)
+        if torch.is_tensor(action):
+            action = action.detach().cpu().numpy()
         action = np.pad(action, pad_width=((frame_stride * 4, 0), (0, 0)), mode='constant', constant_values=0)
 
         latent_frame_num = (len(latent_frame_ids) - 1) // 4 + 1
@@ -351,7 +408,13 @@ class LatentLeRobotDatasetHandcap(LeRobotDataset):
         ori_data_dict.update(hf_data_frames)
         out_dict = self._cat_video_latents(ori_data_dict)
 
-        out_dict['actions'], out_dict['actions_mask'] = self._action_post_process(local_start_frame, local_end_frame, latent_frame_ids, ori_data_dict['action'])
+        out_dict['actions'], out_dict['actions_mask'] = self._action_post_process(
+            local_start_frame,
+            local_end_frame,
+            latent_frame_ids,
+            ori_data_dict['action'],
+            ori_data_dict.get('observation.state'),
+        )
 
         out_dict['latents'] = out_dict['latents'].permute(3, 0, 1, 2)
         return out_dict
