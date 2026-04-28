@@ -357,10 +357,11 @@ class LatentLeRobotDatasetHandcap(LeRobotDataset):
         act_shift = int(latent_frame_ids[0] - local_start_frame)
         frame_stride = latent_frame_ids[1] - latent_frame_ids[0]
         action = action[act_shift:]
+        obs_state_new = None
         if self.convert_action_to_relative_rot6d:
             if obs_state is None:
                 raise ValueError("observation.state is required when convert_action_to_relative_rot6d=True")
-            _, action = process_to_relative_rot6d(obs_state, action)
+            obs_state_new, action = process_to_relative_rot6d(obs_state, action)
         if self.config.env_type == 'robotwin_tshape': ## TODO support get_relative_pose for other dataset, currently only support robotwin 
             left_action = get_relative_pose(action[:, :7])
             right_action = get_relative_pose(action[:, 8:15])
@@ -387,7 +388,11 @@ class LatentLeRobotDatasetHandcap(LeRobotDataset):
         action_aligned = rearrange(action_aligned, "(f n) c -> c f n 1", f=latent_frame_num)
         action_mask_aligned = rearrange(action_mask_aligned, "(f n) c -> c f n 1", f=latent_frame_num)
         action_aligned *= action_mask_aligned
-        return torch.from_numpy(action_aligned).float(), torch.from_numpy(action_mask_aligned).bool()
+        return (
+            torch.from_numpy(action_aligned).float(),
+            torch.from_numpy(action_mask_aligned).bool(),
+            obs_state_new,
+        )
 
     def __getitem__(self, idx) -> dict:
         idx = idx % len(self.new_metas)
@@ -408,13 +413,17 @@ class LatentLeRobotDatasetHandcap(LeRobotDataset):
         ori_data_dict.update(hf_data_frames)
         out_dict = self._cat_video_latents(ori_data_dict)
 
-        out_dict['actions'], out_dict['actions_mask'] = self._action_post_process(
+        actions, actions_mask, obs_state = self._action_post_process(
             local_start_frame,
             local_end_frame,
             latent_frame_ids,
             ori_data_dict['action'],
             ori_data_dict.get('observation.state'),
         )
+        out_dict['actions'] = actions
+        out_dict['actions_mask'] = actions_mask
+        if obs_state is not None:
+            out_dict['observation.state'] = obs_state
 
         out_dict['latents'] = out_dict['latents'].permute(3, 0, 1, 2)
         return out_dict

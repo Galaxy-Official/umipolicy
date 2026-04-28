@@ -167,28 +167,79 @@ def _infer_abs_rotvec_layout(dim: int) -> tuple[int, int]:
     raise ValueError(f"Unsupported absolute action/state dim {dim}; expected a multiple of 7 or 10")
 
 
-def convert_abs_rotvec_actions_to_relative_pose10d(actions: np.ndarray, base_state: np.ndarray) -> np.ndarray:
-    """Convert absolute [xyz, rotvec, gripper, ...] actions to current-EE-relative [xyz, rot6d, gripper]."""
-    actions = np.asarray(actions, dtype=np.float32)
-    base_state = np.asarray(base_state, dtype=np.float32)
-    action_robots, action_stride = _infer_abs_rotvec_layout(actions.shape[-1])
-    state_robots, state_stride = _infer_abs_rotvec_layout(base_state.shape[-1])
+def _as_numpy_float32(x) -> np.ndarray:
+    if isinstance(x, torch.Tensor):
+        return x.detach().cpu().numpy().astype(np.float32, copy=False)
+    return np.asarray(x, dtype=np.float32)
+
+
+def process_to_relative_rot6d(obs_state_tensor, action_tensor):
+    """
+    Converts absolute rotvec pose data to current-observation-relative rot6d data.
+
+    Input:
+        obs_state_tensor: Shape [D] or [N, D], with per-robot [xyz, rotvec, gripper, ...]
+        action_tensor: Shape [D] or [C, D], with the same per-robot layout
+    Output:
+        obs_state_new, action_new as torch.Tensors. Each robot becomes 10D:
+        [relative xyz, relative rot6d, gripper].
+    """
+    obs_np = _as_numpy_float32(obs_state_tensor)
+    act_np = _as_numpy_float32(action_tensor)
+
+    obs_is_1d = obs_np.ndim == 1
+    act_is_1d = act_np.ndim == 1
+
+    obs_state = obs_np[None] if obs_is_1d else obs_np
+    act_state = act_np[None] if act_is_1d else act_np
+
+    action_robots, action_stride = _infer_abs_rotvec_layout(act_state.shape[-1])
+    state_robots, state_stride = _infer_abs_rotvec_layout(obs_state.shape[-1])
     if state_robots < action_robots:
         raise ValueError(
-            f"Base state has {state_robots} robot(s), but actions have {action_robots} robot(s)"
+            f"Observation state has {state_robots} robot(s), but action has {action_robots} robot(s)"
         )
 
-    converted = []
+    obs_converted = []
+    act_converted = []
     for robot_idx in range(action_robots):
         action_start = robot_idx * action_stride
         state_start = robot_idx * state_stride
-        action_mat = _pose6_to_mat(actions[..., action_start : action_start + 6])
-        base_mat = _pose6_to_mat(base_state[state_start : state_start + 6])
-        rel_mat = np.linalg.inv(base_mat) @ action_mat
-        rel_pose = _mat_to_pose10d(rel_mat)
-        gripper = actions[..., action_start + 6 : action_start + 7]
-        converted.append(np.concatenate([rel_pose, gripper], axis=-1))
-    return np.concatenate(converted, axis=-1).astype(np.float32)
+
+        obs_pose_mat = _pose6_to_mat(obs_state[..., state_start : state_start + 6])
+        act_pose_mat = _pose6_to_mat(act_state[..., action_start : action_start + 6])
+        base_pose_mat = obs_pose_mat[-1]
+        inv_base_pose_mat = np.linalg.inv(base_pose_mat)
+
+        obs_rel_pose = _mat_to_pose10d(inv_base_pose_mat @ obs_pose_mat)
+        act_rel_pose = _mat_to_pose10d(inv_base_pose_mat @ act_pose_mat)
+        obs_gripper = obs_state[..., state_start + 6 : state_start + 7]
+        act_gripper = act_state[..., action_start + 6 : action_start + 7]
+
+        obs_converted.append(np.concatenate([obs_rel_pose, obs_gripper], axis=-1))
+        act_converted.append(np.concatenate([act_rel_pose, act_gripper], axis=-1))
+
+    obs_new = np.concatenate(obs_converted, axis=-1).astype(np.float32)
+    act_new = np.concatenate(act_converted, axis=-1).astype(np.float32)
+
+    if obs_is_1d:
+        obs_new = obs_new[0]
+    if act_is_1d:
+        act_new = act_new[0]
+
+    return torch.from_numpy(obs_new).float(), torch.from_numpy(act_new).float()
+
+
+def convert_abs_rotvec_actions_to_relative_pose10d(actions: np.ndarray, base_state: np.ndarray) -> np.ndarray:
+    """Convert absolute [xyz, rotvec, gripper, ...] actions to current-EE-relative [xyz, rot6d, gripper]."""
+    _, action_new = process_to_relative_rot6d(base_state, actions)
+    return action_new.numpy().astype(np.float32, copy=False)
+
+
+def convert_abs_rotvec_state_to_relative_pose10d(state: np.ndarray, base_state: np.ndarray) -> np.ndarray:
+    """Convert absolute [xyz, rotvec, gripper, ...] state to current-EE-relative [xyz, rot6d, gripper]."""
+    _, state_new = process_to_relative_rot6d(base_state, state)
+    return state_new.numpy().astype(np.float32, copy=False)
 
 
 def _rescale_array(arr: np.ndarray, dataset_stats: dict, data_key: str) -> np.ndarray:
@@ -460,9 +511,11 @@ class UMIDataset(Dataset):
             calculate_dataset_statistics_func=calculate_dataset_statistics,
         )
 
-        if self.convert_actions_to_relative_pose10d and self.normalize_actions:
-            self.relative_action_dataset_stats = self._load_or_compute_relative_action_statistics()
+        if self.convert_actions_to_relative_pose10d and (self.normalize_actions or self.normalize_proprio):
+            self.relative_pose10d_dataset_stats = self._load_or_compute_relative_pose10d_statistics()
+            self.relative_action_dataset_stats = self.relative_pose10d_dataset_stats
         else:
+            self.relative_pose10d_dataset_stats = None
             self.relative_action_dataset_stats = None
 
         # Normalize actions and/or proprio
@@ -768,38 +821,49 @@ class UMIDataset(Dataset):
             return self.epoch_length
         return self.num_steps
 
-    def _load_or_compute_relative_action_statistics(self):
-        stats_path = os.path.join(self.data_dir, "dataset_statistics_relative_pose10d_actions.json")
+    def _load_or_compute_relative_pose10d_statistics(self):
+        stats_path = os.path.join(self.data_dir, "dataset_statistics_relative_pose10d_state_action.json")
         if os.path.exists(stats_path):
             with open(stats_path, "r") as f:
                 stats = json.load(f)
-            print(f"Loaded relative action statistics from: {stats_path}")
+            print(f"Loaded relative pose10d state/action statistics from: {stats_path}")
         else:
             all_actions = []
-            print("Computing relative pose10d action statistics...")
-            for episode_data in tqdm(self.data.values(), desc="relative action stats"):
+            all_proprio = []
+            print("Computing relative pose10d state/action statistics...")
+            for episode_data in tqdm(self.data.values(), desc="relative pose10d stats"):
                 raw_actions = episode_data["actions"]
                 raw_proprio = episode_data["proprio"]
                 for relative_step_idx in range(episode_data["num_steps"]):
+                    base_state = raw_proprio[relative_step_idx]
                     action_chunk = get_action_chunk_with_padding(
                         actions=raw_actions,
                         relative_step_idx=relative_step_idx,
                         chunk_size=self.chunk_size,
                         num_steps=episode_data["num_steps"],
                     )
-                    rel_action_chunk = convert_abs_rotvec_actions_to_relative_pose10d(
-                        action_chunk,
-                        raw_proprio[relative_step_idx],
+                    current_rel_state, rel_action_chunk = process_to_relative_rot6d(base_state, action_chunk)
+                    future_frame_idx = min(relative_step_idx + self.chunk_size, episode_data["num_steps"] - 1)
+                    future_rel_state = convert_abs_rotvec_state_to_relative_pose10d(
+                        raw_proprio[future_frame_idx],
+                        base_state,
                     )
-                    all_actions.append(rel_action_chunk)
+                    all_actions.append(rel_action_chunk.numpy())
+                    all_proprio.extend([current_rel_state.numpy(), future_rel_state])
 
             all_actions_array = np.concatenate(all_actions, axis=0)
+            all_proprio_array = np.stack(all_proprio, axis=0)
             stats = {
                 "actions_min": np.min(all_actions_array, axis=0),
                 "actions_max": np.max(all_actions_array, axis=0),
                 "actions_mean": np.mean(all_actions_array, axis=0),
                 "actions_std": np.std(all_actions_array, axis=0),
                 "actions_median": np.median(all_actions_array, axis=0),
+                "proprio_min": np.min(all_proprio_array, axis=0),
+                "proprio_max": np.max(all_proprio_array, axis=0),
+                "proprio_mean": np.mean(all_proprio_array, axis=0),
+                "proprio_std": np.std(all_proprio_array, axis=0),
+                "proprio_median": np.median(all_proprio_array, axis=0),
             }
             serializable_stats = {
                 stat_name: stat_value.tolist()
@@ -807,7 +871,7 @@ class UMIDataset(Dataset):
             }
             with open(stats_path, "w") as f:
                 json.dump(serializable_stats, f, indent=4)
-            print(f"Relative action statistics saved to: {stats_path}")
+            print(f"Relative pose10d state/action statistics saved to: {stats_path}")
 
         return {
             stat_name: np.array(stat_value, dtype=np.float32)
@@ -827,11 +891,16 @@ class UMIDataset(Dataset):
                 episode_data["proprio"][relative_step_idx],
             )
             if self.normalize_actions:
-                action_chunk = _rescale_array(action_chunk, self.relative_action_dataset_stats, "actions")
+                action_chunk = _rescale_array(action_chunk, self.relative_pose10d_dataset_stats, "actions")
         return action_chunk
 
-    def _prepare_proprio(self, proprio):
-        if self.convert_actions_to_relative_pose10d and self.normalize_proprio:
+    def _prepare_proprio(self, proprio, base_state):
+        if self.convert_actions_to_relative_pose10d:
+            proprio = convert_abs_rotvec_state_to_relative_pose10d(proprio, base_state)
+            if self.normalize_proprio:
+                return _rescale_array(proprio, self.relative_pose10d_dataset_stats, "proprio")
+            return proprio
+        if self.normalize_proprio:
             return _rescale_array(proprio, self.dataset_stats, "proprio")
         return proprio
 
@@ -1241,9 +1310,15 @@ class UMIDataset(Dataset):
             "fps": 16,
             "padding_mask": torch.zeros(1, self.final_image_size, self.final_image_size),
             "image_size": self.final_image_size * torch.ones(4),
-            "proprio": self._prepare_proprio(proprio) if self.use_proprio else np.zeros_like(episode_data["proprio"][relative_step_idx]),
+            "proprio": (
+                self._prepare_proprio(proprio, proprio)
+                if self.use_proprio
+                else np.zeros_like(episode_data["proprio"][relative_step_idx])
+            ),
             "future_proprio": (
-                self._prepare_proprio(future_proprio) if self.use_proprio else np.zeros_like(episode_data["proprio"][future_frame_idx])
+                self._prepare_proprio(future_proprio, proprio)
+                if self.use_proprio
+                else np.zeros_like(episode_data["proprio"][future_frame_idx])
             ),
             "__key__": idx,
             "value_function_return": value_function_return,
