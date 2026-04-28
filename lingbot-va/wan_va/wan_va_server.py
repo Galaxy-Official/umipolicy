@@ -680,6 +680,9 @@ def run(args):
     port = config.port if args.port is None else args.port
     if args.save_root is not None:
         config.save_root = args.save_root
+    ckpt_path = args.ckpt_path or os.environ.get("LINGBOT_VA_CKPT")
+    if ckpt_path:
+        config.wan22_pretrained_model_name_or_path = ckpt_path
     rank = int(os.getenv("RANK", 0))
     local_rank = int(os.environ.get('LOCAL_RANK', 0))
     world_size = int(os.environ.get("WORLD_SIZE", 1))
@@ -720,6 +723,12 @@ def main():
         type=str,
         default=None,
         help='save root'
+    )
+    parser.add_argument(
+        "--ckpt-path",
+        type=str,
+        default=None,
+        help="Path to LingBot-VA base/post-trained model directory containing vae, tokenizer, text_encoder, and transformer.",
     )
     args = parser.parse_args()
     run(args)
