@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import ast
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 import logging
 import os
 from pathlib import Path
@@ -18,6 +19,7 @@ from wan_va.utils.Simple_Remote_Infer.deploy.websocket_client_policy import Webs
 
 
 LOGGER = logging.getLogger(__name__)
+INFER_PROGRESS_INTERVAL_S = 10.0
 
 
 def _workspace_root() -> Path:
@@ -117,31 +119,28 @@ def _bgr_to_rgb(image_bgr: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
 
 
-def _zero_like_rgb(frame: np.ndarray | None) -> np.ndarray:
-    if frame is not None:
-        return np.zeros_like(frame)
-    return np.zeros((480, 640, 3), dtype=np.uint8)
-
-
 def _make_frame_obs(frame: dict[str, Any], use_tactile: bool) -> dict[str, np.ndarray]:
     if frame["wrist_img"] is None:
         raise ValueError("Latest wrist image is missing")
     wrist_rgb = _bgr_to_rgb(frame["wrist_img"])
+
+    obs = {
+        "observation.images.wrist": np.ascontiguousarray(wrist_rgb),
+    }
 
     if use_tactile:
         if frame["left_tactile_img"] is None or frame["right_tactile_img"] is None:
             raise ValueError("Tactile images are required when use_tactile=True")
         left_rgb = _bgr_to_rgb(frame["left_tactile_img"])
         right_rgb = _bgr_to_rgb(frame["right_tactile_img"])
-    else:
-        left_rgb = _zero_like_rgb(wrist_rgb)
-        right_rgb = _zero_like_rgb(wrist_rgb)
+        obs.update(
+            {
+                "observation.tactiles.left": np.ascontiguousarray(left_rgb),
+                "observation.tactiles.right": np.ascontiguousarray(right_rgb),
+            }
+        )
 
-    return {
-        "observation.images.wrist": np.ascontiguousarray(wrist_rgb),
-        "observation.tactiles.left": np.ascontiguousarray(left_rgb),
-        "observation.tactiles.right": np.ascontiguousarray(right_rgb),
-    }
+    return obs
 
 
 def make_lingbot_observation(frames: list[dict[str, Any]], prompt: str, use_tactile: bool) -> dict[str, Any]:
@@ -149,6 +148,24 @@ def make_lingbot_observation(frames: list[dict[str, Any]], prompt: str, use_tact
         "obs": [_make_frame_obs(frame, use_tactile) for frame in frames],
         "prompt": prompt,
     }
+
+
+def infer_with_progress(
+    executor: ThreadPoolExecutor,
+    policy: WebsocketClientPolicy,
+    observation: dict[str, Any],
+    label: str,
+) -> dict[str, Any]:
+    start_time = time.time()
+    LOGGER.info("%s: sending request to LingBot-VA server", label)
+    future = executor.submit(policy.infer, observation)
+    while True:
+        try:
+            result = future.result(timeout=INFER_PROGRESS_INTERVAL_S)
+            LOGGER.info("%s: server returned after %.1fs", label, time.time() - start_time)
+            return result
+        except TimeoutError:
+            LOGGER.info("%s: still waiting for server response (%.1fs elapsed)", label, time.time() - start_time)
 
 
 class ObservationThread(threading.Thread):
@@ -384,7 +401,9 @@ def main() -> None:
     LOGGER.info("Connecting to LingBot-VA server at ws://%s:%d", args.host, args.port)
     policy = WebsocketClientPolicy(host=args.host, port=args.port)
     LOGGER.info("Server metadata: %s", policy.get_server_metadata())
-    policy.infer({"reset": True, "prompt": args.prompt})
+
+    executor = ThreadPoolExecutor(max_workers=1)
+    infer_with_progress(executor, policy, {"reset": True, "prompt": args.prompt}, "reset")
 
     camera_config_path = args.camera_config_path
     if not camera_config_path.is_absolute():
@@ -421,7 +440,7 @@ def main() -> None:
 
             latest_frame = frames[-1]
             observation = make_lingbot_observation(frames, args.prompt, args.use_tactile)
-            result = policy.infer(observation)
+            result = infer_with_progress(executor, policy, observation, f"step={step + 1}")
             action_chunk = np.asarray(result["action"], dtype=np.float64)
             decoded_actions = decode_lingbot_action_chunk(action_chunk)
             policy_chunk_size = len(decoded_actions)
@@ -465,6 +484,7 @@ def main() -> None:
             )
     finally:
         obs_thread.stop()
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 if __name__ == "__main__":
