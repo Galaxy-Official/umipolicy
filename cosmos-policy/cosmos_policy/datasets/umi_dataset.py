@@ -20,6 +20,7 @@ Run this command to print a few samples from the ALOHA dataset:
 """
 
 import os
+import json
 import pickle
 import random
 import time
@@ -27,6 +28,7 @@ import time
 import cv2
 import h5py
 import numpy as np
+from scipy.spatial.transform import Rotation
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
@@ -135,6 +137,67 @@ def _default_t5_embedding_factory():
     return torch.zeros((1, 512, 1024), dtype=torch.bfloat16)
 
 
+def _pose6_to_mat(pose: np.ndarray) -> np.ndarray:
+    pos = pose[..., :3]
+    rot = Rotation.from_rotvec(pose[..., 3:6]).as_matrix()
+    mat = np.zeros(pose.shape[:-1] + (4, 4), dtype=pose.dtype)
+    mat[..., :3, 3] = pos
+    mat[..., :3, :3] = rot
+    mat[..., 3, 3] = 1
+    return mat
+
+
+def _mat_to_rot6d(mat: np.ndarray) -> np.ndarray:
+    batch_dim = mat.shape[:-2]
+    return mat[..., :2, :].copy().reshape(batch_dim + (6,))
+
+
+def _mat_to_pose10d(mat: np.ndarray) -> np.ndarray:
+    pos = mat[..., :3, 3]
+    rot6d = _mat_to_rot6d(mat[..., :3, :3])
+    return np.concatenate([pos, rot6d], axis=-1)
+
+
+def _infer_abs_rotvec_layout(dim: int) -> tuple[int, int]:
+    """Return (num_robots, stride) for absolute pose actions/states."""
+    if dim % 10 == 0:
+        return dim // 10, 10
+    if dim % 7 == 0:
+        return dim // 7, 7
+    raise ValueError(f"Unsupported absolute action/state dim {dim}; expected a multiple of 7 or 10")
+
+
+def convert_abs_rotvec_actions_to_relative_pose10d(actions: np.ndarray, base_state: np.ndarray) -> np.ndarray:
+    """Convert absolute [xyz, rotvec, gripper, ...] actions to current-EE-relative [xyz, rot6d, gripper]."""
+    actions = np.asarray(actions, dtype=np.float32)
+    base_state = np.asarray(base_state, dtype=np.float32)
+    action_robots, action_stride = _infer_abs_rotvec_layout(actions.shape[-1])
+    state_robots, state_stride = _infer_abs_rotvec_layout(base_state.shape[-1])
+    if state_robots < action_robots:
+        raise ValueError(
+            f"Base state has {state_robots} robot(s), but actions have {action_robots} robot(s)"
+        )
+
+    converted = []
+    for robot_idx in range(action_robots):
+        action_start = robot_idx * action_stride
+        state_start = robot_idx * state_stride
+        action_mat = _pose6_to_mat(actions[..., action_start : action_start + 6])
+        base_mat = _pose6_to_mat(base_state[state_start : state_start + 6])
+        rel_mat = np.linalg.inv(base_mat) @ action_mat
+        rel_pose = _mat_to_pose10d(rel_mat)
+        gripper = actions[..., action_start + 6 : action_start + 7]
+        converted.append(np.concatenate([rel_pose, gripper], axis=-1))
+    return np.concatenate(converted, axis=-1).astype(np.float32)
+
+
+def _rescale_array(arr: np.ndarray, dataset_stats: dict, data_key: str) -> np.ndarray:
+    curr_min = dataset_stats[f"{data_key}_min"]
+    curr_max = dataset_stats[f"{data_key}_max"]
+    range_val = np.where(curr_max - curr_min == 0, 1e-6, curr_max - curr_min)
+    return (2 * ((arr - curr_min) / range_val) - 1).astype(np.float32)
+
+
 class UMIDataset(Dataset):
     def __init__(
         self,
@@ -152,6 +215,7 @@ class UMIDataset(Dataset):
         debug2: bool = False,
         use_proprio: bool = False,
         use_handcap: bool = False,
+        convert_actions_to_relative_pose10d: bool = False,
         default_command: str = "",
         num_history_indices: int = 8,
         history_spacing_factor: int = 12,
@@ -213,6 +277,7 @@ class UMIDataset(Dataset):
         self.debug = debug
         self.debug2 = debug2
         self.use_handcap = use_handcap
+        self.convert_actions_to_relative_pose10d = convert_actions_to_relative_pose10d
         self.default_command = default_command
         self.use_proprio = use_proprio
         self.num_history_indices = num_history_indices
@@ -395,8 +460,13 @@ class UMIDataset(Dataset):
             calculate_dataset_statistics_func=calculate_dataset_statistics,
         )
 
+        if self.convert_actions_to_relative_pose10d and self.normalize_actions:
+            self.relative_action_dataset_stats = self._load_or_compute_relative_action_statistics()
+        else:
+            self.relative_action_dataset_stats = None
+
         # Normalize actions and/or proprio
-        if self.normalize_actions or self.normalize_proprio:
+        if (self.normalize_actions or self.normalize_proprio) and not self.convert_actions_to_relative_pose10d:
             if self.normalize_actions:
                 self.data = rescale_data(self.data, self.dataset_stats, "actions")
             if self.normalize_proprio:
@@ -697,6 +767,73 @@ class UMIDataset(Dataset):
         if hasattr(self, "epoch_length") and self.epoch_length > 0:
             return self.epoch_length
         return self.num_steps
+
+    def _load_or_compute_relative_action_statistics(self):
+        stats_path = os.path.join(self.data_dir, "dataset_statistics_relative_pose10d_actions.json")
+        if os.path.exists(stats_path):
+            with open(stats_path, "r") as f:
+                stats = json.load(f)
+            print(f"Loaded relative action statistics from: {stats_path}")
+        else:
+            all_actions = []
+            print("Computing relative pose10d action statistics...")
+            for episode_data in tqdm(self.data.values(), desc="relative action stats"):
+                raw_actions = episode_data["actions"]
+                raw_proprio = episode_data["proprio"]
+                for relative_step_idx in range(episode_data["num_steps"]):
+                    action_chunk = get_action_chunk_with_padding(
+                        actions=raw_actions,
+                        relative_step_idx=relative_step_idx,
+                        chunk_size=self.chunk_size,
+                        num_steps=episode_data["num_steps"],
+                    )
+                    rel_action_chunk = convert_abs_rotvec_actions_to_relative_pose10d(
+                        action_chunk,
+                        raw_proprio[relative_step_idx],
+                    )
+                    all_actions.append(rel_action_chunk)
+
+            all_actions_array = np.concatenate(all_actions, axis=0)
+            stats = {
+                "actions_min": np.min(all_actions_array, axis=0),
+                "actions_max": np.max(all_actions_array, axis=0),
+                "actions_mean": np.mean(all_actions_array, axis=0),
+                "actions_std": np.std(all_actions_array, axis=0),
+                "actions_median": np.median(all_actions_array, axis=0),
+            }
+            serializable_stats = {
+                stat_name: stat_value.tolist()
+                for stat_name, stat_value in stats.items()
+            }
+            with open(stats_path, "w") as f:
+                json.dump(serializable_stats, f, indent=4)
+            print(f"Relative action statistics saved to: {stats_path}")
+
+        return {
+            stat_name: np.array(stat_value, dtype=np.float32)
+            for stat_name, stat_value in stats.items()
+        }
+
+    def _prepare_action_chunk(self, episode_data, relative_step_idx):
+        action_chunk = get_action_chunk_with_padding(
+            actions=episode_data["actions"],
+            relative_step_idx=relative_step_idx,
+            chunk_size=self.chunk_size,
+            num_steps=episode_data["num_steps"],
+        )
+        if self.convert_actions_to_relative_pose10d:
+            action_chunk = convert_abs_rotvec_actions_to_relative_pose10d(
+                action_chunk,
+                episode_data["proprio"][relative_step_idx],
+            )
+            if self.normalize_actions:
+                action_chunk = _rescale_array(action_chunk, self.relative_action_dataset_stats, "actions")
+        return action_chunk
+
+    def _prepare_proprio(self, proprio):
+        if self.convert_actions_to_relative_pose10d and self.normalize_proprio:
+            return _rescale_array(proprio, self.dataset_stats, "proprio")
+        return proprio
 
     def __getitem__(self, idx):
         """
@@ -1054,13 +1191,7 @@ class UMIDataset(Dataset):
         assert all_images.shape[1] == int(lengths.sum().item()), "Expanded T does not match repeats sum"
         t_prev = time.time()
 
-        # Calculate how many actions we can get from the current index
-        action_chunk = get_action_chunk_with_padding(
-            actions=episode_data["actions"],
-            relative_step_idx=relative_step_idx,
-            chunk_size=self.chunk_size,
-            num_steps=episode_data["num_steps"],
-        )
+        action_chunk = self._prepare_action_chunk(episode_data, relative_step_idx)
 
         t_prev = time.time()
 
@@ -1077,12 +1208,7 @@ class UMIDataset(Dataset):
 
         # Calculate and return the next action chunk as well
         next_relative_step_idx = min(relative_step_idx + self.chunk_size, episode_data["num_steps"] - 1)
-        next_action_chunk = get_action_chunk_with_padding(
-            actions=episode_data["actions"],
-            relative_step_idx=next_relative_step_idx,
-            chunk_size=self.chunk_size,
-            num_steps=episode_data["num_steps"],
-        )
+        next_action_chunk = self._prepare_action_chunk(episode_data, next_relative_step_idx)
 
         # Calculate next future frame index if needed
         next_future_frame_idx = next_relative_step_idx + self.chunk_size
@@ -1115,9 +1241,9 @@ class UMIDataset(Dataset):
             "fps": 16,
             "padding_mask": torch.zeros(1, self.final_image_size, self.final_image_size),
             "image_size": self.final_image_size * torch.ones(4),
-            "proprio": proprio if self.use_proprio else np.zeros_like(episode_data["proprio"][relative_step_idx]),
+            "proprio": self._prepare_proprio(proprio) if self.use_proprio else np.zeros_like(episode_data["proprio"][relative_step_idx]),
             "future_proprio": (
-                future_proprio if self.use_proprio else np.zeros_like(episode_data["proprio"][future_frame_idx])
+                self._prepare_proprio(future_proprio) if self.use_proprio else np.zeros_like(episode_data["proprio"][future_frame_idx])
             ),
             "__key__": idx,
             "value_function_return": value_function_return,
@@ -1244,10 +1370,10 @@ class UMIDataset(Dataset):
                     )  # uint8 RGB
                     is_lazy_video = False
 
-            # Apply normalization if needed
-            if self.normalize_actions:
+            # Relative action conversion needs raw actions and proprio at sample time.
+            if self.normalize_actions and not self.convert_actions_to_relative_pose10d:
                 actions = rescale_episode_data({"actions": actions}, self.dataset_stats, "actions")
-            if self.normalize_proprio:
+            if self.normalize_proprio and not self.convert_actions_to_relative_pose10d:
                 proprio = rescale_episode_data({"proprio": proprio}, self.dataset_stats, "proprio")
 
             # Create episode data dictionary

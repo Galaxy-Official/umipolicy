@@ -497,6 +497,7 @@ aloha_cosmos_policy_dataset_handcap = L(UMIDataset)(
     use_proprio=True,
     normalize_proprio=True,
     normalize_actions=True,
+    convert_actions_to_relative_pose10d=True,
     num_duplicates_per_image=4,  # WAN 2.1 tokenizer: 4 images per latent frame
     treat_demos_as_success_rollouts=True,  # Include demos as success rollouts
     demonstration_sampling_prob=0.5,
