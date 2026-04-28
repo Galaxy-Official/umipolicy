@@ -151,7 +151,12 @@ def _prepare_camera_image(image_bgr: np.ndarray) -> np.ndarray:
     return image_tools.convert_to_uint8(rgb)
 
 
-def _prepare_tactile_image(image_bgr: np.ndarray, use_tactile: bool) -> np.ndarray:
+def _prepare_tactile_image(image_bgr: np.ndarray | None, use_tactile: bool) -> np.ndarray:
+    if image_bgr is None:
+        if use_tactile:
+            raise ValueError("Tactile image is missing while use_tactile=True")
+        return np.zeros((224, 224, 3), dtype=np.uint8)
+
     rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
     rgb = image_tools.resize_with_pad(rgb, 224, 224)
     rgb = image_tools.convert_to_uint8(rgb)
@@ -163,9 +168,9 @@ def _prepare_tactile_image(image_bgr: np.ndarray, use_tactile: bool) -> np.ndarr
 def _make_policy_observation(latest_frame: dict[str, Any], prompt: str, use_tactile: bool) -> dict[str, Any]:
     if latest_frame["wrist_img"] is None:
         raise ValueError("Latest wrist image is missing")
-    if latest_frame["left_tactile_img"] is None:
+    if use_tactile and latest_frame["left_tactile_img"] is None:
         raise ValueError("Latest left tactile image is missing")
-    if latest_frame["right_tactile_img"] is None:
+    if use_tactile and latest_frame["right_tactile_img"] is None:
         raise ValueError("Latest right tactile image is missing")
 
     state = encode_state_to_handcap_state(latest_frame["eepose"], float(latest_frame["gripper_width"]))
@@ -202,8 +207,8 @@ class Recorder:
         output_dir: Path,
         ctrl_freq: int,
         wrist_shape: tuple[int, int],
-        left_shape: tuple[int, int],
-        right_shape: tuple[int, int],
+        left_shape: tuple[int, int] | None,
+        right_shape: tuple[int, int] | None,
         *,
         save_states_json: bool,
     ) -> None:
@@ -215,17 +220,23 @@ class Recorder:
         output_dir.mkdir(parents=True, exist_ok=True)
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         self.wrist_video = cv2.VideoWriter(str(output_dir / "view1_wrist.mp4"), fourcc, ctrl_freq, wrist_shape)
-        self.tactile_left_video = cv2.VideoWriter(
-            str(output_dir / "view2_tactile_left.mp4"), fourcc, ctrl_freq, left_shape
-        )
-        self.tactile_right_video = cv2.VideoWriter(
-            str(output_dir / "view3_tactile_right.mp4"), fourcc, ctrl_freq, right_shape
-        )
+        self.tactile_left_video = None
+        self.tactile_right_video = None
+        if left_shape is not None:
+            self.tactile_left_video = cv2.VideoWriter(
+                str(output_dir / "view2_tactile_left.mp4"), fourcc, ctrl_freq, left_shape
+            )
+        if right_shape is not None:
+            self.tactile_right_video = cv2.VideoWriter(
+                str(output_dir / "view3_tactile_right.mp4"), fourcc, ctrl_freq, right_shape
+            )
 
     def record_frame(self, latest_frame: dict[str, Any]) -> None:
         self.wrist_video.write(latest_frame["wrist_img"])
-        self.tactile_left_video.write(latest_frame["left_tactile_img"])
-        self.tactile_right_video.write(latest_frame["right_tactile_img"])
+        if self.tactile_left_video is not None and latest_frame["left_tactile_img"] is not None:
+            self.tactile_left_video.write(latest_frame["left_tactile_img"])
+        if self.tactile_right_video is not None and latest_frame["right_tactile_img"] is not None:
+            self.tactile_right_video.write(latest_frame["right_tactile_img"])
 
     def append_state(
         self,
@@ -263,8 +274,10 @@ class Recorder:
         self._closed = True
 
         self.wrist_video.release()
-        self.tactile_left_video.release()
-        self.tactile_right_video.release()
+        if self.tactile_left_video is not None:
+            self.tactile_left_video.release()
+        if self.tactile_right_video is not None:
+            self.tactile_right_video.release()
 
         if self.states_data:
             if self.save_states_json:
@@ -314,8 +327,11 @@ class ObservationThread(threading.Thread):
         try:
             while self.running:
                 _, wrist_img, cam_cap_time = self.cam_wrist.read()
-                left_tactile_img, _ = self.cam_tactile_left.get_data()
-                right_tactile_img, _ = self.cam_tactile_right.get_data()
+                left_tactile_img, right_tactile_img = None, None
+                if self.cam_tactile_left is not None:
+                    left_tactile_img, _ = self.cam_tactile_left.get_data()
+                if self.cam_tactile_right is not None:
+                    right_tactile_img, _ = self.cam_tactile_right.get_data()
                 eepose = self.env.get_ee_pose()
                 gripper_width = self.env.get_gripper_width()
 
@@ -457,9 +473,23 @@ def _make_output_dir(args: Args) -> Path:
     return _repo_root() / args.record_root / args.task_name / timestamp
 
 
-def _init_cameras(camera_config_path: Path) -> tuple[Any, Any, Any]:
+def _init_cameras(camera_config_path: Path, use_tactile: bool) -> tuple[Any, Any | None, Any | None]:
     BaseCamera = _load_base_camera()
-    cam_dict = BaseCamera.create_cameras_from_config(config_path=str(camera_config_path))
+    config_path = camera_config_path
+
+    if not use_tactile:
+        no_tactile_config_path = camera_config_path.with_name("handcap_camera_no_tactile.json")
+        if no_tactile_config_path.exists():
+            config_path = no_tactile_config_path
+            LOGGER.info("use_tactile=False: using wrist-only camera config %s", config_path)
+        else:
+            LOGGER.info("use_tactile=False: using wrist camera only from %s", config_path)
+
+    cam_dict = BaseCamera.create_cameras_from_config(config_path=str(config_path))
+    if "wrist" not in cam_dict:
+        raise KeyError(f"Camera config must contain a 'wrist' camera: {config_path}")
+    if not use_tactile:
+        return cam_dict["wrist"], None, None
     return cam_dict["wrist"], cam_dict["left_tactile"], cam_dict["right_tactile"]
 
 
@@ -470,21 +500,32 @@ def _init_recorder(
     cam_tactile_left,
     cam_tactile_right,
     *,
+    use_tactile: bool,
     save_states_json: bool,
 ) -> Recorder:
     _, init_wrist_img, _ = cam_wrist.read()
-    left_tactile_img, _ = cam_tactile_left.get_data()
-    right_tactile_img, _ = cam_tactile_right.get_data()
 
-    if init_wrist_img is None or left_tactile_img is None or right_tactile_img is None:
-        raise RuntimeError("Failed to fetch initial frames for recorder setup")
+    if init_wrist_img is None:
+        raise RuntimeError("Failed to fetch initial wrist frame for recorder setup")
+
+    left_shape = None
+    right_shape = None
+    if use_tactile:
+        if cam_tactile_left is None or cam_tactile_right is None:
+            raise RuntimeError("use_tactile=True requires left and right tactile cameras")
+        left_tactile_img, _ = cam_tactile_left.get_data()
+        right_tactile_img, _ = cam_tactile_right.get_data()
+        if left_tactile_img is None or right_tactile_img is None:
+            raise RuntimeError("Failed to fetch initial tactile frames for recorder setup")
+        left_shape = (left_tactile_img.shape[1], left_tactile_img.shape[0])
+        right_shape = (right_tactile_img.shape[1], right_tactile_img.shape[0])
 
     return Recorder(
         output_dir=output_dir,
         ctrl_freq=ctrl_freq,
         wrist_shape=(init_wrist_img.shape[1], init_wrist_img.shape[0]),
-        left_shape=(left_tactile_img.shape[1], left_tactile_img.shape[0]),
-        right_shape=(right_tactile_img.shape[1], right_tactile_img.shape[0]),
+        left_shape=left_shape,
+        right_shape=right_shape,
         save_states_json=save_states_json,
     )
 
@@ -506,8 +547,8 @@ def main(args: Args) -> None:
     policy = websocket_client_policy.WebsocketClientPolicy(host=args.host, port=args.port)
     LOGGER.info("Server metadata: %s", policy.get_server_metadata())
 
-    LOGGER.info("Initializing cameras from %s", camera_config_path)
-    cam_wrist, cam_tactile_left, cam_tactile_right = _init_cameras(camera_config_path)
+    LOGGER.info("Initializing cameras from %s (use_tactile=%s)", camera_config_path, args.use_tactile)
+    cam_wrist, cam_tactile_left, cam_tactile_right = _init_cameras(camera_config_path, args.use_tactile)
 
     LOGGER.info("Initializing recorder in %s", output_dir)
     recorder = _init_recorder(
@@ -516,6 +557,7 @@ def main(args: Args) -> None:
         cam_wrist,
         cam_tactile_left,
         cam_tactile_right,
+        use_tactile=args.use_tactile,
         save_states_json=args.save_states_json,
     )
 
