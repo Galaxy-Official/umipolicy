@@ -13,6 +13,7 @@ Usage:
     --policy-dir <checkpoint_dir> \
     --robot-ip <flexiv_ip> \
     --prompt "<task_prompt>" \
+    [--local-ip <local_ip>] \
     [--server-port 8000] \
     [--task-name handcap_flexiv_mvs] \
     [--ctrl-freq 30] \
@@ -139,6 +140,7 @@ wait_for_port() {
 POLICY_CONFIG=""
 POLICY_DIR=""
 ROBOT_IP="192.168.1.100"
+LOCAL_IP="${FLEXIV_LOCAL_IP:-192.168.2.102}"
 PROMPT="simple sorting task"
 SERVER_PORT="8000"
 TASK_NAME="handcap_flexiv_mvs"
@@ -169,6 +171,11 @@ while [[ $# -gt 0 ]]; do
     --robot-ip)
       require_value "$1" "${2-}"
       ROBOT_IP="$2"
+      shift 2
+      ;;
+    --local-ip)
+      require_value "$1" "${2-}"
+      LOCAL_IP="$2"
       shift 2
       ;;
     --prompt)
@@ -333,6 +340,7 @@ CLIENT_CMD=(
   --host 127.0.0.1
   --port "$SERVER_PORT"
   --robot-ip "$ROBOT_IP"
+  --local-ip "$LOCAL_IP"
   --prompt "$PROMPT"
   --task-name "$TASK_NAME"
   --ctrl-freq "$CTRL_FREQ"

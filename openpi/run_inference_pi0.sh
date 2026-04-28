@@ -10,6 +10,7 @@ bash start_handcap_remote_inference.sh \
   --policy-config pi0_simple_sorting \
   --policy-dir ~/umipolicy/openpi/ckpt/99999 \
   --robot-ip "${FLEXIV_ROBOT_IP}" \
+  --local-ip "${FLEXIV_LOCAL_IP}" \
   --prompt "simple sorting task" \
   --startup-timeout 1800 \
   --no-use-tactile
