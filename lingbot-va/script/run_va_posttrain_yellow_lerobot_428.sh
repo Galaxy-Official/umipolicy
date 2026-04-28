@@ -11,6 +11,8 @@ LOG_RANK=${LOG_RANK:-"0"}
 TORCHFT_LIGHTHOUSE=${TORCHFT_LIGHTHOUSE:-"http://localhost:29510"}
 CONFIG_NAME=${CONFIG_NAME:-"yellow_lerobot_428_train"}
 DATASET_PATH=${DATASET_PATH:-"Data/yellow_lerobot_428"}
+CKPT_PATH=${CKPT_PATH:-"./ckpt/lingbot-va-base"}
+REBUILD_EMPTY_EMB=${REBUILD_EMPTY_EMB:-"1"}
 
 overrides=""
 if [ $# -ne 0 ]; then
@@ -30,8 +32,16 @@ log_rank=${LOG_RANK}
 torchft_lighthouse=${TORCHFT_LIGHTHOUSE}
 config_name=${CONFIG_NAME}
 dataset_path=${DATASET_PATH}
+ckpt_path=${CKPT_PATH}
 
 export TOKENIZERS_PARALLELISM=false
+if [ "${REBUILD_EMPTY_EMB}" = "1" ] || [ ! -f "${dataset_path}/empty_emb.pt" ]; then
+    python wan_va/create_empty_emb.py \
+        --dataset_path "${dataset_path}" \
+        --ckpt_path "${ckpt_path}" \
+        --force
+fi
+
 PYTORCH_ALLOC_CONF="expandable_segments:True" TORCHFT_LIGHTHOUSE=${torchft_lighthouse} \
 python -m torch.distributed.run \
     --nproc_per_node=${num_gpu} \

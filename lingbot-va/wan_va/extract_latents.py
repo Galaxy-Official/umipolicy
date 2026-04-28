@@ -15,6 +15,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from modules.utils import load_vae, load_text_encoder, load_tokenizer, WanVAEStreamingWrapper
+from create_empty_emb import save_empty_embedding
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -45,6 +46,16 @@ def main():
     print(f"Loading Text Encoder and Tokenizer from {args.ckpt_path}...")
     text_encoder = load_text_encoder(os.path.join(args.ckpt_path, "text_encoder"), dtype, device)
     tokenizer = load_tokenizer(os.path.join(args.ckpt_path, "tokenizer"))
+    if args.shard_id == 0:
+        save_empty_embedding(
+            text_encoder=text_encoder,
+            tokenizer=tokenizer,
+            output_path=os.path.join(args.dataset_path, "empty_emb.pt"),
+            device=device,
+            dtype=dtype,
+            text_len=512,
+            force=False,
+        )
     
     # Pre-tokenize defaults
     text_len = 512
