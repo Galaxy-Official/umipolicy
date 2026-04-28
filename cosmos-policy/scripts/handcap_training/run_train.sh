@@ -82,6 +82,12 @@ export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export WANDB_MODE=offline
 echo "✅ 已强制设定 WandB 离线模式"
 
+# Python 3.10 + PyTorch DataLoader/pin_memory 多线程场景下，手动 gc.collect(1)
+# 偶发触发 CPython none_dealloc SIGABRT；handcap 训练默认关闭该 callback。
+export COSMOS_DISABLE_MANUAL_GC=1
+export PYTHONFAULTHANDLER=1
+echo "✅ 已禁用 Cosmos ManualGarbageCollection callback"
+
 # 9. 离线预处理文本指令的 T5 嵌入 (防止在训练主进程中多开导致极高的 CUDA OOM)
 T5_CKPT_DIR="ckpt/google-t5/t5-11b"
 echo "正在检查是否存在离线 T5 特征 ${BASE_DATASETS_DIR}/t5_embeddings.pkl ..."
@@ -109,4 +115,6 @@ python -m torch.distributed.run --nproc_per_node=${NUM_GPUS} --master_port=${MAS
   experiment="${EXPERIMENT_NAME}" \
   dataloader_train.dataset.default_command="${TASK_PROMPT}" \
   job.wandb_mode="offline" \
-  dataloader_train.dataset.t5_text_embeddings_path="${BASE_DATASETS_DIR}/t5_embeddings.pkl"
+  dataloader_train.dataset.t5_text_embeddings_path="${BASE_DATASETS_DIR}/t5_embeddings.pkl" \
+  trainer.callbacks.manual_gc.enabled=false \
+  trainer.callbacks.manual_gc.every_n=0

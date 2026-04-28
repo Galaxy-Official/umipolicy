@@ -549,6 +549,14 @@ cosmos_predict2_handcap = LazyDict(
             batch_size=25,
             drop_last=True,
         ),
+        trainer=dict(
+            callbacks=dict(
+                manual_gc=dict(
+                    enabled=False,
+                    every_n=0,
+                ),
+            ),
+        ),
         job=dict(
             group="cosmos_v2_finetune",
             name="cosmos_predict2_handcap",

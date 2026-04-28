@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import gc
+import os
 
 from cosmos_policy._src.imaginaire.callbacks.every_n import EveryN
 from cosmos_policy._src.imaginaire.utils import log
@@ -30,15 +31,24 @@ class ManualGarbageCollection(EveryN):
     We start disable gc after warm_up iterations to avoid disabling gc in subprocesses, such as dataloader, which can cause OOM
     """
 
-    def __init__(self, *args, warm_up: int = 5, **kwargs):
+    def __init__(self, *args, warm_up: int = 5, enabled: bool | None = None, **kwargs):
         kwargs["barrier_after_run"] = False
         super().__init__(*args, **kwargs)
 
         self.counter = 0
         self.warm = warm_up
+        if enabled is None:
+            enabled = os.environ.get("COSMOS_DISABLE_MANUAL_GC", "").lower() not in {"1", "true", "yes", "on"}
+        self.enabled = enabled
+        self._logged_disabled = False
 
     def every_n_impl(self, trainer, model, data_batch, output_batch, loss, iteration):
         del trainer, model, data_batch, output_batch, loss
+        if not self.enabled:
+            if not self._logged_disabled:
+                log.warning("Manual garbage collection callback is disabled.")
+                self._logged_disabled = True
+            return
         self.counter += 1
         if self.counter < self.warm:
             return
