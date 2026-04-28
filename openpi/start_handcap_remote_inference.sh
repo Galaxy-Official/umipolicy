@@ -54,14 +54,11 @@ join_cmd() {
   printf '%s\n' "${out% }"
 }
 
-wait_for_port() {
+is_port_open() {
   local host="$1"
   local port="$2"
-  local timeout="$3"
-  local deadline=$((SECONDS + timeout))
 
-  while (( SECONDS < deadline )); do
-    if python3 - "$host" "$port" <<'PY' >/dev/null 2>&1; then
+  python3 - "$host" "$port" <<'PY' >/dev/null 2>&1
 import socket
 import sys
 
@@ -71,8 +68,50 @@ port = int(sys.argv[2])
 with socket.create_connection((host, port), timeout=1):
     pass
 PY
+}
+
+is_process_running() {
+  local pid="$1"
+  local state=""
+
+  if ! kill -0 "$pid" >/dev/null 2>&1; then
+    return 1
+  fi
+
+  state="$(ps -p "$pid" -o stat= 2>/dev/null || true)"
+  [[ -n "$state" && "$state" != Z* ]]
+}
+
+wait_for_port() {
+  local host="$1"
+  local port="$2"
+  local timeout="$3"
+  local pid="${4-}"
+  local log_file="${5-}"
+  local start_time=$SECONDS
+  local deadline=$((SECONDS + timeout))
+  local next_status=$((SECONDS + 20))
+
+  while (( SECONDS < deadline )); do
+    if is_port_open "$host" "$port"; then
       return 0
     fi
+
+    if [[ -n "$pid" ]] && ! is_process_running "$pid"; then
+      wait "$pid" || true
+      return 2
+    fi
+
+    if (( SECONDS >= next_status )); then
+      echo "Still waiting for server on ${host}:${port} ... ($((SECONDS - start_time))s elapsed)"
+      if [[ -n "$log_file" && -s "$log_file" ]]; then
+        echo "==== server.log (tail) ===="
+        tail -n 20 "$log_file" || true
+        echo "==========================="
+      fi
+      next_status=$((SECONDS + 20))
+    fi
+
     sleep 1
   done
   return 1
@@ -203,6 +242,15 @@ if [[ -z "$POLICY_CONFIG" || -z "$POLICY_DIR" || -z "$ROBOT_IP" || -z "$PROMPT" 
   exit 1
 fi
 
+if [[ "$POLICY_DIR" == "~/"* ]]; then
+  POLICY_DIR="$HOME/${POLICY_DIR#~/}"
+fi
+
+if [[ "$POLICY_DIR" != gs://* && "$POLICY_DIR" != s3://* && ! -d "$POLICY_DIR" ]]; then
+  echo "Cannot find policy checkpoint directory: $POLICY_DIR" >&2
+  exit 1
+fi
+
 if [[ ! -f "$REPO_ROOT/scripts/serve_policy.py" ]]; then
   echo "Cannot find $REPO_ROOT/scripts/serve_policy.py" >&2
   exit 1
@@ -327,12 +375,24 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "Starting OpenPI policy server..."
-"${SERVER_CMD[@]}" >"$SERVER_LOG" 2>&1 &
+echo "Server log: $SERVER_LOG"
+echo "Server command: $(join_cmd "${SERVER_CMD[@]}")"
+if is_port_open "127.0.0.1" "$SERVER_PORT"; then
+  echo "Port 127.0.0.1:$SERVER_PORT is already open. Stop the old server or use --server-port." >&2
+  exit 1
+fi
+PYTHONUNBUFFERED=1 "${SERVER_CMD[@]}" >"$SERVER_LOG" 2>&1 &
 SERVER_PID=$!
 
 echo "Waiting for server on 127.0.0.1:$SERVER_PORT ..."
-if ! wait_for_port "127.0.0.1" "$SERVER_PORT" "$STARTUP_TIMEOUT"; then
-  echo "Server did not become ready within ${STARTUP_TIMEOUT}s." >&2
+WAIT_STATUS=0
+wait_for_port "127.0.0.1" "$SERVER_PORT" "$STARTUP_TIMEOUT" "$SERVER_PID" "$SERVER_LOG" || WAIT_STATUS=$?
+if [[ "$WAIT_STATUS" != "0" ]]; then
+  if [[ "$WAIT_STATUS" == "2" ]]; then
+    echo "Server process exited before opening 127.0.0.1:$SERVER_PORT." >&2
+  else
+    echo "Server did not become ready within ${STARTUP_TIMEOUT}s." >&2
+  fi
   if [[ -f "$SERVER_LOG" ]]; then
     echo "==== server.log (tail) ====" >&2
     tail -n 50 "$SERVER_LOG" >&2 || true

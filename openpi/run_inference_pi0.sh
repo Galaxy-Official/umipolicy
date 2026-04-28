@@ -6,4 +6,5 @@ bash start_handcap_remote_inference.sh \
   --policy-dir ~/umipolicy/openpi/ckpt/99999 \
   --robot-ip 192.168.1.100 \
   --prompt "simple sorting task" \
+  --startup-timeout 1800 \
   --no-use-tactile
