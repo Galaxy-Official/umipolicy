@@ -4,7 +4,8 @@ set -x
 
 umask 007
 
-NGPU=${NGPU:-"8"}
+CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-"0,1,2,3"}
+NGPU=${NGPU:-"4"}
 MASTER_PORT=${MASTER_PORT:-"29501"}
 LOG_RANK=${LOG_RANK:-"0"}
 TORCHFT_LIGHTHOUSE=${TORCHFT_LIGHTHOUSE:-"http://localhost:29510"}
@@ -21,6 +22,7 @@ fi
 # export WANDB_TEAM_NAME="your team name"
 # export WANDB_PROJECT="your project"
 export WANDB_MODE=${WANDB_MODE:-"disabled"}
+export CUDA_VISIBLE_DEVICES
 
 num_gpu=${NGPU}
 master_port=${MASTER_PORT}
