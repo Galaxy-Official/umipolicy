@@ -12,7 +12,10 @@ export BASE_DATASETS_DIR="data/yellow_cosmos_428"
 
 # 3. 指定您想要跑的实验配置名称 (来源于 cosmos_policy/config/experiment/)
 # 我们创建了新的 cosmos_predict2_handcap 用于处理类似 ALOHA HDF5 结构的 handcapcosmos:
-EXPERIMENT_NAME="cosmos_yellow_pink_cosmos_22k"
+EXPERIMENT_NAME="cosmos_predict2_handcap"
+
+# 让 Hydra 在配置解析失败时打印真正的异常，而不是只显示 torchrun 的 ChildFailedError 汇总
+export HYDRA_FULL_ERROR=1
 
 # 4. 指定您的数据集的全局语言指令 (Prompt)
 # 这句话将被嵌入并替代未知的文件夹名，传给文本编码大模型
