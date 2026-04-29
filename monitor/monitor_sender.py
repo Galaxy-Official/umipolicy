@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 import datetime
+import shutil
 
 MONITOR_DIR = os.path.dirname(os.path.abspath(__file__))
 WORKSPACE_DIR = os.path.abspath(os.path.join(MONITOR_DIR, ".."))
