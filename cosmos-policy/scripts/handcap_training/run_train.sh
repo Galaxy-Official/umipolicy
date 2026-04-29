@@ -85,8 +85,11 @@ echo "✅ 已强制设定 WandB 离线模式"
 # Python 3.10 + PyTorch DataLoader/pin_memory 多线程场景下，手动 gc.collect(1)
 # 偶发触发 CPython none_dealloc SIGABRT；handcap 训练默认关闭该 callback。
 export COSMOS_DISABLE_MANUAL_GC=1
+export COSMOS_DISABLE_TOKENIZER_COMPILE=1
+export TORCHDYNAMO_DISABLE=1
 export PYTHONFAULTHANDLER=1
 echo "✅ 已禁用 Cosmos ManualGarbageCollection callback"
+echo "✅ 已禁用 torch.compile / tokenizer Inductor 编译"
 
 # 9. 离线预处理文本指令的 T5 嵌入 (防止在训练主进程中多开导致极高的 CUDA OOM)
 T5_CKPT_DIR="ckpt/google-t5/t5-11b"
@@ -117,4 +120,7 @@ python -m torch.distributed.run --nproc_per_node=${NUM_GPUS} --master_port=${MAS
   job.wandb_mode="offline" \
   dataloader_train.dataset.t5_text_embeddings_path="${BASE_DATASETS_DIR}/t5_embeddings.pkl" \
   trainer.callbacks.manual_gc.enabled=false \
-  trainer.callbacks.manual_gc.every_n=0
+  trainer.callbacks.manual_gc.every_n=0 \
+  trainer.callbacks.compile_tokenizer.enabled=false \
+  trainer.callbacks.compile_tokenizer.compile_after_iterations=0 \
+  model.config.use_torch_compile=false

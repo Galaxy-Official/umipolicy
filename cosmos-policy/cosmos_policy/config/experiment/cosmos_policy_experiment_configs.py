@@ -555,6 +555,10 @@ cosmos_predict2_handcap = LazyDict(
                     enabled=False,
                     every_n=0,
                 ),
+                compile_tokenizer=dict(
+                    enabled=False,
+                    compile_after_iterations=0,
+                ),
             ),
         ),
         job=dict(

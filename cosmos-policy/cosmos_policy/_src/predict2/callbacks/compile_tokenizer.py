@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
 import torch
 
 from cosmos_policy._src.imaginaire.utils import log
@@ -23,7 +25,7 @@ from cosmos_policy._src.predict2.models.text2world_model import DiffusionModel
 class CompileTokenizer(Callback):
     def __init__(self, enabled: bool = False, compile_after_iterations: int = 4, dynamic: bool = False):
         super().__init__()
-        self.enabled = enabled
+        self.enabled = enabled and os.environ.get("COSMOS_DISABLE_TOKENIZER_COMPILE", "0") != "1"
         self.compiled = False
         self.compile_after_iterations = compile_after_iterations
         self.skip_counter = 0
