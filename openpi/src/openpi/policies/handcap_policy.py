@@ -45,6 +45,7 @@ class HandcapInputs(transforms.DataTransformFn):
     # Determines which model will be used.
     # Do not change this for your own dataset.
     model_type: _model.ModelType = _model.ModelType.PI0
+    include_tactile: bool = True
 
     def __call__(self, data: dict) -> dict:
         # We only mask padding for pi0 model, not pi0-FAST. Do not change this for your own dataset.
@@ -67,22 +68,30 @@ class HandcapInputs(transforms.DataTransformFn):
         # of image, e.g. wrist images, you can comment it out here and replace it with zeros like we do for the
         # right wrist image below.
         wrist_image = _parse_image(data["observation/wrist_image"])
-        left_tactile = _parse_image(data["observation/left_tactile"])
-        right_tactile = _parse_image(data["observation/right_tactile"])
+        images = {"wrist_0_rgb": wrist_image}
+        image_mask = {"wrist_0_rgb": np.True_}
+
+        if self.include_tactile:
+            left_tactile = _parse_image(data["observation/left_tactile"])
+            right_tactile = _parse_image(data["observation/right_tactile"])
+            images.update(
+                {
+                    "left_tactile_0_rgb": left_tactile,
+                    "right_tactile_0_rgb": right_tactile,
+                }
+            )
+            image_mask.update(
+                {
+                    "left_tactile_0_rgb": np.True_,
+                    "right_tactile_0_rgb": np.True_,
+                }
+            )
 
         # Create inputs dict. Do not change the keys in the dict below.
         inputs = {
             "state": state,
-            "image": {
-                'wrist_0_rgb': wrist_image, 
-                'left_tactile_0_rgb': left_tactile,
-                'right_tactile_0_rgb': right_tactile
-            },
-            "image_mask": {
-                "wrist_0_rgb": np.True_,
-                "left_tactile_0_rgb": np.True_,
-                "right_tactile_0_rgb": np.True_
-            },
+            "image": images,
+            "image_mask": image_mask,
         }
 
         # Pad actions to the model action dimension. Keep this for your own dataset.

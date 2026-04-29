@@ -73,6 +73,56 @@ class LeRobotHandcapDataConfig(DataConfigFactory):
         )
 
 
+@dataclasses.dataclass(frozen=True)
+class LeRobotHandcapWristDataConfig(DataConfigFactory):
+    """Handcap LeRobot data config for datasets that only contain a wrist camera."""
+
+    data_root: str = tyro.MISSING
+    action_sequence_keys: Sequence[str] = ("action",)
+
+    @override
+    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
+        repack_transform = _transforms.Group(
+            inputs=[
+                _transforms.RepackTransform(
+                    {
+                        "observation/wrist_image": "observation.images.wrist",
+                        "observation/state": "observation.state",
+                        "actions": "action",
+                        "prompt": "prompt",
+                    }
+                )
+            ]
+        )
+
+        data_transforms = _transforms.Group(
+            inputs=[
+                handcap_policy.HandcapInputs(
+                    action_dim=model_config.action_dim,
+                    model_type=model_config.model_type,
+                    include_tactile=False,
+                )
+            ],
+            outputs=[handcap_policy.HandcapOutputs()],
+        )
+
+        delta_action_mask = _transforms.make_bool_mask(10, -1)
+        data_transforms = data_transforms.push(
+            inputs=[_transforms.DeltaActions(delta_action_mask)],
+            outputs=[_transforms.AbsoluteActions(delta_action_mask)],
+        )
+
+        model_transforms = ModelTransformFactory()(model_config)
+
+        return dataclasses.replace(
+            self.create_base_config(assets_dirs, model_config),
+            repack_transforms=repack_transform,
+            data_transforms=data_transforms,
+            model_transforms=model_transforms,
+            action_sequence_keys=self.action_sequence_keys,
+        )
+
+
 def get_handcap_configs():
     # Import here to avoid circular imports.
     from openpi.training.config import TrainConfig
@@ -113,6 +163,28 @@ def get_handcap_configs():
             weight_loader=weight_loaders.CheckpointWeightLoader("/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pi0_base/params"),
             num_train_steps=30_000,
             batch_size=24,
+            log_interval=100,
+            save_interval=5000,
+            keep_period=20_000,
+        ),
+        TrainConfig(
+            name="pi05_erase_board_wrist",
+            model=pi0_config.Pi0Config(
+                pi05=True,
+                use_tactile=False,
+                tactile_pretrained_ckpt="",
+                camera_keys=("wrist_0_rgb",),),
+            data=LeRobotHandcapWristDataConfig(
+                repo_id="lihongcs/erase_board_wrist",
+                data_root="Data/429_erase_board_lerobot",
+                base_config=DataConfig(
+                    prompt_from_task=True,
+                    use_handcap=True,
+                ),
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader("/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pi05_base/params"),
+            num_train_steps=200_000,
+            batch_size=8,
             log_interval=100,
             save_interval=5000,
             keep_period=20_000,
