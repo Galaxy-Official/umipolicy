@@ -27,7 +27,7 @@ def sync_obs_loop():
         try:
             # Sync to the local monitor directory
             subprocess.run([
-                "obsutil", "cp", "-r", "-f",
+                "obsutil", "cp", "-r", "-f", "-flat",
                 "-o=" + os.path.join(WORKSPACE_DIR, "obsutil_output"),
                 "-cpd=" + os.path.join(WORKSPACE_DIR, "obsutil_checkpoint"),
                 OBS_SRC, LOCAL_DEST

@@ -133,7 +133,7 @@ def run_monitor():
             # Sync to OBS from MONITOR_DIR so "monitor_output" folder is found
             print(f"[{datetime.datetime.now()}] Syncing to OBS...")
             subprocess.run([
-                "obsutil", "cp", "-r", "-f",
+                "obsutil", "cp", "-r", "-f", "-flat",
                 "-o=" + os.path.join(WORKSPACE_DIR, "obsutil_output"),
                 "-cpd=" + os.path.join(WORKSPACE_DIR, "obsutil_checkpoint"),
                 "monitor_output", OBS_DEST
