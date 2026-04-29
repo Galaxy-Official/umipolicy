@@ -80,3 +80,5 @@ cosmos-policy/train_out/
 
 # Training monitor generated state/errors
 monitor_output/
+obsutil_output/
+obsutil_checkpoint/
