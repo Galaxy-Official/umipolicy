@@ -476,7 +476,9 @@ def register_configs():
         cosmos_predict2_2b_480p_aloha_185_demos_4_tasks_mixture_foldshirt15_candiesinbowl45_candyinbag45_eggplantchickenonplate80__inference_only,
         cosmos_predict2_2b_480p_aloha_185_demos_4_tasks_mixture_foldshirt15_candiesinbowl45_candyinbag45_eggplantchickenonplate80__resumeFrom50K_648_rollouts_Vsprime_value_func,  # ALOHA planning model
         cosmos_predict2_2b_480p_aloha_185_demos_4_tasks_mixture_foldshirt15_candiesinbowl45_candyinbag45_eggplantchickenonplate80__resumeFrom50K_648_rollouts_Vsprime_value_func__inference_only,
-        cosmos_predict2_handcap, # Handcap model
+        cosmos_predict2_handcap,  # Handcap model
+        cosmos_predict2_flexiv,
+        cosmos_predict2_flexiv__inference_only,
     ]:
         experiment_name = _item["job"]["name"]
         log.info(f"Registering experiment: {experiment_name}")
@@ -564,6 +566,109 @@ cosmos_predict2_handcap = LazyDict(
         job=dict(
             group="cosmos_v2_finetune",
             name="cosmos_predict2_handcap",
+        ),
+    )
+)
+
+
+# *** Flexiv Dataset Configuration ***
+flexiv_cosmos_policy_dataset = L(UMIDataset)(
+    data_dir=os.path.join(BASE_DATASETS_DIR),
+    t5_text_embeddings_path=os.path.join(BASE_DATASETS_DIR, "t5_embeddings.pkl"),
+    chunk_size=50,
+    use_image_aug=True,
+    use_stronger_image_aug=True,
+    use_proprio=True,
+    normalize_proprio=True,
+    normalize_actions=True,
+    convert_actions_to_relative_pose10d=True,
+    num_duplicates_per_image=4,  # WAN 2.1 tokenizer: 4 images per latent frame
+    treat_demos_as_success_rollouts=True,
+    demonstration_sampling_prob=0.5,
+    success_rollout_sampling_prob=0.5,
+    return_value_function_returns=True,
+    gamma=0.998,
+    use_handcap=True,
+    default_command="manipulate object",
+)
+
+cosmos_predict2_flexiv = LazyDict(
+    dict(
+        defaults=[
+            "/experiment/cosmos_predict2_2b_480p_libero",
+            "_self_",
+        ],
+        scheduler=dict(
+            cycle_lengths=[20000, 100000000000000],
+            warm_up_steps=[2000, 0],
+            f_start=[1e-6, 0.06],
+            f_max=[1.0, 0.06],
+            f_min=[0.3, 0.06],
+        ),
+        checkpoint=dict(
+            load_path=os.path.abspath("ckpt/model-480p-16fps.pt"),
+        ),
+        model=L(CosmosPolicyVideo2WorldModel)(
+            config=dict(
+                state_t=11,  # blank, proprio, left wrist, right wrist, primary, action, future proprio, future left wrist, future right wrist, future primary, value
+                min_num_conditional_frames=5,
+                max_num_conditional_frames=5,
+                tokenizer=dict(
+                    chunk_duration=41,
+                ),
+            ),
+        ),
+        dataloader_train=L(DataLoader)(
+            num_workers=12,
+            persistent_workers=True,
+            pin_memory=True,
+            dataset=flexiv_cosmos_policy_dataset,
+            sampler=L(DistributedSampler)(
+                dataset=flexiv_cosmos_policy_dataset,
+                num_replicas=L(parallel_state.get_data_parallel_world_size)(),
+                rank=L(parallel_state.get_data_parallel_rank)(),
+                shuffle=True,
+                seed=0,
+            ),
+            batch_size=25,
+            drop_last=True,
+        ),
+        trainer=dict(
+            callbacks=dict(
+                manual_gc=dict(
+                    enabled=False,
+                    every_n=0,
+                ),
+                compile_tokenizer=dict(
+                    enabled=False,
+                    compile_after_iterations=0,
+                ),
+            ),
+        ),
+        job=dict(
+            group="cosmos_v2_finetune",
+            name="cosmos_predict2_flexiv",
+        ),
+    )
+)
+
+cosmos_predict2_flexiv__inference_only = LazyDict(
+    dict(
+        defaults=[
+            "/experiment/cosmos_predict2_flexiv",
+            "_self_",
+        ],
+        model=L(CosmosPolicyVideo2WorldModel)(
+            config=dict(
+                sde=L(HybridEDMSDE)(
+                    sigma_max=80,
+                    sigma_min=4,
+                )
+            )
+        ),
+        job=dict(
+            group="cosmos_v2_inference",
+            name="cosmos_predict2_flexiv__inference_only",
         ),
     )
 )

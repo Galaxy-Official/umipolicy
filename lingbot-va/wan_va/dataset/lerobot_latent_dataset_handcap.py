@@ -173,7 +173,7 @@ class LatentLeRobotDatasetHandcap(LeRobotDataset):
         repo_id,
         config=None,
     ):
-        if getattr(config, 'use_handcap', False):
+        if getattr(config, 'use_handcap', False) or getattr(config, 'use_flexiv', False):
             self.dataset = lerobot_dataset_handcap.LeRobotDatasetHandcap(repo_id=repo_id, root=Path(repo_id))
             self.meta = self.dataset.meta
             self.repo_id = repo_id
@@ -319,7 +319,10 @@ class LatentLeRobotDatasetHandcap(LeRobotDataset):
                                  h=latent_height, 
                                  w=latent_width)
             latent_lst.append(latent)
-        if getattr(self.config, 'use_handcap', False) and self.config.env_type == 'handcap':
+        if (
+            (getattr(self.config, 'use_handcap', False) or getattr(self.config, 'use_flexiv', False))
+            and self.config.env_type in {'handcap', 'flexiv'}
+        ):
             if getattr(self.config, 'use_tactile', False) and len(latent_lst) >= 3:
                 # Wrist config with tactile: usually latent_lst[0]=wrist, [1]=left_tactile, [2]=right_tactile
                 wrist_latent = latent_lst[0]  # [f, h, w_w, c]

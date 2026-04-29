@@ -752,7 +752,7 @@ def run(args):
         config.action_num_inference_steps = args.action_num_inference_steps
     if args.use_tactile is not None:
         config.use_tactile = args.use_tactile
-        if getattr(config, "env_type", None) == "handcap":
+        if getattr(config, "env_type", None) in {"handcap", "flexiv"}:
             if args.use_tactile:
                 config.obs_cam_keys = [
                     "observation.images.wrist",
@@ -860,7 +860,7 @@ def main():
         "--use-tactile",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Use tactile observation streams for handcap. Disable for wrist-only inference.",
+        help="Use tactile observation streams for LingBot real-robot inference. Disable for wrist-only inference.",
     )
     args = parser.parse_args()
     run(args)

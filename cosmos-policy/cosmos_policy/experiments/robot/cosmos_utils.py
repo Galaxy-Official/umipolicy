@@ -922,6 +922,16 @@ def get_action(
             WRIST_IMAGE_IDX = 0
             WRIST_IMAGE2_IDX = 1
             IMAGE_IDX = 2
+        elif cfg.suite == "flexiv":
+            wrist_image = obs["wrist_image"]
+            all_camera_images = [
+                obs.get("left_wrist_image", wrist_image),
+                obs.get("right_wrist_image", wrist_image),
+                obs.get("primary_image", wrist_image),
+            ]
+            WRIST_IMAGE_IDX = 0
+            WRIST_IMAGE2_IDX = 1
+            IMAGE_IDX = 2
         else:
             raise ValueError(f"Eval suite not implemented yet: {cfg.suite}")
 
@@ -1162,6 +1172,13 @@ def get_action(
                     5,
                     6,
                 ]  # 0: blank, 1: curr proprio, 2: curr left wrist img, 3: curr right wrist img, 4: curr primary img, 5: action, 6: future proprio, 7: future left wrist img, 8: future right wrist img, 9: future primary img, 10: value
+            elif cfg.suite == "flexiv":
+                INDICES_TO_REPLACE = [
+                    0,
+                    1,
+                    5,
+                    6,
+                ]  # Flexiv mirrors the UMI three-image latent layout by duplicating the wrist image.
             else:
                 raise ValueError(f"Eval suite not implemented yet: {cfg.suite}")
             future_image_predictions = get_future_images_from_generated_samples(
@@ -1309,6 +1326,13 @@ def get_future_state_prediction(
                 5,
                 6,
             ]  # 0: blank, 1: curr proprio, 2: curr left wrist img, 3: curr right wrist img, 4: curr primary img, 5: action, 6: future proprio, 7: future left wrist img, 8: future right wrist img, 9: future primary img, 10: value
+        elif cfg.suite == "flexiv":
+            INDICES_TO_REPLACE = [
+                0,
+                1,
+                5,
+                6,
+            ]  # Flexiv mirrors the UMI three-image latent layout by duplicating the wrist image.
         else:
             raise ValueError(f"Eval suite not implemented yet: {cfg.suite}")
 
