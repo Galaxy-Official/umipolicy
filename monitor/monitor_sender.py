@@ -139,6 +139,9 @@ def run_monitor():
                 "monitor_output", OBS_DEST
             ], cwd=MONITOR_DIR, input=b"y\n", check=False)
             
+            shutil.rmtree(os.path.join(WORKSPACE_DIR, "obsutil_output"), ignore_errors=True)
+            shutil.rmtree(os.path.join(WORKSPACE_DIR, "obsutil_checkpoint"), ignore_errors=True)
+            
         except Exception as e:
             print(f"[{datetime.datetime.now()}] Monitor loop error: {e}")
             

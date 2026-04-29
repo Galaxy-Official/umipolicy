@@ -6,6 +6,7 @@ from http.server import SimpleHTTPRequestHandler, HTTPServer
 import datetime
 import sys
 import webbrowser
+import shutil
 
 MONITOR_DIR = os.path.dirname(os.path.abspath(__file__))
 # Note: we use monitor_output as the LOCAL_DEST folder name inside MONITOR_DIR
@@ -31,6 +32,10 @@ def sync_obs_loop():
                 "-cpd=" + os.path.join(WORKSPACE_DIR, "obsutil_checkpoint"),
                 OBS_SRC, LOCAL_DEST
             ], cwd=MONITOR_DIR, input=b"y\n", check=False)
+            
+            shutil.rmtree(os.path.join(WORKSPACE_DIR, "obsutil_output"), ignore_errors=True)
+            shutil.rmtree(os.path.join(WORKSPACE_DIR, "obsutil_checkpoint"), ignore_errors=True)
+            
         except Exception as e:
             print(f"[{datetime.datetime.now()}] Sync error: {e}")
         time.sleep(300)
