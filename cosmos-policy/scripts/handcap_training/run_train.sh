@@ -3,6 +3,12 @@
 # Cosmos Policy: 通用训练启动脚本
 # ==============================================================================
 
+TRAIN_LOG_DIR="${TRAIN_LOG_DIR:-logs}"
+mkdir -p "${TRAIN_LOG_DIR}"
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+SCRIPT_NAME="$(basename "$(dirname "$0")")_$(basename "$0" .sh)"
+exec > >(tee -a "${TRAIN_LOG_DIR}/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
+
 # 1. 设置系统所使用的 GPU 数量 (单机多卡)
 NUM_GPUS=4
 

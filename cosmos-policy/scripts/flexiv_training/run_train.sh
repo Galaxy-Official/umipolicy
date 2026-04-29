@@ -5,6 +5,12 @@ set -euo pipefail
 # This uses UMIDataset with current-EE-relative pose10d actions. It does not use
 # the ALOHA robot train/eval scripts.
 
+TRAIN_LOG_DIR="${TRAIN_LOG_DIR:-logs}"
+mkdir -p "${TRAIN_LOG_DIR}"
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+SCRIPT_NAME="$(basename "$(dirname "$0")")_$(basename "$0" .sh)"
+exec > >(tee -a "${TRAIN_LOG_DIR}/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
+
 NUM_GPUS="${NUM_GPUS:-4}"
 export BASE_DATASETS_DIR="${BASE_DATASETS_DIR:-data/flexiv_cosmos}"
 EXPERIMENT_NAME="${EXPERIMENT_NAME:-cosmos_predict2_flexiv}"

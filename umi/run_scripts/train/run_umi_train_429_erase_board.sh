@@ -2,6 +2,12 @@
 
 set -eo pipefail
 
+TRAIN_LOG_DIR="${TRAIN_LOG_DIR:-logs}"
+mkdir -p "${TRAIN_LOG_DIR}"
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+SCRIPT_NAME=$(basename "$0" .sh)
+exec > >(tee -a "${TRAIN_LOG_DIR}/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
+
 # Visible GPU list. Inside this process, training.device=cuda:0 means the first
 # GPU in CUDA_VISIBLE_DEVICES.
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"

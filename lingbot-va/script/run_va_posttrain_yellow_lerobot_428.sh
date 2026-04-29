@@ -5,6 +5,12 @@ set -x
 
 umask 007
 
+TRAIN_LOG_DIR="${TRAIN_LOG_DIR:-logs}"
+mkdir -p "${TRAIN_LOG_DIR}"
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+SCRIPT_NAME=$(basename "$0" .sh)
+exec > >(tee -a "${TRAIN_LOG_DIR}/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
+
 CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-"0,1,2,3"}
 NGPU=${NGPU:-"4"}
 MASTER_PORT=${MASTER_PORT:-"29501"}

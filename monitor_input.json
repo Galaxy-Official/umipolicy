@@ -1,0 +1,30 @@
+{
+  "_notes": [
+    "Add or remove tasks while monitor_training.py is running; it reloads this file every cycle.",
+    "Each task can be a relative script path string or an object with name/script/enabled/log_globs/checkpoint_globs."
+  ],
+  "poll_interval_seconds": 60,
+  "stale_after_seconds": 1800,
+  "tasks": [
+    {
+      "name": "umi_erase_board",
+      "script": "umi/run_scripts/train/run_umi_train_429_erase_board.sh",
+      "enabled": true
+    },
+    {
+      "name": "openpi_erase_board_wrist_pi05",
+      "script": "openpi/scripts/handcap_training/erase_board_wrist_pi05.sh",
+      "enabled": true
+    },
+    {
+      "name": "cosmos_flexiv",
+      "script": "cosmos-policy/scripts/flexiv_training/run_train.sh",
+      "enabled": true
+    },
+    {
+      "name": "lingbot_flexiv",
+      "script": "lingbot-va/script/run_va_posttrain_flexiv.sh",
+      "enabled": true
+    }
+  ]
+}

@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 
+TRAIN_LOG_DIR="${TRAIN_LOG_DIR:-logs}"
+mkdir -p "${TRAIN_LOG_DIR}"
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+SCRIPT_NAME=$(basename "$0" .sh)
+exec > >(tee -a "${TRAIN_LOG_DIR}/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
+
 # 指定要使用的显卡，例如使用第 1 张卡就是 0
 export CUDA_VISIBLE_DEVICES=0
 

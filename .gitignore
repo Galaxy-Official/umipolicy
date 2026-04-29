@@ -77,3 +77,6 @@ cosmos-policy/logs/
 cosmos-policy/wandb/
 cosmos-policy/data/
 cosmos-policy/train_out/
+
+# Training monitor generated state/errors
+monitor_output/
