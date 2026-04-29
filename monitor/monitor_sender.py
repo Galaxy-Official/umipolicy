@@ -136,7 +136,7 @@ def run_monitor():
                 "-o=" + os.path.join(WORKSPACE_DIR, "obsutil_output"),
                 "-cpd=" + os.path.join(WORKSPACE_DIR, "obsutil_checkpoint"),
                 "monitor_output", OBS_DEST
-            ], cwd=MONITOR_DIR, check=False)
+            ], cwd=MONITOR_DIR, input=b"y\n", check=False)
             
         except Exception as e:
             print(f"[{datetime.datetime.now()}] Monitor loop error: {e}")
