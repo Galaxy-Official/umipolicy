@@ -6,8 +6,9 @@ from http.server import SimpleHTTPRequestHandler, HTTPServer
 import datetime
 import sys
 
-MONITOR_DIR = "/Users/macbookpro/Desktop/workspace/umipolicy/monitor"
-LOCAL_DEST = "/Users/macbookpro/Desktop/workspace/umipolicy/monitor/monitor_output"
+MONITOR_DIR = os.path.dirname(os.path.abspath(__file__))
+# Note: we use monitor_output as the LOCAL_DEST folder name inside MONITOR_DIR
+LOCAL_DEST = os.path.join(MONITOR_DIR, "monitor_output")
 OBS_SRC = "obs://sai.liyl/lihong/monitor_output"
 PORT = 8080
 

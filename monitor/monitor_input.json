@@ -15,16 +15,6 @@
       "name": "openpi_erase_board_wrist_pi05",
       "script": "openpi/scripts/handcap_training/erase_board_wrist_pi05.sh",
       "enabled": true
-    },
-    {
-      "name": "cosmos_flexiv",
-      "script": "cosmos-policy/scripts/flexiv_training/run_train.sh",
-      "enabled": true
-    },
-    {
-      "name": "lingbot_flexiv",
-      "script": "lingbot-va/script/run_va_posttrain_flexiv.sh",
-      "enabled": true
     }
   ]
 }

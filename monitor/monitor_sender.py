@@ -5,11 +5,11 @@ from pathlib import Path
 import subprocess
 import datetime
 
-MONITOR_DIR = "/Users/macbookpro/Desktop/workspace/umipolicy/monitor"
-WORKSPACE_DIR = "/Users/macbookpro/Desktop/workspace/umipolicy"
-INPUT_JSON = "/Users/macbookpro/Desktop/workspace/umipolicy/monitor/monitor_input.json"
-OUTPUT_DIR = "/Users/macbookpro/Desktop/workspace/umipolicy/monitor/monitor_output"
-OUTPUT_JSON = "/Users/macbookpro/Desktop/workspace/umipolicy/monitor/monitor_output/state_sum.json"
+MONITOR_DIR = os.path.dirname(os.path.abspath(__file__))
+WORKSPACE_DIR = os.path.abspath(os.path.join(MONITOR_DIR, ".."))
+INPUT_JSON = os.path.join(MONITOR_DIR, "monitor_input.json")
+OUTPUT_DIR = os.path.join(MONITOR_DIR, "monitor_output")
+OUTPUT_JSON = os.path.join(OUTPUT_DIR, "state_sum.json")
 OBS_DEST = "obs://sai.liyl/lihong/monitor_output"
 
 def find_latest_log(script_path):
