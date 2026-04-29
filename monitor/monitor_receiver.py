@@ -19,11 +19,17 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
 def sync_obs_loop():
+    WORKSPACE_DIR = os.path.abspath(os.path.join(MONITOR_DIR, ".."))
     while True:
         print(f"[{datetime.datetime.now()}] Syncing from OBS...")
         try:
             # Sync to the local monitor directory
-            subprocess.run(["obsutil", "cp", "-r", OBS_SRC, LOCAL_DEST], cwd=MONITOR_DIR, check=False)
+            subprocess.run([
+                "obsutil", "cp", "-r", "-f",
+                "-o=" + os.path.join(WORKSPACE_DIR, "obsutil_output"),
+                "-cpd=" + os.path.join(WORKSPACE_DIR, "obsutil_checkpoint"),
+                OBS_SRC, LOCAL_DEST
+            ], cwd=MONITOR_DIR, check=False)
         except Exception as e:
             print(f"[{datetime.datetime.now()}] Sync error: {e}")
         time.sleep(300)

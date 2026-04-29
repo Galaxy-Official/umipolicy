@@ -131,7 +131,12 @@ def run_monitor():
             
             # Sync to OBS from MONITOR_DIR so "monitor_output" folder is found
             print(f"[{datetime.datetime.now()}] Syncing to OBS...")
-            subprocess.run(["obsutil", "cp", "-r", "monitor_output", OBS_DEST], cwd=MONITOR_DIR, check=False)
+            subprocess.run([
+                "obsutil", "cp", "-r", "-f",
+                "-o=" + os.path.join(WORKSPACE_DIR, "obsutil_output"),
+                "-cpd=" + os.path.join(WORKSPACE_DIR, "obsutil_checkpoint"),
+                "monitor_output", OBS_DEST
+            ], cwd=MONITOR_DIR, check=False)
             
         except Exception as e:
             print(f"[{datetime.datetime.now()}] Monitor loop error: {e}")
