@@ -5,6 +5,7 @@ import threading
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 import datetime
 import sys
+import webbrowser
 
 MONITOR_DIR = os.path.dirname(os.path.abspath(__file__))
 # Note: we use monitor_output as the LOCAL_DEST folder name inside MONITOR_DIR
@@ -46,6 +47,10 @@ if __name__ == "__main__":
     # Change working directory so SimpleHTTPRequestHandler serves files from here
     os.chdir(MONITOR_DIR)
     server = HTTPServer(("", PORT), DashboardHandler)
+    
+    print("Automatically opening the dashboard in your default browser...")
+    webbrowser.open(f"http://localhost:{PORT}")
+    
     try:
         server.serve_forever()
     except KeyboardInterrupt:
