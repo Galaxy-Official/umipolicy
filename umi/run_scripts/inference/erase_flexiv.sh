@@ -49,8 +49,8 @@ python scripts_real/eval_flexiv.py \
     --output "${OUTPUT_DIR}" \
     --robot_ip "${FLEXIV_ROBOT_IP}" \
     --local_ip "${FLEXIV_LOCAL_IP}" \
-    --frequency 1 \
-    --steps_per_inference 4 \
+    --frequency 3 \
+    --steps_per_inference 6 \
     --gripper-width-offset "${GRIPPER_WIDTH_OFFSET}" \
     --gripper-width-min "${GRIPPER_WIDTH_MIN}" \
     --gripper-width-max "${GRIPPER_WIDTH_MAX}"
