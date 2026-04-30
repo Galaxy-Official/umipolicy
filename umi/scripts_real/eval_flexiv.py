@@ -210,12 +210,23 @@ def resize_with_black_padding(image, target_h=480, target_w=640):
 @click.option('--command_latency', '-cl', default=0.01, type=float, help="Latency between receiving SpaceMouse command to executing on Robot in Sec.")
 @click.option('--use_tactile', is_flag=True, default=False, help="Whether to load tactile cameras.")
 @click.option('--data_capture_fps', '--camera_fps', default=DEFAULT_MVS_FPS, type=float, help="MVS wrist capture FPS, matching handcap_rgb.py --fps.")
+@click.option('--gripper-width-offset', '--gripper_width_offset', default=0.0, type=float, help="Offset in meters added to policy-predicted gripper width before execution.")
+@click.option('--gripper-width-min', '--gripper_width_min', default=0.1, type=float, help="Minimum safe gripper width after applying offset.")
+@click.option('--gripper-width-max', '--gripper_width_max', default=0.9, type=float, help="Maximum safe gripper width after applying offset.")
 def main(input, output, robot_ip, local_ip, camera_config,
     init_joints, steps_per_inference, max_duration,
-    frequency, command_latency, use_tactile, data_capture_fps):
+    frequency, command_latency, use_tactile, data_capture_fps,
+    gripper_width_offset, gripper_width_min, gripper_width_max):
     
-    max_gripper_width = 0.09
+    if gripper_width_min > gripper_width_max:
+        raise click.ClickException(
+            f"Invalid gripper safety range: min {gripper_width_min} > max {gripper_width_max}")
+
+    max_gripper_width = gripper_width_max
     gripper_speed = 0.2
+    print(
+        f"Policy gripper width offset: {gripper_width_offset:+.4f}; "
+        f"safety clip=[{gripper_width_min:.4f}, {gripper_width_max:.4f}]")
 
     # load checkpoint
     ckpt_path = input
@@ -476,7 +487,12 @@ def main(input, output, robot_ip, local_ip, camera_config,
                                 lambda x: torch.from_numpy(x).unsqueeze(0).to(device))
                             result = policy.predict_action(obs_dict)
                             raw_action = result['action_pred'][0].detach().to('cpu').numpy()
-                            action = get_real_umi_action(raw_action, obs, action_pose_repr)
+                            action = get_real_umi_action(raw_action, obs, action_pose_repr).copy()
+                            gripper_idxs = np.arange(6, action.shape[-1], 7)
+                            action[..., gripper_idxs] = np.clip(
+                                action[..., gripper_idxs] + gripper_width_offset,
+                                gripper_width_min,
+                                gripper_width_max)
                             print(f'Inference latency: {time.time() - s:.3f}s')
                         
                         this_target_poses = action
