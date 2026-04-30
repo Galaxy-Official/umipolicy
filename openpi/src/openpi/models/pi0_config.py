@@ -28,6 +28,7 @@ class Pi0Config(_model.BaseModelConfig):
     
     use_tactile: bool = False
     tactile_pretrained_ckpt: str = ""
+    tactile_variant: str = "So400m/14"
     camera_keys: tuple = ("head_0_rgb", "wrist_0_rgb", "side_0_rgb")
     # Pi05 has two differences from Pi0:
     # - the state input is part of the discrete language tokens rather than a continuous input that is part of the suffix

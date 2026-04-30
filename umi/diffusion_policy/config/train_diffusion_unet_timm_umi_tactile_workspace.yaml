@@ -1,0 +1,25 @@
+defaults:
+  - train_diffusion_unet_timm_umi_workspace
+  - override task: umi_tactile
+  - _self_
+
+name: train_diffusion_unet_timm_umi_tactile
+
+# Defaults match the wrist camera path. Override these from the run script or
+# Hydra CLI when testing another tactile backbone.
+wrist_backbone: vit_base_patch16_224
+wrist_checkpoint_path: ckpt/vit_b_16.pth
+tactile_backbone: vit_base_patch16_224
+tactile_checkpoint_path: null
+
+policy:
+  obs_encoder:
+    _target_: diffusion_policy.model.vision.timm_obs_encoder_tactile.TimmObsEncoderTactile
+    model_name: ${wrist_backbone}
+    checkpoint_path: ${wrist_checkpoint_path}
+    feature_aggregation: null
+    tactile_keys:
+      - tactile_combined
+    tactile_model_name: ${tactile_backbone}
+    tactile_checkpoint_path: ${tactile_checkpoint_path}
+    tactile_feature_aggregation: null

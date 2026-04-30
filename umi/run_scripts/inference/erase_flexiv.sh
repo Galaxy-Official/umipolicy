@@ -18,11 +18,11 @@ export FLEXIV_GRIPPER_NAME="Flexiv-GN01"
 export FLEXIV_INIT_POSE="[-0.0009,-0.3386,-0.0133,2.0663,-0.0058,0.8170,-0.0012]"
 
 # 预训练模型 Checkpoint 路径
-CKPT_PATH="ckpt/yellow_pp_490.ckpt"
+CKPT_PATH="ckpt/erase_270.ckpt"
 
 # 设置数据保存输出路径
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-OUTPUT_DIR="data_local/yellow_to_pink/eval_recordings/eval_${TIMESTAMP}"
+OUTPUT_DIR="data_local/eval_recordings/erase_board/eval_${TIMESTAMP}"
 
 echo "=========================================="
 echo "🚀 准备启动 UMI 真机推理 (Policy Inference)"
@@ -37,5 +37,5 @@ python scripts_real/eval_flexiv.py \
     --output "${OUTPUT_DIR}" \
     --robot_ip "${FLEXIV_ROBOT_IP}" \
     --local_ip "${FLEXIV_LOCAL_IP}" \
-    --frequency 5 \
+    --frequency 1 \
     --steps_per_inference 4

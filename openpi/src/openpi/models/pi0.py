@@ -95,7 +95,7 @@ class Pi0(_model.BaseModel):
             tac = nnx_bridge.ToNNX(
                 _siglip.Module(
                     num_classes=paligemma_config.width,
-                    variant="So400m/14",
+                    variant=config.tactile_variant,
                     pool_type="none",
                     scan=True,
                     dtype_mm=config.dtype,

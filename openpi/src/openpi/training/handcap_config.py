@@ -403,6 +403,28 @@ def get_handcap_configs():
             keep_period=20_000,
         ),
         TrainConfig(
+            name="pi0_simple_sorting_tactile_vit_b16",
+            model=pi0_config.Pi0Config(
+                use_tactile=True,
+                tactile_pretrained_ckpt="/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt",
+                tactile_variant="B/16",
+                camera_keys=("wrist_0_rgb",),),
+            data=LeRobotHandcapDataConfig(
+                repo_id="lihongcs/block_to_pot_handcap",
+                data_root="Data/handcap30",
+                base_config=DataConfig(
+                    prompt_from_task=True,
+                    use_handcap=True,
+                ),
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader("/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pi0_base/params"),
+            num_train_steps=200_000,
+            batch_size=8,
+            log_interval=100,
+            save_interval=5000,
+            keep_period=20_000,
+        ),
+        TrainConfig(
             name="pi05_simple_sorting",
             model=pi0_config.Pi0Config(
                 pi05=True,
