@@ -15,6 +15,11 @@
       "name": "openpi_erase_board_wrist_pi05",
       "script": "openpi/scripts/handcap_training/erase_board_wrist_pi05.sh",
       "enabled": true
+    },
+    {
+      "name": "cosmos_erase_board",
+      "script": "cosmos-policy/scripts/handcap_training/run_train_429_erase_board.sh",
+      "enabled": true
     }
   ]
 }
