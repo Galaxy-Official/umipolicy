@@ -22,7 +22,7 @@ Usage:
     [--camera-config-path <path>] \
     [--use-tactile | --no-use-tactile] \
     [--action-latency 0.0] \
-    [--init-qpos "<python_tuple_literal>"] \
+    [--init-qpos "<7 floats, comma list, or bracket list>"] \
     [--record-root <dir>] \
     [--server-default-prompt "<prompt>"] \
     [--startup-timeout 120] \
@@ -367,7 +367,11 @@ else
 fi
 
 if [[ -n "$INIT_QPOS" ]]; then
-  CLIENT_CMD+=(--init-qpos "$INIT_QPOS")
+  INIT_QPOS_NORMALIZED="${INIT_QPOS//,/ }"
+  INIT_QPOS_NORMALIZED="${INIT_QPOS_NORMALIZED//[/ }"
+  INIT_QPOS_NORMALIZED="${INIT_QPOS_NORMALIZED//]/ }"
+  read -r -a INIT_QPOS_ARGS <<< "$INIT_QPOS_NORMALIZED"
+  CLIENT_CMD+=(--init-qpos "${INIT_QPOS_ARGS[@]}")
 fi
 
 if [[ -n "$RECORD_ROOT" ]]; then
