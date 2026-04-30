@@ -210,7 +210,7 @@ def resize_with_black_padding(image, target_h=480, target_w=640):
 @click.option('--command_latency', '-cl', default=0.01, type=float, help="Latency between receiving SpaceMouse command to executing on Robot in Sec.")
 @click.option('--use_tactile', is_flag=True, default=False, help="Whether to load tactile cameras.")
 @click.option('--data_capture_fps', '--camera_fps', default=DEFAULT_MVS_FPS, type=float, help="MVS wrist capture FPS, matching handcap_rgb.py --fps.")
-@click.option('--gripper-width-offset', '--gripper_width_offset', default=0.0, type=float, help="Offset in meters added to policy-predicted gripper width before execution.")
+@click.option('--gripper-width-offset', '--gripper_width_offset', default=0.0, type=float, help="Offset added to policy-predicted gripper width before execution, in gripper command units.")
 @click.option('--gripper-width-min', '--gripper_width_min', default=0.1, type=float, help="Minimum safe gripper width after applying offset.")
 @click.option('--gripper-width-max', '--gripper_width_max', default=0.9, type=float, help="Maximum safe gripper width after applying offset.")
 def main(input, output, robot_ip, local_ip, camera_config,

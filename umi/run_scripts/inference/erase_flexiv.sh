@@ -20,13 +20,13 @@ export FLEXIV_INIT_POSE="[-0.0009,-0.3386,-0.0174,1.8982,-0.0058,0.6271,-0.0012]
 # 预训练模型 Checkpoint 路径
 CKPT_PATH="ckpt/erase_320.ckpt"
 
-# Policy 预测夹爪宽度偏置，单位：米。
+# Policy 预测夹爪宽度偏置，单位与夹爪命令一致。
 # 正数会比预测值更宽，负数会比预测值更窄。
 # 夹爪命令会在 offset 后裁剪到 [GRIPPER_WIDTH_MIN, GRIPPER_WIDTH_MAX]。
 # 可以用位置参数或环境变量覆盖：
 #   bash run_scripts/inference/erase_flexiv.sh 0.01 0.1 0.9
 #   GRIPPER_WIDTH_OFFSET=0.01 GRIPPER_WIDTH_MIN=0.1 GRIPPER_WIDTH_MAX=0.9 bash run_scripts/inference/erase_flexiv.sh
-GRIPPER_WIDTH_OFFSET="${1:-${GRIPPER_WIDTH_OFFSET:-0.0}}"
+GRIPPER_WIDTH_OFFSET="${1:-${GRIPPER_WIDTH_OFFSET:0.1}}"
 GRIPPER_WIDTH_MIN="${2:-${GRIPPER_WIDTH_MIN:-0.1}}"
 GRIPPER_WIDTH_MAX="${3:-${GRIPPER_WIDTH_MAX:-0.9}}"
 
@@ -39,7 +39,7 @@ echo "🚀 准备启动 UMI 真机推理 (Policy Inference)"
 echo "📂 模型路径: ${CKPT_PATH}"
 echo "💾 数据保存路径: ${OUTPUT_DIR}"
 echo "▶️ 机械臂初始位姿: ${FLEXIV_INIT_POSE}"
-echo "🤏 夹爪宽度偏置: ${GRIPPER_WIDTH_OFFSET} m"
+echo "🤏 夹爪宽度偏置: ${GRIPPER_WIDTH_OFFSET}"
 echo "🛡️ 夹爪安全范围: [${GRIPPER_WIDTH_MIN}, ${GRIPPER_WIDTH_MAX}]"
 echo "=========================================="
 
