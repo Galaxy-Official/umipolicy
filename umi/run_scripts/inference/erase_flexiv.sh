@@ -26,7 +26,7 @@ CKPT_PATH="ckpt/erase_320.ckpt"
 # 可以用位置参数或环境变量覆盖：
 #   bash run_scripts/inference/erase_flexiv.sh 0.01 0.1 0.9
 #   GRIPPER_WIDTH_OFFSET=0.01 GRIPPER_WIDTH_MIN=0.1 GRIPPER_WIDTH_MAX=0.9 bash run_scripts/inference/erase_flexiv.sh
-GRIPPER_WIDTH_OFFSET="${1:-${GRIPPER_WIDTH_OFFSET:0.1}}"
+GRIPPER_WIDTH_OFFSET="${1:-${GRIPPER_WIDTH_OFFSET:-0.0}}"
 GRIPPER_WIDTH_MIN="${2:-${GRIPPER_WIDTH_MIN:-0.1}}"
 GRIPPER_WIDTH_MAX="${3:-${GRIPPER_WIDTH_MAX:-0.9}}"
 
