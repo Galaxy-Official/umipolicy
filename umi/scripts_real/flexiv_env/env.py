@@ -8,10 +8,31 @@ from loguru import logger
 from .pose_util import pos_rot_to_pose, pose_to_pos_rot
 
 class FlexivEnv:
-    def __init__(self, init_qpos, obs_horizon=2, robot_ip="192.168.2.100", local_ip="192.168.2.102", use_gripper_width_mapping=False, pose_type="rotvec"):
+    def __init__(
+            self, init_qpos, obs_horizon=2, robot_ip="192.168.2.100",
+            local_ip="192.168.2.102", use_gripper_width_mapping=False,
+            pose_type="rotvec", arm_max_linear_vel=0.05,
+            arm_max_angular_vel=0.2, arm_max_linear_acc=0.1,
+            arm_max_angular_acc=0.3, gripper_move_velocity=0.03,
+            gripper_move_force=20):
         self.obs_horizon = obs_horizon
         self.pose_type = pose_type
         self.init_qpos = init_qpos
+        self.arm_max_linear_vel = float(arm_max_linear_vel)
+        self.arm_max_angular_vel = float(arm_max_angular_vel)
+        self.arm_max_linear_acc = float(arm_max_linear_acc)
+        self.arm_max_angular_acc = float(arm_max_angular_acc)
+        self.gripper_move_velocity = float(gripper_move_velocity)
+        self.gripper_move_force = float(gripper_move_force)
+        logger.info(
+            "Flexiv motion limits: max_linear_vel={} max_angular_vel={} "
+            "max_linear_acc={} max_angular_acc={} gripper_vel={} gripper_force={}",
+            self.arm_max_linear_vel,
+            self.arm_max_angular_vel,
+            self.arm_max_linear_acc,
+            self.arm_max_angular_acc,
+            self.gripper_move_velocity,
+            self.gripper_move_force)
         
         # New RDK 1.0+ Native Setup
         robot_sn = os.environ.get("FLEXIV_ROBOT_SN", "Rizon4-062339")
@@ -51,7 +72,7 @@ class FlexivEnv:
         self.robot.SetForceControlAxis([False, False, False, False, False, False])
         
         max_width = self.gripper.params().max_width
-        self.gripper.Move(max_width, 0.1, 20)
+        self.gripper.Move(max_width, self.gripper_move_velocity, self.gripper_move_force)
         time.sleep(1)
 
     def get_ee_pose(self):
@@ -72,7 +93,7 @@ class FlexivEnv:
         self.robot.SendJointPosition(self.init_qpos, [0]*7, [0.1]*7, [0.1]*7)
         
         max_width = self.gripper.params().max_width
-        self.gripper.Move(max_width, 0.1, 20)
+        self.gripper.Move(max_width, self.gripper_move_velocity, self.gripper_move_force)
         time.sleep(10) 
         
         # Switch back to Cartesian mode for subsequent actions
@@ -103,11 +124,16 @@ class FlexivEnv:
             
             # Reduced velocity and acceleration scales for slower, smoother motion
             # Signature: SendCartesianMotionForce(pose, wrench, velocity, max_linear_vel, max_angular_vel, max_linear_acc, max_angular_acc)
-            self.robot.SendCartesianMotionForce(target_tcp, [0]*6, [0]*6, 0.15, 0.5, 0.3, 1.0)
+            self.robot.SendCartesianMotionForce(
+                target_tcp, [0]*6, [0]*6,
+                self.arm_max_linear_vel,
+                self.arm_max_angular_vel,
+                self.arm_max_linear_acc,
+                self.arm_max_angular_acc)
             
             max_w = self.gripper.params().max_width
             safe_width = min(max(target_width, 0.001), max_w - 0.001)
-            self.gripper.Move(safe_width, 0.1, 20)
+            self.gripper.Move(safe_width, self.gripper_move_velocity, self.gripper_move_force)
             
             dt = new_timestamps[i] - time.time()
             # Removed time.sleep(dt) to make exec_actions non-blocking. 

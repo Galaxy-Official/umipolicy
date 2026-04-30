@@ -213,10 +213,17 @@ def resize_with_black_padding(image, target_h=480, target_w=640):
 @click.option('--gripper-width-offset', '--gripper_width_offset', default=0.0, type=float, help="Offset added to policy-predicted gripper width before execution, in gripper command units.")
 @click.option('--gripper-width-min', '--gripper_width_min', default=0.1, type=float, help="Minimum safe gripper width after applying offset.")
 @click.option('--gripper-width-max', '--gripper_width_max', default=0.9, type=float, help="Maximum safe gripper width after applying offset.")
+@click.option('--arm-max-linear-vel', '--arm_max_linear_vel', default=0.05, type=float, help="Flexiv max linear velocity for Cartesian policy execution.")
+@click.option('--arm-max-angular-vel', '--arm_max_angular_vel', default=0.2, type=float, help="Flexiv max angular velocity for Cartesian policy execution.")
+@click.option('--arm-max-linear-acc', '--arm_max_linear_acc', default=0.1, type=float, help="Flexiv max linear acceleration for Cartesian policy execution.")
+@click.option('--arm-max-angular-acc', '--arm_max_angular_acc', default=0.3, type=float, help="Flexiv max angular acceleration for Cartesian policy execution.")
+@click.option('--gripper-move-velocity', '--gripper_move_velocity', default=0.03, type=float, help="Flexiv gripper Move velocity.")
 def main(input, output, robot_ip, local_ip, camera_config,
     init_joints, steps_per_inference, max_duration,
     frequency, command_latency, use_tactile, data_capture_fps,
-    gripper_width_offset, gripper_width_min, gripper_width_max):
+    gripper_width_offset, gripper_width_min, gripper_width_max,
+    arm_max_linear_vel, arm_max_angular_vel, arm_max_linear_acc,
+    arm_max_angular_acc, gripper_move_velocity):
     
     if gripper_width_min > gripper_width_max:
         raise click.ClickException(
@@ -227,6 +234,11 @@ def main(input, output, robot_ip, local_ip, camera_config,
     print(
         f"Policy gripper width offset: {gripper_width_offset:+.4f}; "
         f"safety clip=[{gripper_width_min:.4f}, {gripper_width_max:.4f}]")
+    print(
+        "Flexiv execution limits: "
+        f"linear_vel={arm_max_linear_vel}, angular_vel={arm_max_angular_vel}, "
+        f"linear_acc={arm_max_linear_acc}, angular_acc={arm_max_angular_acc}, "
+        f"gripper_velocity={gripper_move_velocity}")
 
     # load checkpoint
     ckpt_path = input
@@ -276,7 +288,14 @@ def main(input, output, robot_ip, local_ip, camera_config,
             # 2. Init Flexiv Robot
             print("Initializing FlexivEnv...")
             init_qpos = eval(os.environ.get("FLEXIV_INIT_POSE", "[-0.0, -0.698, -0.0, 1.571, -0.0, 0.698, -0.0]"))
-            env = FlexivEnv(init_qpos, obs_horizon=obs_horizon, robot_ip=robot_ip, local_ip=local_ip, use_gripper_width_mapping=False, pose_type="rotvec")
+            env = FlexivEnv(
+                init_qpos, obs_horizon=obs_horizon, robot_ip=robot_ip,
+                local_ip=local_ip, use_gripper_width_mapping=False,
+                pose_type="rotvec", arm_max_linear_vel=arm_max_linear_vel,
+                arm_max_angular_vel=arm_max_angular_vel,
+                arm_max_linear_acc=arm_max_linear_acc,
+                arm_max_angular_acc=arm_max_angular_acc,
+                gripper_move_velocity=gripper_move_velocity)
             
             print(f"Moving to init pose: {init_qpos}")
             env.reset()

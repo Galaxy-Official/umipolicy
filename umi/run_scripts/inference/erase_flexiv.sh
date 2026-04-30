@@ -30,6 +30,13 @@ GRIPPER_WIDTH_OFFSET="${1:-${GRIPPER_WIDTH_OFFSET:-0.0}}"
 GRIPPER_WIDTH_MIN="${2:-${GRIPPER_WIDTH_MIN:-0.1}}"
 GRIPPER_WIDTH_MAX="${3:-${GRIPPER_WIDTH_MAX:-0.9}}"
 
+# 机械臂执行速度限制。数值越小，执行越慢、更柔和。
+ARM_MAX_LINEAR_VEL="${ARM_MAX_LINEAR_VEL:-0.04}"
+ARM_MAX_ANGULAR_VEL="${ARM_MAX_ANGULAR_VEL:-0.15}"
+ARM_MAX_LINEAR_ACC="${ARM_MAX_LINEAR_ACC:-0.08}"
+ARM_MAX_ANGULAR_ACC="${ARM_MAX_ANGULAR_ACC:-0.25}"
+GRIPPER_MOVE_VELOCITY="${GRIPPER_MOVE_VELOCITY:-0.02}"
+
 # 设置数据保存输出路径
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 OUTPUT_DIR="data_local/eval_recordings/erase_board/eval_${TIMESTAMP}"
@@ -41,6 +48,7 @@ echo "💾 数据保存路径: ${OUTPUT_DIR}"
 echo "▶️ 机械臂初始位姿: ${FLEXIV_INIT_POSE}"
 echo "🤏 夹爪宽度偏置: ${GRIPPER_WIDTH_OFFSET}"
 echo "🛡️ 夹爪安全范围: [${GRIPPER_WIDTH_MIN}, ${GRIPPER_WIDTH_MAX}]"
+echo "执行限速: linear_vel=${ARM_MAX_LINEAR_VEL}, angular_vel=${ARM_MAX_ANGULAR_VEL}, linear_acc=${ARM_MAX_LINEAR_ACC}, angular_acc=${ARM_MAX_ANGULAR_ACC}, gripper_vel=${GRIPPER_MOVE_VELOCITY}"
 echo "=========================================="
 
 # 运行推理脚本
@@ -53,4 +61,9 @@ python scripts_real/eval_flexiv.py \
     --steps_per_inference 6 \
     --gripper-width-offset "${GRIPPER_WIDTH_OFFSET}" \
     --gripper-width-min "${GRIPPER_WIDTH_MIN}" \
-    --gripper-width-max "${GRIPPER_WIDTH_MAX}"
+    --gripper-width-max "${GRIPPER_WIDTH_MAX}" \
+    --arm-max-linear-vel "${ARM_MAX_LINEAR_VEL}" \
+    --arm-max-angular-vel "${ARM_MAX_ANGULAR_VEL}" \
+    --arm-max-linear-acc "${ARM_MAX_LINEAR_ACC}" \
+    --arm-max-angular-acc "${ARM_MAX_ANGULAR_ACC}" \
+    --gripper-move-velocity "${GRIPPER_MOVE_VELOCITY}"
