@@ -18,7 +18,7 @@ echo "📂 数据集路径: $ZARR_PATH"
 echo "=========================================="
 
 # 默认回放第 0 个 Episode，如果传入参数则使用参数
-EPISODE_IDX=${1:-0}
+EPISODE_IDX=${1:-20}
 echo "▶️ 将回放 Episode Index: $EPISODE_IDX"
 
 # --- 环境变量配置 (兼容 RDK 1.0+) ---
