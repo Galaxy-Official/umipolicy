@@ -77,7 +77,7 @@ DATASET_PATH="${DATASET_PATH:-data/430clampseal.zarr}"
 OUTPUT_PATH="${OUTPUT_PATH:-outputs/430clampseal_wrist_train}"
 VISION_BACKBONE="${VISION_BACKBONE:-vit_base_patch16_224}"
 VISION_CKPT="${VISION_CKPT:-ckpt/vit_b_16.pth}"
-BATCH_SIZE="${BATCH_SIZE:-128}"
+BATCH_SIZE="${BATCH_SIZE:-256}"
 NUM_EPOCHS="${NUM_EPOCHS:-500}"
 LOGGING_MODE="${LOGGING_MODE:-offline}"
 

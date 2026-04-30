@@ -9,12 +9,12 @@ TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 SCRIPT_NAME=$(basename "$0" .sh)
 exec > >(tee -a "${TRAIN_LOG_DIR}/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
 
-# Use physical GPU 0. Inside this process, training.device=cuda:0 maps to it.
-export CUDA_VISIBLE_DEVICES=0
+# Use physical GPU 1. Inside this process, training.device=cuda:0 maps to it.
+export CUDA_VISIBLE_DEVICES=1
 export HYDRA_FULL_ERROR=1
 
-DATASET_PATH="${DATASET_PATH:-data/430clampseal.zarr}"
-OUTPUT_PATH="${OUTPUT_PATH:-outputs/430clampseal_train_0425}"
+DATASET_PATH="${DATASET_PATH:-data/430towelhanging_umi.zarr}"
+OUTPUT_PATH="${OUTPUT_PATH:-outputs/430towelhanging_train_0425}"
 VISION_BACKBONE="${VISION_BACKBONE:-vit_base_patch16_224}"
 VISION_CKPT="${VISION_CKPT:-ckpt/vit_b_16.pth}"
 BATCH_SIZE="${BATCH_SIZE:-64}"
