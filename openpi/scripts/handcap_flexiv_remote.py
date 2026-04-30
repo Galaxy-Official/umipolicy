@@ -30,6 +30,7 @@ from lerobot.datasets.pose_utils import pos_rot_to_mat
 
 LOGGER = logging.getLogger(__name__)
 _ACTIVE_RECORDER = None
+WRIST_RECORD_SHAPE = (640, 480)
 
 
 def _repo_root() -> Path:
@@ -166,6 +167,30 @@ def _prepare_tactile_image(image_bgr: np.ndarray | None, use_tactile: bool) -> n
     return np.zeros_like(rgb)
 
 
+def _prepare_video_frame(image: np.ndarray | None, frame_shape: tuple[int, int]) -> np.ndarray | None:
+    if image is None:
+        return None
+
+    frame = np.asarray(image)
+    if frame.ndim == 2:
+        frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+    elif frame.ndim == 3 and frame.shape[2] == 1:
+        frame = cv2.cvtColor(frame[:, :, 0], cv2.COLOR_GRAY2BGR)
+    elif frame.ndim == 3 and frame.shape[2] == 4:
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+    elif frame.ndim != 3 or frame.shape[2] != 3:
+        LOGGER.warning("Skipping video frame with unsupported shape: %s", frame.shape)
+        return None
+
+    if frame.dtype != np.uint8:
+        frame = np.clip(frame, 0, 255).astype(np.uint8)
+
+    if (frame.shape[1], frame.shape[0]) != frame_shape:
+        frame = cv2.resize(frame, frame_shape, interpolation=cv2.INTER_AREA)
+
+    return np.ascontiguousarray(frame)
+
+
 def _make_policy_observation(latest_frame: dict[str, Any], prompt: str, use_tactile: bool) -> dict[str, Any]:
     if latest_frame["wrist_img"] is None:
         raise ValueError("Latest wrist image is missing")
@@ -232,24 +257,43 @@ class Recorder:
 
         output_dir.mkdir(parents=True, exist_ok=True)
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        self.wrist_shape = wrist_shape
+        self.left_shape = left_shape
+        self.right_shape = right_shape
         self.wrist_video = cv2.VideoWriter(str(output_dir / "view1_wrist.mp4"), fourcc, ctrl_freq, wrist_shape)
+        if not self.wrist_video.isOpened():
+            LOGGER.warning("Failed to open wrist video writer; only state logs will be saved.")
+            self.wrist_video = None
         self.tactile_left_video = None
         self.tactile_right_video = None
         if left_shape is not None:
             self.tactile_left_video = cv2.VideoWriter(
                 str(output_dir / "view2_tactile_left.mp4"), fourcc, ctrl_freq, left_shape
             )
+            if not self.tactile_left_video.isOpened():
+                LOGGER.warning("Failed to open left tactile video writer.")
+                self.tactile_left_video = None
         if right_shape is not None:
             self.tactile_right_video = cv2.VideoWriter(
                 str(output_dir / "view3_tactile_right.mp4"), fourcc, ctrl_freq, right_shape
             )
+            if not self.tactile_right_video.isOpened():
+                LOGGER.warning("Failed to open right tactile video writer.")
+                self.tactile_right_video = None
 
     def record_frame(self, latest_frame: dict[str, Any]) -> None:
-        self.wrist_video.write(latest_frame["wrist_img"])
+        if self.wrist_video is not None:
+            wrist_frame = _prepare_video_frame(latest_frame["wrist_img"], self.wrist_shape)
+            if wrist_frame is not None:
+                self.wrist_video.write(wrist_frame)
         if self.tactile_left_video is not None and latest_frame["left_tactile_img"] is not None:
-            self.tactile_left_video.write(latest_frame["left_tactile_img"])
+            left_frame = _prepare_video_frame(latest_frame["left_tactile_img"], self.left_shape)
+            if left_frame is not None:
+                self.tactile_left_video.write(left_frame)
         if self.tactile_right_video is not None and latest_frame["right_tactile_img"] is not None:
-            self.tactile_right_video.write(latest_frame["right_tactile_img"])
+            right_frame = _prepare_video_frame(latest_frame["right_tactile_img"], self.right_shape)
+            if right_frame is not None:
+                self.tactile_right_video.write(right_frame)
 
     def append_state(
         self,
@@ -286,7 +330,8 @@ class Recorder:
             return
         self._closed = True
 
-        self.wrist_video.release()
+        if self.wrist_video is not None:
+            self.wrist_video.release()
         if self.tactile_left_video is not None:
             self.tactile_left_video.release()
         if self.tactile_right_video is not None:
@@ -581,7 +626,7 @@ def _init_recorder(
     return Recorder(
         output_dir=output_dir,
         ctrl_freq=ctrl_freq,
-        wrist_shape=(init_wrist_img.shape[1], init_wrist_img.shape[0]),
+        wrist_shape=WRIST_RECORD_SHAPE,
         left_shape=left_shape,
         right_shape=right_shape,
         save_states_json=save_states_json,

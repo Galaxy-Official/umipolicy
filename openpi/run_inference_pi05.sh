@@ -16,7 +16,7 @@ POLICY_CONFIG="pi05_yellow_to_pink"
 POLICY_DIR="/home/rhos/umipolicy/openpi/ckpt/70000"
 PROMPT="yellow to pink task"
 
-CTRL_FREQ="1"
+CTRL_FREQ="5"
 STEPS_PER_INFERENCE="4"
 OBS_HORIZON="${OBS_HORIZON:-2}"
 ACTION_LATENCY="${ACTION_LATENCY:-0.0}"
