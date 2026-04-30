@@ -8,9 +8,9 @@ export FLEXIV_ROBOT_SN="${FLEXIV_ROBOT_SN:-Rizon4-062339}"
 export FLEXIV_GRIPPER_NAME="${FLEXIV_GRIPPER_NAME:-Flexiv-GN01}"
 export FLEXIV_INIT_POSE="${FLEXIV_INIT_POSE:-[-0.0009,-0.2370,-0.0133,2.1459,-0.0058,0.8170,-0.0012]}"
 
-POLICY_CONFIG="${POLICY_CONFIG:-pi05_simple_sorting}"
+POLICY_CONFIG="${POLICY_CONFIG:-pi05_yellow_to_pink}"
 POLICY_DIR="${POLICY_DIR:-/home/rhos/umipolicy/openpi/ckpt/70000}"
-PROMPT="${PROMPT:-simple sorting task}"
+PROMPT="${PROMPT:-yellow to pink task}"
 
 CTRL_FREQ="${CTRL_FREQ:-1}"
 STEPS_PER_INFERENCE="${STEPS_PER_INFERENCE:-4}"
