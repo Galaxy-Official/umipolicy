@@ -734,9 +734,10 @@ def main(args: Args) -> None:
             )
 
             first_target = physical_actions[0]
+            exec_horizon = len(physical_actions) * robot_dt
             LOGGER.info(
                 "[step=%d] infer=%.1fms policy_chunk=%d exec_steps=%d eef_xyz=(%.3f, %.3f, %.3f) "
-                "gripper=%.4f target_xyz=(%.3f, %.3f, %.3f) target_gripper=%.4f",
+                "exec_horizon=%.2fs gripper=%.4f target_xyz=(%.3f, %.3f, %.3f) target_gripper=%.4f",
                 step,
                 inference_latency * 1000.0,
                 policy_chunk_size,
@@ -744,6 +745,7 @@ def main(args: Args) -> None:
                 float(current_eepose[0]),
                 float(current_eepose[1]),
                 float(current_eepose[2]),
+                exec_horizon,
                 float(latest_frame["gripper_width"]),
                 float(first_target[0]),
                 float(first_target[1]),
