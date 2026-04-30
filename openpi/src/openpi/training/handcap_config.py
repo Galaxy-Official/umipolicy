@@ -190,6 +190,28 @@ def get_handcap_configs():
             keep_period=20_000,
         ),
         TrainConfig(
+            name="pi05_430_clamp_seal",
+            model=pi0_config.Pi0Config(
+                pi05=True,
+                use_tactile=False,
+                tactile_pretrained_ckpt="",
+                camera_keys=("wrist_0_rgb",),),
+            data=LeRobotHandcapWristDataConfig(
+                repo_id="lihongcs/430_clamp_seal_lerobot",
+                data_root="Data/430_clamp_seal_lerobot",
+                base_config=DataConfig(
+                    prompt_from_task=True,
+                    use_handcap=True,
+                ),
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader("/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pi05_base/params"),
+            num_train_steps=200_000,
+            batch_size=8,
+            log_interval=100,
+            save_interval=5000,
+            keep_period=20_000,
+        ),
+        TrainConfig(
             name="pi0_erase_board_and_write_tactile_200",
             model=pi0_config.Pi0Config(
                 use_tactile=True,
