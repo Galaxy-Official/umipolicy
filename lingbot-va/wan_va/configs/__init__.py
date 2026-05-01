@@ -12,6 +12,8 @@ from .va_libero_train_cfg import va_libero_train_cfg
 from .va_libero_i2va import va_libero_i2va_cfg
 from .va_handcap_cfg import va_handcap_cfg
 from .va_handcap_train_cfg import va_handcap_train_cfg
+from .va_clamp_seal_430_train_cfg import va_clamp_seal_430_train_cfg
+from .va_towel_hanging_430_train_cfg import va_towel_hanging_430_train_cfg
 from .va_yellow_lerobot_428_train_cfg import va_yellow_lerobot_428_train_cfg
 from .va_flexiv_cfg import va_flexiv_cfg
 from .va_flexiv_train_cfg import va_flexiv_train_cfg
@@ -30,6 +32,8 @@ VA_CONFIGS = {
     'libero_i2av': va_libero_i2va_cfg,
     'handcap': va_handcap_cfg,
     'handcap_train': va_handcap_train_cfg,
+    'towel_hanging_430_train': va_towel_hanging_430_train_cfg,
+    'clamp_seal_430_train': va_clamp_seal_430_train_cfg,
     'yellow_lerobot_428_train': va_yellow_lerobot_428_train_cfg,
     'flexiv': va_flexiv_cfg,
     'flexiv_train': va_flexiv_train_cfg,

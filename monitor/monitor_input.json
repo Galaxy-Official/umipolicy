@@ -20,6 +20,36 @@
       "name": "cosmos_erase_board",
       "script": "cosmos-policy/scripts/handcap_training/run_train_429_erase_board.sh",
       "enabled": true
+    },
+    {
+      "name": "umi_430_clampseal_wrist",
+      "script": "umi/run_scripts/train/run_umi_train_430_clampseal_wrist.sh",
+      "enabled": true
+    },
+    {
+      "name": "umi_430_towelhanging",
+      "script": "umi/run_scripts/train/run_umi_train_430_towelhanging_0425.sh",
+      "enabled": true
+    },
+    {
+      "name": "openpi_430_clamp_seal_pi05_4gpu",
+      "script": "openpi/scripts/handcap_training/430_clamp_seal_pi05_4gpu.sh",
+      "enabled": true
+    },
+    {
+      "name": "openpi_430_towel_hanging_pi05_4gpu",
+      "script": "openpi/scripts/handcap_training/430_towel_hanging_pi05_4gpu.sh",
+      "enabled": true
+    },
+    {
+      "name": "lingbot_va_430_clamp_seal_lerobot",
+      "script": "lingbot-va/script/run_va_posttrain_430_clamp_seal_lerobot.sh",
+      "enabled": true
+    },
+    {
+      "name": "lingbot_va_430_towel_hanging_lerobot",
+      "script": "lingbot-va/script/run_va_posttrain_430_towel_hanging_lerobot.sh",
+      "enabled": true
     }
   ]
 }

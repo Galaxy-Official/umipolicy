@@ -632,9 +632,32 @@ def run(args):
         # update empty_emb_path since it depends on dataset_path
         config.empty_emb_path = os.path.join(config.dataset_path, 'empty_emb.pt')
 
+    for attr in (
+        'batch_size',
+        'gradient_accumulation_steps',
+        'load_worker',
+        'num_steps',
+        'save_interval',
+        'gc_interval',
+        'learning_rate',
+        'cfg_prob',
+    ):
+        value = getattr(args, attr, None)
+        if value is not None:
+            setattr(config, attr, value)
+
     if rank == 0:
         logger.info(f"Using config: {args.config_name}")
         logger.info(f"World size: {world_size}, Local rank: {local_rank}")
+        logger.info(
+            "Training params: "
+            f"batch_size={config.batch_size}, "
+            f"gradient_accumulation_steps={config.gradient_accumulation_steps}, "
+            f"effective_global_batch={config.batch_size * world_size * config.gradient_accumulation_steps}, "
+            f"load_worker_per_rank={config.load_worker}, "
+            f"num_steps={config.num_steps}, "
+            f"save_root={config.save_root}"
+        )
 
     trainer = Trainer(config)
     trainer.train()
@@ -660,6 +683,55 @@ def main():
         type=str,
         default=None,
         help="Override the dataset_path from config",
+    )
+    parser.add_argument(
+        "--batch-size",
+        dest="batch_size",
+        type=int,
+        default=None,
+        help="Override per-rank dataloader batch size",
+    )
+    parser.add_argument(
+        "--gradient-accumulation-steps",
+        type=int,
+        default=None,
+        help="Override gradient accumulation steps",
+    )
+    parser.add_argument(
+        "--load-worker",
+        type=int,
+        default=None,
+        help="Override dataloader workers per rank",
+    )
+    parser.add_argument(
+        "--num-steps",
+        type=int,
+        default=None,
+        help="Override optimizer steps",
+    )
+    parser.add_argument(
+        "--save-interval",
+        type=int,
+        default=None,
+        help="Override checkpoint save interval",
+    )
+    parser.add_argument(
+        "--gc-interval",
+        type=int,
+        default=None,
+        help="Override CUDA/cache garbage collection interval",
+    )
+    parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=None,
+        help="Override learning rate",
+    )
+    parser.add_argument(
+        "--cfg-prob",
+        type=float,
+        default=None,
+        help="Override classifier-free guidance dropout probability",
     )
 
     args = parser.parse_args()
