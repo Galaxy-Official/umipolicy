@@ -303,12 +303,30 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
                 
                 def log_action_mse(step_log, category, pred_action, gt_action):
                     B, T, _ = pred_action.shape
-                    pred_action = pred_action.view(B, T, -1, 10)
-                    gt_action = gt_action.view(B, T, -1, 10)
+                    action_base_dim = int(OmegaConf.select(
+                        cfg, 'policy.action_base_dim', default=10))
+                    force_predict = bool(OmegaConf.select(
+                        cfg, 'policy.force_predict', default=False))
+                    force_dim = int(OmegaConf.select(
+                        cfg, 'policy.force_dim', default=0))
+                    per_robot_dim = action_base_dim + (force_dim if force_predict else 0)
+                    if pred_action.shape[-1] % per_robot_dim != 0:
+                        per_robot_dim = action_base_dim
+                    if pred_action.shape[-1] % per_robot_dim != 0:
+                        per_robot_dim = pred_action.shape[-1]
+                    pred_action = pred_action.view(B, T, -1, per_robot_dim)
+                    gt_action = gt_action.view(B, T, -1, per_robot_dim)
                     step_log[f'{category}_action_mse_error'] = torch.nn.functional.mse_loss(pred_action, gt_action)
-                    step_log[f'{category}_action_mse_error_pos'] = torch.nn.functional.mse_loss(pred_action[..., :3], gt_action[..., :3])
-                    step_log[f'{category}_action_mse_error_rot'] = torch.nn.functional.mse_loss(pred_action[..., 3:9], gt_action[..., 3:9])
-                    step_log[f'{category}_action_mse_error_width'] = torch.nn.functional.mse_loss(pred_action[..., 9], gt_action[..., 9])
+                    if per_robot_dim >= 3:
+                        step_log[f'{category}_action_mse_error_pos'] = torch.nn.functional.mse_loss(pred_action[..., :3], gt_action[..., :3])
+                    if per_robot_dim >= 9:
+                        step_log[f'{category}_action_mse_error_rot'] = torch.nn.functional.mse_loss(pred_action[..., 3:9], gt_action[..., 3:9])
+                    if per_robot_dim >= 10:
+                        step_log[f'{category}_action_mse_error_width'] = torch.nn.functional.mse_loss(pred_action[..., 9], gt_action[..., 9])
+                    if per_robot_dim > action_base_dim:
+                        step_log[f'{category}_action_mse_error_force'] = torch.nn.functional.mse_loss(
+                            pred_action[..., action_base_dim:per_robot_dim],
+                            gt_action[..., action_base_dim:per_robot_dim])
                 # run diffusion sampling on a training batch
                 if (self.epoch % cfg.training.sample_every) == 0 and accelerator.is_main_process:
                     with torch.no_grad():

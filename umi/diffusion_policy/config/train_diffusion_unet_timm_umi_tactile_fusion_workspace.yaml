@@ -1,0 +1,71 @@
+defaults:
+  - train_diffusion_unet_timm_umi_workspace
+  - override task: umi_tactile_force
+  - _self_
+
+name: train_diffusion_unet_timm_umi_tactile_fusion
+
+use_tactile: True
+force_predict: False
+force_guide: False
+force_dim: 2
+fusion_method: linear
+fusion_output_dim: 1024
+force_min: 0.0
+force_max: 10.0
+min_vision_weight: 0.2
+
+wrist_backbone: vit_base_patch16_224
+wrist_checkpoint_path: ckpt/vit_b_16.pth
+tactile_backbone: vit_base_patch16_224
+tactile_checkpoint_path: null
+
+task:
+  use_tactile: ${use_tactile}
+  force_predict: ${force_predict}
+  force_guide: ${force_guide}
+  force_dim: ${force_dim}
+
+policy:
+  force_predict: ${task.force_predict}
+  force_dim: ${task.force_dim}
+  action_base_dim: 10
+  obs_encoder:
+    _target_: diffusion_policy.model.vision.timm_obs_encoder_tactile.TimmObsEncoderTactile
+    shape_meta: ${shape_meta}
+    model_name: ${wrist_backbone}
+    pretrained: False
+    checkpoint_path: ${wrist_checkpoint_path}
+    frozen: False
+    global_pool: ''
+    feature_aggregation: null
+    position_encording: sinusoidal
+    downsample_ratio: 32
+    transforms:
+      - type: RandomCrop
+        ratio: 0.95
+      - _target_: torchvision.transforms.ColorJitter
+        brightness: 0.3
+        contrast: 0.4
+        saturation: 0.5
+        hue: 0.08
+    use_group_norm: True
+    share_rgb_model: False
+    imagenet_norm: True
+    use_tactile: ${task.use_tactile}
+    tactile_keys:
+      - left_tactile
+      - right_tactile
+    tactile_model_name: ${tactile_backbone}
+    tactile_pretrained: False
+    tactile_checkpoint_path: ${tactile_checkpoint_path}
+    tactile_feature_aggregation: null
+    fusion_method: ${fusion_method}
+    fusion_output_dim: ${fusion_output_dim}
+    force_guide: ${task.force_guide}
+    force_keys:
+      - robot0_force
+    force_range:
+      - ${force_min}
+      - ${force_max}
+    min_vision_weight: ${min_vision_weight}

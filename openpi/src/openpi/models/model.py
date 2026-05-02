@@ -73,6 +73,7 @@ IMAGE_RESOLUTION = (224, 224)
 #         ...  # Masks for additional views
 #     },
 #     "state": float32[*b, s],  # Low-dimensional robot state
+#     "force": float32[*b, 2],  # Optional left/right contact force in Newtons
 #     "tokenized_prompt": int32[*b, l],  # Optional, tokenized language prompt
 #     "tokenized_prompt_mask": bool[*b, l],  # Optional, mask for tokenized prompt
 #     "token_ar_mask": int32[*b, l],  # Optional, autoregressive mask for FAST model
@@ -104,6 +105,8 @@ class Observation(Generic[ArrayT]):
     tactile_image_masks: dict[str, at.Bool[ArrayT, "*b"]]
     # Low-dimensional robot state.
     state: at.Float[ArrayT, "*b s"]
+    # Optional left/right contact force in Newtons. Used by tactile force-guided fusion.
+    force: at.Float[ArrayT, "*b f"] | None = None
 
     # Tokenized prompt.
     tokenized_prompt: at.Int[ArrayT, "*b l"] | None = None
@@ -157,6 +160,7 @@ class Observation(Generic[ArrayT]):
             image_masks=image_masks,
             tactile_image_masks=tactile_image_masks,
             state=data["state"],
+            force=data.get("force"),
             tokenized_prompt=data.get("tokenized_prompt"),
             tokenized_prompt_mask=data.get("tokenized_prompt_mask"),
             token_ar_mask=data.get("token_ar_mask"),
@@ -282,6 +286,7 @@ def preprocess_observation(
         tactile_images=out_tactile_images,
         tactile_image_masks=out_tactile_image_masks,
         state=observation.state,
+        force=observation.force,
         tokenized_prompt=observation.tokenized_prompt,
         tokenized_prompt_mask=observation.tokenized_prompt_mask,
         token_ar_mask=observation.token_ar_mask,

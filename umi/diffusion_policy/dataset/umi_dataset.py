@@ -35,6 +35,9 @@ class UmiDataset(BaseDataset):
         action_padding: bool=False,
         temporally_independent_normalization: bool=False,
         repeat_frame_prob: float=0.0,
+        force_predict: bool=False,
+        force_dim: int=2,
+        action_base_dim: int=10,
         seed: int=42,
         val_ratio: float=0.0,
         max_duration: Optional[float]=None
@@ -42,6 +45,9 @@ class UmiDataset(BaseDataset):
         self.pose_repr = pose_repr
         self.obs_pose_repr = self.pose_repr.get('obs_pose_repr', 'rel')
         self.action_pose_repr = self.pose_repr.get('action_pose_repr', 'rel')
+        self.force_predict = bool(force_predict)
+        self.force_dim = int(force_dim)
+        self.action_base_dim = int(action_base_dim)
         
         if cache_dir is None:
             # load into memory store
@@ -222,11 +228,18 @@ class UmiDataset(BaseDataset):
         # action
         assert data_cache['action'].shape[-1] % self.num_robot == 0
         dim_a = data_cache['action'].shape[-1] // self.num_robot
+        if dim_a < self.action_base_dim:
+            raise RuntimeError(
+                f"Expected at least {self.action_base_dim} dims per robot after "
+                f"UMI action conversion, got {dim_a}.")
         action_normalizers = list()
         for i in range(self.num_robot):
-            action_normalizers.append(get_range_normalizer_from_stat(array_to_stats(data_cache['action'][..., i * dim_a: i * dim_a + 3])))              # pos
-            action_normalizers.append(get_identity_normalizer_from_stat(array_to_stats(data_cache['action'][..., i * dim_a + 3: (i + 1) * dim_a - 1]))) # rot
-            action_normalizers.append(get_range_normalizer_from_stat(array_to_stats(data_cache['action'][..., (i + 1) * dim_a - 1: (i + 1) * dim_a])))  # gripper
+            start = i * dim_a
+            action_normalizers.append(get_range_normalizer_from_stat(array_to_stats(data_cache['action'][..., start:start + 3])))              # pos
+            action_normalizers.append(get_identity_normalizer_from_stat(array_to_stats(data_cache['action'][..., start + 3:start + 9])))      # rot6d
+            action_normalizers.append(get_range_normalizer_from_stat(array_to_stats(data_cache['action'][..., start + 9:start + 10])))        # gripper
+            if dim_a > self.action_base_dim:
+                action_normalizers.append(get_range_normalizer_from_stat(array_to_stats(data_cache['action'][..., start + self.action_base_dim:(i + 1) * dim_a])))  # force
 
         normalizer['action'] = concatenate_normalizer(action_normalizers)
 
@@ -241,6 +254,8 @@ class UmiDataset(BaseDataset):
             elif key.endswith('rot_axis_angle') or 'rot_axis_angle_wrt' in key:
                 this_normalizer = get_identity_normalizer_from_stat(stat)
             elif key.endswith('gripper_width'):
+                this_normalizer = get_range_normalizer_from_stat(stat)
+            elif 'force' in key:
                 this_normalizer = get_range_normalizer_from_stat(stat)
             else:
                 raise RuntimeError('unsupported')
@@ -336,13 +351,20 @@ class UmiDataset(BaseDataset):
             del obs_dict[key]
 
         actions = list()
+        raw_action_dim = data['action'].shape[-1]
+        assert raw_action_dim % self.num_robot == 0
+        raw_dim_a = raw_action_dim // self.num_robot
+        if raw_dim_a < 7:
+            raise RuntimeError(
+                f"Expected raw action to contain at least 7 dims per robot, got {raw_dim_a}.")
         for robot_id in range(self.num_robot):
+            raw_start = raw_dim_a * robot_id
             # convert pose to mat
             pose_mat = pose_to_mat(np.concatenate([
                 obs_dict[f'robot{robot_id}_eef_pos'],
                 obs_dict[f'robot{robot_id}_eef_rot_axis_angle']
             ], axis=-1))
-            action_mat = pose_to_mat(data['action'][...,7 * robot_id: 7 * robot_id + 6])
+            action_mat = pose_to_mat(data['action'][..., raw_start: raw_start + 6])
             
             # solve relative obs
             obs_pose_mat = convert_pose_mat_rep(
@@ -360,8 +382,19 @@ class UmiDataset(BaseDataset):
             obs_pose = mat_to_pose10d(obs_pose_mat)
             action_pose = mat_to_pose10d(action_pose_mat)
         
-            action_gripper = data['action'][..., 7 * robot_id + 6: 7 * robot_id + 7]
-            actions.append(np.concatenate([action_pose, action_gripper], axis=-1))
+            action_gripper = data['action'][..., raw_start + 6: raw_start + 7]
+            action_parts = [action_pose, action_gripper]
+            if self.force_predict:
+                force_start = raw_start + 7
+                force_end = force_start + self.force_dim
+                if raw_dim_a >= 7 + self.force_dim:
+                    action_force = data['action'][..., force_start:force_end]
+                else:
+                    action_force = np.zeros(
+                        data['action'].shape[:-1] + (self.force_dim,),
+                        dtype=data['action'].dtype)
+                action_parts.append(action_force)
+            actions.append(np.concatenate(action_parts, axis=-1))
 
             # generate data
             obs_dict[f'robot{robot_id}_eef_pos'] = obs_pose[:,:3]

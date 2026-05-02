@@ -21,6 +21,8 @@ Usage:
     [--obs-horizon 2] \
     [--camera-config-path <path>] \
     [--use-tactile | --no-use-tactile] \
+    [--force-predict | --no-force-predict] \
+    [--force-guide | --no-force-guide] \
     [--action-latency 0.0] \
     [--init-qpos "<7 floats, comma list, or bracket list>"] \
     [--record-root <dir>] \
@@ -150,6 +152,8 @@ STEPS_PER_INFERENCE="4"
 OBS_HORIZON="2"
 CAMERA_CONFIG_PATH=""
 USE_TACTILE="true"
+FORCE_PREDICT="false"
+FORCE_GUIDE="false"
 ACTION_LATENCY="0.0"
 INIT_QPOS=""
 RECORD_ROOT=""
@@ -221,6 +225,22 @@ while [[ $# -gt 0 ]]; do
       ;;
     --no-use-tactile)
       USE_TACTILE="false"
+      shift
+      ;;
+    --force-predict)
+      FORCE_PREDICT="true"
+      shift
+      ;;
+    --no-force-predict)
+      FORCE_PREDICT="false"
+      shift
+      ;;
+    --force-guide)
+      FORCE_GUIDE="true"
+      shift
+      ;;
+    --no-force-guide)
+      FORCE_GUIDE="false"
       shift
       ;;
     --action-latency)
@@ -364,6 +384,14 @@ if [[ "$USE_TACTILE" == "true" ]]; then
   CLIENT_CMD+=(--use-tactile)
 else
   CLIENT_CMD+=(--no-use-tactile)
+fi
+
+if [[ "$FORCE_PREDICT" == "true" ]]; then
+  CLIENT_CMD+=(--force-predict)
+fi
+
+if [[ "$FORCE_GUIDE" == "true" ]]; then
+  CLIENT_CMD+=(--force-guide)
 fi
 
 if [[ -n "$INIT_QPOS" ]]; then

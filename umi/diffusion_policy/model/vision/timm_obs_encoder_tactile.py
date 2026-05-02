@@ -6,6 +6,7 @@ from typing import Dict, Optional, Tuple
 import timm
 import torch
 import torch.nn as nn
+from torch.nn.parameter import UninitializedParameter
 import torchvision
 
 from diffusion_policy.common.pytorch_util import replace_submodules
@@ -45,6 +46,15 @@ class TimmObsEncoderTactile(ModuleAttrMixin):
             tactile_checkpoint_path: Optional[str] = None,
             tactile_feature_aggregation: Optional[str] = None,
             tactile_downsample_ratio: Optional[int] = None,
+            use_tactile: bool = True,
+            fusion_method: str = 'concat',
+            fusion_output_dim: Optional[int] = None,
+            force_guide: bool = False,
+            force_keys: Optional[list] = None,
+            force_range: Tuple[float, float] = (0.0, 10.0),
+            min_vision_weight: float = 0.2,
+            default_tactile_weight: float = 0.5,
+            force_use_abs: bool = True,
         ):
         """
         Assumes rgb input: B,T,C,H,W
@@ -87,6 +97,27 @@ class TimmObsEncoderTactile(ModuleAttrMixin):
         if unknown_tactile_keys:
             raise ValueError(
                 f"tactile_keys must be rgb obs keys. Unknown keys: {unknown_tactile_keys}")
+        if not use_tactile:
+            rgb_keys = [key for key in rgb_keys if key not in tactile_keys]
+            tactile_keys = []
+        if not rgb_keys:
+            raise RuntimeError(
+                "TimmObsEncoderTactile requires at least one active rgb key.")
+
+        fusion_method = fusion_method.lower()
+        if fusion_method in ['linear_fusion', 'weighted_linear']:
+            fusion_method = 'linear'
+        if fusion_method in ['film_fusion', 'film']:
+            fusion_method = 'film'
+        if fusion_method not in ['concat', 'linear', 'film']:
+            raise ValueError(
+                "fusion_method must be one of: concat, linear, film.")
+        if fusion_method in ['linear', 'film'] and fusion_output_dim is None:
+            fusion_output_dim = 1024
+        if not 0.0 <= min_vision_weight < 1.0:
+            raise ValueError("min_vision_weight must be in [0, 1).")
+        if not 0.0 <= default_tactile_weight <= 1.0:
+            raise ValueError("default_tactile_weight must be in [0, 1].")
 
         tactile_model_name = tactile_model_name or model_name
         tactile_pretrained = pretrained if tactile_pretrained is None else tactile_pretrained
@@ -224,9 +255,38 @@ class TimmObsEncoderTactile(ModuleAttrMixin):
         self.key_position_embedding_map = key_position_embedding_map
         self.key_aggregation_transformer_map = key_aggregation_transformer_map
         self.key_attention_pool_2d_map = key_attention_pool_2d_map
+        self.use_tactile = bool(use_tactile)
+        self.fusion_method = fusion_method
+        self.fusion_output_dim = fusion_output_dim
+        self.force_guide = bool(force_guide)
+        self.force_keys = (
+            sorted(force_keys) if force_keys is not None
+            else sorted([key for key in low_dim_keys if 'force' in key])
+        )
+        self.force_range = tuple(float(x) for x in force_range)
+        self.min_vision_weight = float(min_vision_weight)
+        self.default_tactile_weight = float(default_tactile_weight)
+        self.force_use_abs = bool(force_use_abs)
+
+        if self.fusion_method in ['linear', 'film']:
+            self.vision_fusion_proj = nn.LazyLinear(self.fusion_output_dim)
+            self.tactile_fusion_proj = nn.LazyLinear(self.fusion_output_dim)
+            if self.fusion_method == 'film':
+                self.film_generator = nn.Sequential(
+                    nn.LayerNorm(self.fusion_output_dim),
+                    nn.Linear(self.fusion_output_dim, 2 * self.fusion_output_dim)
+                )
+
+        print('use_tactile:      ', self.use_tactile)
+        print('fusion_method:    ', self.fusion_method)
+        print('force_guide:      ', self.force_guide)
+        print('force_keys:       ', self.force_keys)
 
         logger.info(
-            "number of parameters: %e", sum(p.numel() for p in self.parameters())
+            "number of initialized parameters: %e",
+            sum(
+                p.numel() for p in self.parameters()
+                if not isinstance(p, UninitializedParameter))
         )
 
     def _build_transform(self, transforms, image_shape, imagenet_norm):
@@ -435,8 +495,108 @@ class TimmObsEncoderTactile(ModuleAttrMixin):
             f"{key} uses {model_name}; set a non-null feature_aggregation "
             "for non-ViT backbones.")
 
-    def forward(self, obs_dict: Dict[str, torch.Tensor]):
-        features = list()
+    def _compute_modality_weights(
+            self,
+            batch_size: int,
+            device: torch.device,
+            dtype: torch.dtype,
+            raw_obs_dict: Optional[Dict[str, torch.Tensor]] = None):
+        if not self.force_guide:
+            tactile_weight = torch.full(
+                (batch_size, 1),
+                self.default_tactile_weight,
+                device=device,
+                dtype=dtype)
+            return 1.0 - tactile_weight, tactile_weight
+
+        if raw_obs_dict is None:
+            raw_obs_dict = {}
+
+        force_values = list()
+        for key in self.force_keys:
+            if key not in raw_obs_dict:
+                continue
+            force = raw_obs_dict[key]
+            if force.shape[0] != batch_size:
+                continue
+            if force.ndim >= 3:
+                force = force[:, -1]
+            else:
+                force = force.reshape(batch_size, -1)
+            force = force.to(device=device, dtype=dtype)
+            if self.force_use_abs:
+                force = force.abs()
+            force_values.append(force.reshape(batch_size, -1))
+
+        if len(force_values) == 0:
+            force_scalar = torch.zeros((batch_size, 1), device=device, dtype=dtype)
+        else:
+            force_scalar = torch.cat(force_values, dim=-1)
+            force_scalar = torch.norm(force_scalar, p=2.0, dim=-1, keepdim=True)
+
+        force_min, force_max = self.force_range
+        denom = max(force_max - force_min, 1e-6)
+        force_alpha = ((force_scalar - force_min) / denom).clamp(0.0, 1.0)
+
+        tactile_weight = (1.0 - self.min_vision_weight) * force_alpha
+        vision_weight = 1.0 - tactile_weight
+        return vision_weight, tactile_weight
+
+    def _fuse_features(
+            self,
+            vision_features,
+            tactile_features,
+            low_dim_features,
+            batch_size: int,
+            raw_obs_dict: Optional[Dict[str, torch.Tensor]] = None):
+        if self.fusion_method == 'concat':
+            return torch.cat(vision_features + tactile_features + low_dim_features, dim=-1)
+
+        if len(vision_features) == 0:
+            raise RuntimeError("linear/FiLM fusion requires at least one vision key.")
+
+        vision_feature = torch.cat(vision_features, dim=-1)
+        vision_feature = self.vision_fusion_proj(vision_feature)
+
+        if len(tactile_features) == 0:
+            fused_feature = vision_feature
+        else:
+            tactile_feature = torch.cat(tactile_features, dim=-1)
+            tactile_feature = self.tactile_fusion_proj(tactile_feature)
+            vision_weight, tactile_weight = self._compute_modality_weights(
+                batch_size=batch_size,
+                device=vision_feature.device,
+                dtype=vision_feature.dtype,
+                raw_obs_dict=raw_obs_dict)
+
+            if self.fusion_method == 'linear':
+                fused_feature = (
+                    vision_weight * vision_feature
+                    + tactile_weight * tactile_feature)
+            elif self.fusion_method == 'film':
+                gamma_beta = self.film_generator(tactile_feature)
+                gamma, beta = torch.chunk(gamma_beta, chunks=2, dim=-1)
+                gamma = gamma * tactile_weight
+                beta = beta * tactile_weight
+                modulated_vision = vision_feature * (1.0 + gamma) + beta
+                fused_feature = (
+                    vision_weight * modulated_vision
+                    + tactile_weight * tactile_feature)
+            else:
+                raise RuntimeError(f"Unsupported fusion_method: {self.fusion_method}")
+
+        if len(low_dim_features) > 0:
+            fused_feature = torch.cat([fused_feature] + low_dim_features, dim=-1)
+        return fused_feature
+
+    def forward(
+            self,
+            obs_dict: Dict[str, torch.Tensor],
+            raw_obs_dict: Optional[Dict[str, torch.Tensor]] = None):
+        rgb_features = list()
+        vision_features = list()
+        tactile_features = list()
+        low_dim_features = list()
         batch_size = next(iter(obs_dict.values())).shape[0]
 
         for key in self.rgb_keys:
@@ -450,16 +610,29 @@ class TimmObsEncoderTactile(ModuleAttrMixin):
             raw_feature = self.key_model_map[model_key](img)
             feature = self.aggregate_feature(key, raw_feature)
             assert len(feature.shape) == 2 and feature.shape[0] == B * T
-            features.append(feature.reshape(B, -1))
+            feature = feature.reshape(B, -1)
+            rgb_features.append(feature)
+            if key in self.tactile_keys:
+                tactile_features.append(feature)
+            else:
+                vision_features.append(feature)
 
         for key in self.low_dim_keys:
             data = obs_dict[key]
             B, T = data.shape[:2]
             assert B == batch_size
             assert data.shape[2:] == self.key_shape_map[key]
-            features.append(data.reshape(B, -1))
+            low_dim_features.append(data.reshape(B, -1))
 
-        return torch.cat(features, dim=-1)
+        if self.fusion_method == 'concat':
+            return torch.cat(rgb_features + low_dim_features, dim=-1)
+
+        return self._fuse_features(
+            vision_features=vision_features,
+            tactile_features=tactile_features,
+            low_dim_features=low_dim_features,
+            batch_size=batch_size,
+            raw_obs_dict=raw_obs_dict)
 
     @torch.no_grad()
     def output_shape(self):

@@ -119,8 +119,9 @@ def decode_handcap_action_chunk(action_chunk: np.ndarray) -> np.ndarray:
     actions = np.asarray(action_chunk, dtype=np.float64)
     if actions.ndim != 2:
         raise ValueError(f"Expected action chunk with rank 2, got shape {actions.shape}")
-    if actions.shape[-1] != 10:
-        raise ValueError(f"Expected handcap action dim 10, got {actions.shape[-1]}")
+    if actions.shape[-1] < 10:
+        raise ValueError(f"Expected handcap action dim >= 10, got {actions.shape[-1]}")
+    actions = actions[:, :10]
 
     pose_mat = _pose10d_to_mat(actions[:, :9])
     pose_rotvec = mat_to_certain_pose_type(pose_mat, "rotvec")
@@ -167,6 +168,15 @@ def _prepare_tactile_image(image_bgr: np.ndarray | None, use_tactile: bool) -> n
     return np.zeros_like(rgb)
 
 
+def _prepare_force(force: np.ndarray | None) -> np.ndarray:
+    if force is None:
+        return np.zeros((2,), dtype=np.float32)
+    force_arr = np.asarray(force, dtype=np.float32).reshape(-1)
+    if force_arr.shape[-1] < 2:
+        force_arr = np.pad(force_arr, (0, 2 - force_arr.shape[-1]))
+    return np.clip(force_arr[:2], 0.0, 10.0)
+
+
 def _prepare_video_frame(image: np.ndarray | None, frame_shape: tuple[int, int]) -> np.ndarray | None:
     if image is None:
         return None
@@ -203,18 +213,21 @@ def _make_policy_observation(latest_frame: dict[str, Any], prompt: str, use_tact
     left_tactile = _prepare_tactile_image(latest_frame["left_tactile_img"], use_tactile)
     right_tactile = _prepare_tactile_image(latest_frame["right_tactile_img"], use_tactile)
     state = encode_state_to_handcap_state(latest_frame["eepose"], float(latest_frame["gripper_width"]))
+    force = _prepare_force(latest_frame.get("force"))
 
     return {
         "observation/wrist_image": wrist_image,
         "observation/left_tactile": left_tactile,
         "observation/right_tactile": right_tactile,
         "observation/state": state,
+        "observation/force": force,
         # Keep LeRobot-style names too, in case this script is used with a server
         # configuration that includes HandcapRepackTransform.
         "observation.images.wrist": wrist_image,
         "observation.tactiles.left": left_tactile,
         "observation.tactiles.right": right_tactile,
         "observation.state": state,
+        "observation.force": force,
         "prompt": prompt,
     }
 
@@ -235,6 +248,8 @@ class Args:
     camera_config_path: Path = dataclasses.field(default_factory=_default_camera_config_path)
     record_root: str = "realworld_replay_recording"
     use_tactile: bool = True
+    force_predict: bool = False
+    force_guide: bool = False
     dry_run: bool = False
     save_states_json: bool = True
 
@@ -317,6 +332,13 @@ class Recorder:
             "gripper_width": float(latest_frame["gripper_width"]),
             "action_chunk_size": int(action_chunk.shape[0]),
         }
+        if "force" in latest_frame:
+            force = _prepare_force(latest_frame.get("force"))
+            state_entry["force_left"] = float(force[0])
+            state_entry["force_right"] = float(force[1])
+        if action_chunk.shape[-1] >= 12:
+            state_entry["pred_force_left"] = float(action_chunk[0, 10])
+            state_entry["pred_force_right"] = float(action_chunk[0, 11])
         if server_timing is not None:
             for key, value in server_timing.items():
                 state_entry[f"server_{key}"] = float(value)
@@ -392,6 +414,7 @@ class ObservationThread(threading.Thread):
                     right_tactile_img, _ = self.cam_tactile_right.get_data()
                 eepose = self.env.get_ee_pose()
                 gripper_width = self.env.get_gripper_width()
+                force = self.env.get_force()
 
                 if wrist_img is not None:
                     if wrist_img.shape[0] != 768 or wrist_img.shape[1] != 768:
@@ -407,6 +430,7 @@ class ObservationThread(threading.Thread):
                             "cam_cap_time": cam_cap_time,
                             "eepose": np.asarray(eepose, dtype=np.float64),
                             "gripper_width": float(gripper_width),
+                            "force": np.asarray(force, dtype=np.float32),
                         }
                     )
                     self.queue = self.queue[-self.maxlen :]
@@ -515,6 +539,19 @@ class FlexivRealEnv:
 
     def get_gripper_width(self) -> float:
         return float(self._gripper.states().width)
+
+    def get_force(self) -> np.ndarray:
+        try:
+            states = self._gripper.states()
+            if isinstance(states, dict):
+                left = states.get("left_force", states.get("force", 0.0))
+                right = states.get("right_force", states.get("force", left))
+            else:
+                left = getattr(states, "left_force", getattr(states, "force", 0.0))
+                right = getattr(states, "right_force", getattr(states, "force", left))
+            return np.asarray([left, right], dtype=np.float32)
+        except Exception:
+            return np.zeros((2,), dtype=np.float32)
 
     def exec_actions(self, actions: np.ndarray, timestamps: np.ndarray) -> None:
         receive_time = time.time()
@@ -640,11 +677,14 @@ def main(args: Args) -> None:
     prompt = args.prompt or args.task_name
     robot_dt = 1.0 / args.ctrl_freq
     LOGGER.info(
-        "Control config: ctrl_freq=%.3fHz, robot_dt=%.4fs, steps_per_inference=%d, action_latency=%.4fs",
+        "Control config: ctrl_freq=%.3fHz, robot_dt=%.4fs, steps_per_inference=%d, action_latency=%.4fs, "
+        "force_predict=%s, force_guide=%s",
         args.ctrl_freq,
         robot_dt,
         args.steps_per_inference,
         args.action_latency,
+        args.force_predict,
+        args.force_guide,
     )
 
     camera_config_path = args.camera_config_path
@@ -734,10 +774,13 @@ def main(args: Args) -> None:
             )
 
             first_target = physical_actions[0]
+            force_obs = _prepare_force(latest_frame.get("force"))
+            force_pred = action_chunk[0, 10:12] if action_chunk.shape[-1] >= 12 else np.zeros((2,), dtype=np.float64)
             exec_horizon = len(physical_actions) * robot_dt
             LOGGER.info(
                 "[step=%d] infer=%.1fms policy_chunk=%d exec_steps=%d eef_xyz=(%.3f, %.3f, %.3f) "
-                "exec_horizon=%.2fs gripper=%.4f target_xyz=(%.3f, %.3f, %.3f) target_gripper=%.4f",
+                "exec_horizon=%.2fs gripper=%.4f force=(%.2f, %.2f) target_xyz=(%.3f, %.3f, %.3f) "
+                "target_gripper=%.4f pred_force=(%.2f, %.2f)",
                 step,
                 inference_latency * 1000.0,
                 policy_chunk_size,
@@ -747,10 +790,14 @@ def main(args: Args) -> None:
                 float(current_eepose[2]),
                 exec_horizon,
                 float(latest_frame["gripper_width"]),
+                float(force_obs[0]),
+                float(force_obs[1]),
                 float(first_target[0]),
                 float(first_target[1]),
                 float(first_target[2]),
                 float(first_target[6]),
+                float(force_pred[0]),
+                float(force_pred[1]),
             )
     finally:
         obs_thread.stop()

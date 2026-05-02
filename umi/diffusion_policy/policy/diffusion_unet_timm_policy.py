@@ -29,6 +29,9 @@ class DiffusionUnetTimmPolicy(BaseImagePolicy):
             input_pertub=0.1,
             inpaint_fixed_action_prefix=False,
             train_diffusion_n_samples=1,
+            force_predict=False,
+            force_dim=2,
+            action_base_dim=10,
             # parameters passed to step
             **kwargs
         ):
@@ -70,11 +73,42 @@ class DiffusionUnetTimmPolicy(BaseImagePolicy):
         self.input_pertub = input_pertub
         self.inpaint_fixed_action_prefix = inpaint_fixed_action_prefix
         self.train_diffusion_n_samples = int(train_diffusion_n_samples)
+        self.force_predict = bool(force_predict)
+        self.force_dim = int(force_dim)
+        self.action_base_dim = int(action_base_dim)
         self.kwargs = kwargs
 
         if num_inference_steps is None:
             num_inference_steps = noise_scheduler.config.num_train_timesteps
         self.num_inference_steps = num_inference_steps
+
+    def _encode_obs(self, nobs, raw_obs_dict=None):
+        if hasattr(self.obs_encoder, 'force_guide'):
+            return self.obs_encoder(nobs, raw_obs_dict=raw_obs_dict)
+        return self.obs_encoder(nobs)
+
+    def _format_action_result(self, action_pred):
+        result = {
+            'action': action_pred,
+            'action_pred': action_pred
+        }
+        if not self.force_predict:
+            return result
+
+        per_robot_dim = self.action_base_dim + self.force_dim
+        if action_pred.shape[-1] % per_robot_dim != 0:
+            return result
+
+        action_parts = action_pred.reshape(
+            *action_pred.shape[:-1], -1, per_robot_dim)
+        robot_action = action_parts[..., :self.action_base_dim]
+        result['robot_action_pred'] = robot_action.reshape(
+            *action_pred.shape[:-1], -1)
+        result['gripper_pred'] = action_parts[
+            ..., self.action_base_dim - 1:self.action_base_dim]
+        result['force_pred'] = action_parts[
+            ..., self.action_base_dim:self.action_base_dim + self.force_dim]
+        return result
 
     # ========= inference  ============
     def conditional_sample(self, 
@@ -131,7 +165,7 @@ class DiffusionUnetTimmPolicy(BaseImagePolicy):
         B = next(iter(nobs.values())).shape[0]
 
         # condition through global feature
-        global_cond = self.obs_encoder(nobs)
+        global_cond = self._encode_obs(nobs, raw_obs_dict=obs_dict)
 
         # empty data for action
         cond_data = torch.zeros(size=(B, self.action_horizon, self.action_dim), device=self.device, dtype=self.dtype)
@@ -156,11 +190,7 @@ class DiffusionUnetTimmPolicy(BaseImagePolicy):
         assert nsample.shape == (B, self.action_horizon, self.action_dim)
         action_pred = self.normalizer['action'].unnormalize(nsample)
         
-        result = {
-            'action': action_pred,
-            'action_pred': action_pred
-        }
-        return result
+        return self._format_action_result(action_pred)
 
     # ========= training  ============
     def set_normalizer(self, normalizer: LinearNormalizer):
@@ -173,7 +203,7 @@ class DiffusionUnetTimmPolicy(BaseImagePolicy):
         nactions = self.normalizer['action'].normalize(batch['action'])
         
         assert self.obs_as_global_cond
-        global_cond = self.obs_encoder(nobs)
+        global_cond = self._encode_obs(nobs, raw_obs_dict=batch['obs'])
 
         # train on multiple diffusion samples per obs
         if self.train_diffusion_n_samples != 1:

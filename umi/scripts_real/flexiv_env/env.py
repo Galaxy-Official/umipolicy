@@ -84,6 +84,26 @@ class FlexivEnv:
     def get_gripper_width(self):
         return self.gripper.states().width
 
+    def get_force(self):
+        """Return a 2D force observation in Newtons for policy conditioning.
+
+        Flexiv gripper APIs commonly expose a single sensed force. The policy
+        uses two force channels, so scalar hardware readings are mirrored into
+        left/right slots. If the active driver exposes independent channels,
+        those are used directly.
+        """
+        try:
+            states = self.gripper.states()
+            if isinstance(states, dict):
+                left = states.get('left_force', states.get('force', 0.0))
+                right = states.get('right_force', states.get('force', left))
+            else:
+                left = getattr(states, 'left_force', getattr(states, 'force', 0.0))
+                right = getattr(states, 'right_force', getattr(states, 'force', left))
+            return np.array([left, right], dtype=np.float32)
+        except Exception:
+            return np.zeros(2, dtype=np.float32)
+
     def reset(self):
         # Temporarily switch to joint mode for reset
         logger.info("Switching to NRT_JOINT_POSITION for reset...")

@@ -262,8 +262,12 @@ def main(input, output, robot_config,
                     lambda x: torch.from_numpy(x).unsqueeze(0).to(device))
                 result = policy.predict_action(obs_dict)
                 action = result['action_pred'][0].detach().to('cpu').numpy()
-                assert action.shape[-1] == 10 * len(robots_config)
-                action = get_real_umi_action(action, obs, action_pose_repr)
+                assert action.shape[-1] % len(robots_config) == 0
+                assert action.shape[-1] // len(robots_config) >= 10
+                action = get_real_umi_action(
+                    action, obs, action_pose_repr,
+                    action_base_dim=int(OmegaConf.select(cfg, 'policy.action_base_dim', default=10)),
+                    force_dim=int(OmegaConf.select(cfg, 'policy.force_dim', default=0)))
                 assert action.shape[-1] == 7 * len(robots_config)
                 del result
 
@@ -478,7 +482,10 @@ def main(input, output, robot_config,
                                 lambda x: torch.from_numpy(x).unsqueeze(0).to(device))
                             result = policy.predict_action(obs_dict)
                             raw_action = result['action_pred'][0].detach().to('cpu').numpy()
-                            action = get_real_umi_action(raw_action, obs, action_pose_repr)
+                            action = get_real_umi_action(
+                                raw_action, obs, action_pose_repr,
+                                action_base_dim=int(OmegaConf.select(cfg, 'policy.action_base_dim', default=10)),
+                                force_dim=int(OmegaConf.select(cfg, 'policy.force_dim', default=0)))
                             print('Inference latency:', time.time() - s)
                         
                         # convert policy action to env actions

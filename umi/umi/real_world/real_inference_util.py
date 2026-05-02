@@ -173,10 +173,26 @@ def get_real_umi_obs_dict(
 def get_real_umi_action(
         action: np.ndarray,
         env_obs: Dict[str, np.ndarray], 
-        action_pose_repr: str='abs'
+        action_pose_repr: str='abs',
+        action_base_dim: int=10,
+        force_dim: int=0
     ):
 
-    n_robots = int(action.shape[-1] // 10)
+    robot_ids = sorted([
+        int(key[len('robot'):key.index('_eef_pos')])
+        for key in env_obs.keys()
+        if key.startswith('robot') and key.endswith('_eef_pos')
+    ])
+    n_robots = len(robot_ids)
+    if n_robots == 0:
+        n_robots = int(action.shape[-1] // action_base_dim)
+    if action.shape[-1] % n_robots != 0:
+        raise ValueError(
+            f"Action dim {action.shape[-1]} is not divisible by {n_robots} robots.")
+    per_robot_dim = action.shape[-1] // n_robots
+    if per_robot_dim < action_base_dim:
+        raise ValueError(
+            f"Expected at least {action_base_dim} action dims per robot, got {per_robot_dim}.")
     env_action = list()
     for robot_idx in range(n_robots):
         # convert pose to mat
@@ -185,7 +201,7 @@ def get_real_umi_action(
             env_obs[f'robot{robot_idx}_eef_rot_axis_angle'][-1]
         ], axis=-1))
 
-        start = robot_idx * 10
+        start = robot_idx * per_robot_dim
         action_pose10d = action[..., start:start+9]
         action_grip = action[..., start+9:start+10]
         action_pose_mat = pose10d_to_mat(action_pose10d)

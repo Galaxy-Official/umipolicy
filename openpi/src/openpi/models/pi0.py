@@ -107,6 +107,10 @@ class Pi0(_model.BaseModel):
             logger.info("Not using tactile encoder.")
             self.PaliGemma = nnx.Dict(llm=llm, img=img)
 
+        if self.config.use_tactile and self.config.fusion_method == "film":
+            self.fusion_gamma = nnx.Linear(paligemma_config.width, paligemma_config.width, rngs=rngs)
+            self.fusion_beta = nnx.Linear(paligemma_config.width, paligemma_config.width, rngs=rngs)
+
         self.action_in_proj = nnx.Linear(config.action_dim, action_expert_config.width, rngs=rngs)
         if config.pi05:
             self.time_mlp_in = nnx.Linear(action_expert_config.width, action_expert_config.width, rngs=rngs)
@@ -120,6 +124,21 @@ class Pi0(_model.BaseModel):
         # This attribute gets automatically set by model.train() and model.eval().
         self.deterministic = True
 
+    def _force_modality_weights(self, obs: _model.Observation) -> tuple[at.Float[at.Array, "b 1 1"], at.Float[at.Array, "b 1 1"]]:
+        batch_size = obs.state.shape[0]
+        if self.config.force_guide and obs.force is not None:
+            force = jnp.asarray(obs.force, dtype=jnp.float32)
+            force = jnp.nan_to_num(force, nan=0.0, posinf=self.config.force_range[1], neginf=0.0)
+            force_mag = jnp.linalg.norm(force, axis=-1, keepdims=True)
+            force_min, force_max = self.config.force_range
+            alpha = jnp.clip((force_mag - force_min) / (force_max - force_min), 0.0, 1.0)
+            tactile_weight = alpha * (1.0 - self.config.min_vision_weight)
+        else:
+            tactile_weight = jnp.full((batch_size, 1), self.config.default_tactile_weight, dtype=jnp.float32)
+
+        vision_weight = 1.0 - tactile_weight
+        return vision_weight[:, None, :], tactile_weight[:, None, :]
+
     @at.typecheck
     def embed_prefix(
         self, obs: _model.Observation
@@ -127,34 +146,63 @@ class Pi0(_model.BaseModel):
         input_mask = []
         ar_mask = []
         tokens = []
+
+        vision_tokens = []
+        vision_masks = []
         # embed images
         for name in obs.images:
             image_tokens, _ = self.PaliGemma.img(obs.images[name], train=False)
 
-            tokens.append(image_tokens)
-            input_mask.append(
+            vision_tokens.append(image_tokens)
+            vision_masks.append(
                 einops.repeat(
                     obs.image_masks[name],
                     "b -> b s",
                     s=image_tokens.shape[1],
                 )
             )
-            # image tokens attend to each other
-            ar_mask += [False] * image_tokens.shape[1]
 
+        tactile_tokens = []
+        tactile_masks = []
         if self.config.use_tactile:
             for name in obs.tactile_images:
                 tactile_image_tokens, _ = self.PaliGemma.tac(obs.tactile_images[name], train=False)
-                tokens.append(tactile_image_tokens)
-                input_mask.append(
+                tactile_tokens.append(tactile_image_tokens)
+                tactile_masks.append(
                     einops.repeat(
                         obs.tactile_image_masks[name],
                         "b -> b s",
                         s=tactile_image_tokens.shape[1],
                     )
                 )
-                # tactile image tokens attend to each other
-                ar_mask += [False] * tactile_image_tokens.shape[1]
+
+        if self.config.use_tactile and tactile_tokens and self.config.fusion_method in ("linear", "film"):
+            vision_weight, tactile_weight = self._force_modality_weights(obs)
+            if self.config.fusion_method == "film" and vision_tokens:
+                tactile_context = jnp.mean(jnp.concatenate(tactile_tokens, axis=1), axis=1)
+                gamma = jnp.tanh(self.fusion_gamma(tactile_context))[:, None, :] * tactile_weight
+                beta = self.fusion_beta(tactile_context)[:, None, :] * tactile_weight
+                vision_tokens = [image_tokens * (1.0 + gamma) + beta for image_tokens in vision_tokens]
+
+            vision_tokens = [image_tokens * vision_weight for image_tokens in vision_tokens]
+            tactile_tokens = [tactile_image_tokens * tactile_weight for tactile_image_tokens in tactile_tokens]
+            tactile_active = tactile_weight[:, 0, 0] > 0.0
+            tactile_masks = [
+                jnp.logical_and(mask, einops.repeat(tactile_active, "b -> b s", s=mask.shape[1]))
+                for mask in tactile_masks
+            ]
+
+        for image_tokens, mask in zip(vision_tokens, vision_masks, strict=True):
+            tokens.append(image_tokens)
+            input_mask.append(mask)
+            # image tokens attend to each other
+            ar_mask += [False] * image_tokens.shape[1]
+
+        for tactile_image_tokens, mask in zip(tactile_tokens, tactile_masks, strict=True):
+            tokens.append(tactile_image_tokens)
+            input_mask.append(mask)
+            # tactile image tokens attend to each other
+            ar_mask += [False] * tactile_image_tokens.shape[1]
 
         # add language (aka tokenized inputs)
         if obs.tokenized_prompt is not None:

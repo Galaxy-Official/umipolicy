@@ -107,16 +107,32 @@ class HandcapRepackTransform(DataTransformFn):
 
     def __call__(self, data: DataDict) -> DataDict:
         structure = {
-                        'observation/wrist_image': 'observation.images.wrist', 
-                        'observation/left_tactile': 'observation.tactiles.left',
-                        'observation/right_tactile': 'observation.tactiles.right',
-                        'observation/state': 'observation.state', 
-                        'actions': 'action',  
-                        'prompt': 'prompt'
-                    }
-        
+            "observation/wrist_image": "observation.images.wrist",
+            "observation/left_tactile": "observation.tactiles.left",
+            "observation/right_tactile": "observation.tactiles.right",
+            "observation/state": "observation.state",
+            "actions": "action",
+            "prompt": "prompt",
+        }
+
         flat_item = flatten_dict(data)
-        return jax.tree.map(lambda k: flat_item[k], structure)
+        output = jax.tree.map(lambda k: flat_item[k], structure)
+
+        for key in ("observation.force", "observation.forces", "observation/force", "force"):
+            if key in flat_item:
+                output["observation/force"] = flat_item[key]
+                break
+        else:
+            left_key = "observation.forces.left"
+            right_key = "observation.forces.right"
+            if left_key in flat_item and right_key in flat_item:
+                left = np.asarray(flat_item[left_key])
+                right = np.asarray(flat_item[right_key])
+                output["observation/force"] = np.concatenate([left.reshape(-1), right.reshape(-1)], axis=-1)
+            elif left_key in flat_item:
+                output["observation/force"] = flat_item[left_key]
+
+        return output
 
 
 @dataclasses.dataclass(frozen=True)

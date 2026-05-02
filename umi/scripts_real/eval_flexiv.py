@@ -143,9 +143,18 @@ class Mp4RoundTrip:
 # Asynchronous Camera Observation Thread (MVS Mode)
 # ---------------------------------------------------------------------
 class ObservationThread(threading.Thread):
-    def __init__(self, cam_wrist, env, maxlen=2, camera_fps=DEFAULT_MVS_FPS):
+    def __init__(
+            self,
+            cam_wrist,
+            env,
+            maxlen=2,
+            camera_fps=DEFAULT_MVS_FPS,
+            cam_left_tactile=None,
+            cam_right_tactile=None):
         super().__init__()
         self.cam_wrist = cam_wrist
+        self.cam_left_tactile = cam_left_tactile
+        self.cam_right_tactile = cam_right_tactile
         self.env = env
         self.queue = deque(maxlen=maxlen)
         self.running = True
@@ -153,21 +162,40 @@ class ObservationThread(threading.Thread):
         self.lock = threading.Lock()
         self.camera_fps = float(camera_fps)
         self.camera_dt = 1.0 / self.camera_fps if self.camera_fps > 0 else 0.0
+
+    def _read_optional_camera(self, camera):
+        if camera is None:
+            return None
+        if hasattr(camera, 'get_data'):
+            image, _ = camera.get_data()
+            return image
+        output = camera.read()
+        if isinstance(output, tuple):
+            if len(output) >= 2:
+                return output[1]
+            return output[0]
+        return output
         
     def run(self):
         while self.running:
             iter_start_time = time.monotonic()
             cam_state, wrist_img, cam_cap_time = self.cam_wrist.read()
+            left_tactile_img = self._read_optional_camera(self.cam_left_tactile)
+            right_tactile_img = self._read_optional_camera(self.cam_right_tactile)
             
             eepose = self.env.get_ee_pose()
             gripper_width = self.env.get_gripper_width()
+            force = self.env.get_force() if hasattr(self.env, 'get_force') else np.zeros(2, dtype=np.float32)
             
             with self.lock:
                 self.queue.append({
                     'wrist_img': wrist_img.copy() if wrist_img is not None else wrist_img,
+                    'left_tactile_img': left_tactile_img.copy() if left_tactile_img is not None else left_tactile_img,
+                    'right_tactile_img': right_tactile_img.copy() if right_tactile_img is not None else right_tactile_img,
                     'cam_cap_time': cam_cap_time,
                     'eepose': eepose,
-                    'gripper_width': gripper_width
+                    'gripper_width': gripper_width,
+                    'force': np.asarray(force, dtype=np.float32).reshape(-1)
                 })
 
             if self.camera_dt > 0:
@@ -208,7 +236,10 @@ def resize_with_black_padding(image, target_h=480, target_w=640):
 @click.option('--max_duration', '-md', default=60, help='Max duration for each epoch in seconds.')
 @click.option('--frequency', '-f', default=10, type=float, help="Control frequency in Hz.")
 @click.option('--command_latency', '-cl', default=0.01, type=float, help="Latency between receiving SpaceMouse command to executing on Robot in Sec.")
-@click.option('--use_tactile', is_flag=True, default=False, help="Whether to load tactile cameras.")
+@click.option('--use_tactile/--no_tactile', default=None, help="Whether to load tactile cameras. Defaults to checkpoint config.")
+@click.option('--force_predict/--no_force_predict', default=None, help="Whether the checkpoint predicts force heads. Defaults to checkpoint config.")
+@click.option('--force_guide/--no_force_guide', default=None, help="Whether runtime force guides vision/tactile fusion. Defaults to checkpoint config.")
+@click.option('--fusion_method', default='checkpoint', type=click.Choice(['checkpoint', 'concat', 'linear', 'film']), help="Expected fusion method; 'checkpoint' keeps the saved config.")
 @click.option('--data_capture_fps', '--camera_fps', default=DEFAULT_MVS_FPS, type=float, help="MVS wrist capture FPS, matching handcap_rgb.py --fps.")
 @click.option('--gripper-width-offset', '--gripper_width_offset', default=0.0, type=float, help="Offset added to policy-predicted gripper width before execution, in gripper command units.")
 @click.option('--gripper-width-min', '--gripper_width_min', default=0.1, type=float, help="Minimum safe gripper width after applying offset.")
@@ -220,7 +251,8 @@ def resize_with_black_padding(image, target_h=480, target_w=640):
 @click.option('--gripper-move-velocity', '--gripper_move_velocity', default=0.03, type=float, help="Flexiv gripper Move velocity.")
 def main(input, output, robot_ip, local_ip, camera_config,
     init_joints, steps_per_inference, max_duration,
-    frequency, command_latency, use_tactile, data_capture_fps,
+    frequency, command_latency, use_tactile, force_predict,
+    force_guide, fusion_method, data_capture_fps,
     gripper_width_offset, gripper_width_min, gripper_width_max,
     arm_max_linear_vel, arm_max_angular_vel, arm_max_linear_acc,
     arm_max_angular_acc, gripper_move_velocity):
@@ -248,6 +280,23 @@ def main(input, output, robot_ip, local_ip, camera_config,
     cfg = payload['cfg']
     print("model_name:", cfg.policy.obs_encoder.model_name)
     print("dataset_path:", cfg.task.dataset.dataset_path)
+    cfg_use_tactile = bool(OmegaConf.select(cfg, 'task.use_tactile', default=False))
+    cfg_force_predict = bool(OmegaConf.select(cfg, 'task.force_predict', default=False))
+    cfg_force_guide = bool(OmegaConf.select(cfg, 'task.force_guide', default=False))
+    cfg_fusion_method = OmegaConf.select(
+        cfg, 'policy.obs_encoder.fusion_method', default='concat')
+    if use_tactile is None:
+        use_tactile = cfg_use_tactile
+    if force_predict is None:
+        force_predict = cfg_force_predict
+    if force_guide is None:
+        force_guide = cfg_force_guide
+    if fusion_method == 'checkpoint':
+        fusion_method = cfg_fusion_method
+    print(
+        "runtime flags: "
+        f"use_tactile={use_tactile}, force_predict={force_predict}, "
+        f"force_guide={force_guide}, fusion_method={fusion_method}")
 
     # setup experiment
     dt = 1/frequency
@@ -303,7 +352,9 @@ def main(input, output, robot_ip, local_ip, camera_config,
             # 3. Start Camera Observation Thread
             obs_thread = ObservationThread(
                 cam_wrist, env, maxlen=obs_history_len,
-                camera_fps=data_capture_fps)
+                camera_fps=data_capture_fps,
+                cam_left_tactile=cam_left_tactile if use_tactile else None,
+                cam_right_tactile=cam_right_tactile if use_tactile else None)
             obs_thread.start()
             
             print("Waiting for observation queue to fill...")
@@ -322,6 +373,14 @@ def main(input, output, robot_ip, local_ip, camera_config,
             policy = workspace.model
             if cfg.training.use_ema:
                 policy = workspace.ema_model
+            policy.force_predict = bool(force_predict)
+            if hasattr(policy.obs_encoder, 'force_guide'):
+                policy.obs_encoder.force_guide = bool(force_guide)
+            if hasattr(policy.obs_encoder, 'fusion_method') and policy.obs_encoder.fusion_method != fusion_method:
+                print(
+                    "Warning: requested fusion_method "
+                    f"{fusion_method} but checkpoint uses {policy.obs_encoder.fusion_method}. "
+                    "Architecture is kept from the checkpoint.")
             policy.num_inference_steps = 16 # DDIM inference iterations
             obs_pose_rep = cfg.task.pose_repr.obs_pose_repr
             action_pose_repr = cfg.task.pose_repr.action_pose_repr
@@ -352,6 +411,12 @@ def main(input, output, robot_ip, local_ip, camera_config,
                     'robot0_gripper_width': [],
                     'timestamp': []
                 }
+                obs_shape_meta = cfg.task.shape_meta.obs
+                for key, attr in obs_shape_meta.items():
+                    if attr.get('type', 'low_dim') == 'rgb' and key != 'camera0_rgb':
+                        env_obs[key] = []
+                    if attr.get('type', 'low_dim') == 'low_dim' and 'force' in key:
+                        env_obs[key] = []
 
                 wrist_frames_bgr = []
                 for frame in raw_frames:
@@ -374,6 +439,47 @@ def main(input, output, robot_ip, local_ip, camera_config,
                     env_obs['robot0_eef_rot_axis_angle'].append(frame['eepose'][3:])
                     env_obs['robot0_gripper_width'].append(frame['gripper_width'])
                     env_obs['timestamp'].append(frame['cam_cap_time'])
+                    for key, attr in obs_shape_meta.items():
+                        if key == 'camera0_rgb' or attr.get('type', 'low_dim') != 'rgb':
+                            continue
+                        shape = attr.get('shape')
+                        target_h, target_w = int(shape[1]), int(shape[2])
+                        if key in ['left_tactile', 'tactile_left']:
+                            tactile_img = frame.get('left_tactile_img')
+                        elif key in ['right_tactile', 'tactile_right']:
+                            tactile_img = frame.get('right_tactile_img')
+                        elif key == 'tactile_combined':
+                            left_img = frame.get('left_tactile_img')
+                            right_img = frame.get('right_tactile_img')
+                            if left_img is not None and right_img is not None:
+                                tactile_img = np.concatenate([left_img, right_img], axis=1)
+                            else:
+                                tactile_img = left_img if left_img is not None else right_img
+                        else:
+                            tactile_img = None
+
+                        if tactile_img is None:
+                            tactile_img_rgb = np.zeros(
+                                (target_h, target_w, 3), dtype=np.uint8)
+                        else:
+                            tactile_img_rgb = cv2.cvtColor(
+                                tactile_img, cv2.COLOR_BGR2RGB)
+                            if tactile_img_rgb.shape[:2] != (target_h, target_w):
+                                tactile_img_rgb = cv2.resize(
+                                    tactile_img_rgb, (target_w, target_h),
+                                    interpolation=cv2.INTER_AREA)
+                        env_obs[key].append(tactile_img_rgb)
+
+                    for key, attr in obs_shape_meta.items():
+                        if attr.get('type', 'low_dim') != 'low_dim' or 'force' not in key:
+                            continue
+                        dim = int(attr.get('shape')[0])
+                        force = np.asarray(frame.get('force', np.zeros(dim)), dtype=np.float32).reshape(-1)
+                        if force.size == 1 and dim > 1:
+                            force = np.repeat(force, dim)
+                        if force.size < dim:
+                            force = np.pad(force, (0, dim - force.size))
+                        env_obs[key].append(force[:dim])
 
                 for k in env_obs:
                     env_obs[k] = np.stack(env_obs[k])
@@ -506,7 +612,12 @@ def main(input, output, robot_ip, local_ip, camera_config,
                                 lambda x: torch.from_numpy(x).unsqueeze(0).to(device))
                             result = policy.predict_action(obs_dict)
                             raw_action = result['action_pred'][0].detach().to('cpu').numpy()
-                            action = get_real_umi_action(raw_action, obs, action_pose_repr).copy()
+                            action = get_real_umi_action(
+                                raw_action,
+                                obs,
+                                action_pose_repr,
+                                action_base_dim=int(OmegaConf.select(cfg, 'policy.action_base_dim', default=10)),
+                                force_dim=int(OmegaConf.select(cfg, 'policy.force_dim', default=0))).copy()
                             gripper_idxs = np.arange(6, action.shape[-1], 7)
                             action[..., gripper_idxs] = np.clip(
                                 action[..., gripper_idxs] + gripper_width_offset,

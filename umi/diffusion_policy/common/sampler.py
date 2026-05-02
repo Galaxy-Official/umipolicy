@@ -86,6 +86,11 @@ class SequenceSampler:
                 rot_in = replay_buffer[key[:-4]][:]
                 rot_out = st.Rotation.from_rotvec(rot_in).as_euler('XYZ')
                 self.replay_buffer[key] = rot_out[:, list(axis)]
+            elif key not in replay_buffer and 'force' in key:
+                force_shape = tuple(shape_meta['obs'][key]['shape'])
+                self.replay_buffer[key] = np.zeros(
+                    (episode_ends[-1],) + force_shape,
+                    dtype=np.float32)
             else:
                 self.replay_buffer[key] = replay_buffer[key][:]
         for key in rgb_keys:
@@ -102,6 +107,9 @@ class SequenceSampler:
                     key = f'robot{robot_idx}_{cat}'
                     if key in self.replay_buffer:
                         actions.append(self.replay_buffer[key])
+                force_key = f'robot{robot_idx}_force'
+                if force_key in self.replay_buffer:
+                    actions.append(self.replay_buffer[force_key])
             self.replay_buffer['action'] = np.concatenate(actions, axis=-1)
 
         self.action_padding = action_padding

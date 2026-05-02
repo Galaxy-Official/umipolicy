@@ -36,6 +36,12 @@ class LeRobotHandcapDataConfig(DataConfigFactory):
 
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
+        action_base_dim = getattr(model_config, "action_base_dim", 10)
+        force_dim = getattr(model_config, "force_dim", 2)
+        force_predict = getattr(model_config, "force_predict", False)
+        force_guide = getattr(model_config, "force_guide", False)
+        output_action_dim = action_base_dim + (force_dim if force_predict else 0)
+
         repack_transform = _transforms.Group(
             inputs=[
                 _transforms.HandcapRepackTransform(
@@ -52,11 +58,27 @@ class LeRobotHandcapDataConfig(DataConfigFactory):
         )
 
         data_transforms = _transforms.Group(
-            inputs=[handcap_policy.HandcapInputs(action_dim=model_config.action_dim, model_type=model_config.model_type)],
-            outputs=[handcap_policy.HandcapOutputs()],
+            inputs=[
+                handcap_policy.HandcapInputs(
+                    action_dim=model_config.action_dim,
+                    model_type=model_config.model_type,
+                    force_predict=force_predict,
+                    force_guide=force_guide,
+                    action_base_dim=action_base_dim,
+                    force_dim=force_dim,
+                )
+            ],
+            outputs=[
+                handcap_policy.HandcapOutputs(
+                    output_action_dim=output_action_dim,
+                    force_predict=force_predict,
+                    action_base_dim=action_base_dim,
+                    force_dim=force_dim,
+                )
+            ],
         )
 
-        delta_action_mask = _transforms.make_bool_mask(10, -1)
+        delta_action_mask = _transforms.make_bool_mask(action_base_dim, -(model_config.action_dim - action_base_dim))
         data_transforms = data_transforms.push(
             inputs=[_transforms.DeltaActions(delta_action_mask)],
             outputs=[_transforms.AbsoluteActions(delta_action_mask)],
@@ -82,6 +104,12 @@ class LeRobotHandcapWristDataConfig(DataConfigFactory):
 
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
+        action_base_dim = getattr(model_config, "action_base_dim", 10)
+        force_dim = getattr(model_config, "force_dim", 2)
+        force_predict = getattr(model_config, "force_predict", False)
+        force_guide = getattr(model_config, "force_guide", False)
+        output_action_dim = action_base_dim + (force_dim if force_predict else 0)
+
         repack_transform = _transforms.Group(
             inputs=[
                 _transforms.RepackTransform(
@@ -101,12 +129,23 @@ class LeRobotHandcapWristDataConfig(DataConfigFactory):
                     action_dim=model_config.action_dim,
                     model_type=model_config.model_type,
                     include_tactile=False,
+                    force_predict=force_predict,
+                    force_guide=force_guide,
+                    action_base_dim=action_base_dim,
+                    force_dim=force_dim,
                 )
             ],
-            outputs=[handcap_policy.HandcapOutputs()],
+            outputs=[
+                handcap_policy.HandcapOutputs(
+                    output_action_dim=output_action_dim,
+                    force_predict=force_predict,
+                    action_base_dim=action_base_dim,
+                    force_dim=force_dim,
+                )
+            ],
         )
 
-        delta_action_mask = _transforms.make_bool_mask(10, -1)
+        delta_action_mask = _transforms.make_bool_mask(action_base_dim, -(model_config.action_dim - action_base_dim))
         data_transforms = data_transforms.push(
             inputs=[_transforms.DeltaActions(delta_action_mask)],
             outputs=[_transforms.AbsoluteActions(delta_action_mask)],
@@ -496,6 +535,110 @@ def get_handcap_configs():
                 pi05=True,
                 use_tactile=True,
                 tactile_pretrained_ckpt="/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt",
+                camera_keys=("wrist_0_rgb",),),
+            data=LeRobotHandcapDataConfig(
+                repo_id="lihongcs/block_to_pot_handcap",
+                data_root="Data/handcap30",
+                base_config=DataConfig(
+                    prompt_from_task=True,
+                    use_handcap=True,
+                ),
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader("/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pi05_base/params"),
+            num_train_steps=200_000,
+            batch_size=8,
+            log_interval=100,
+            save_interval=5000,
+            keep_period=20_000,
+        ),
+        TrainConfig(
+            name="pi05_simple_sorting_tactile_linear_fusion",
+            model=pi0_config.Pi0Config(
+                pi05=True,
+                use_tactile=True,
+                tactile_pretrained_ckpt="/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt",
+                tactile_variant="B/16",
+                fusion_method="linear",
+                force_predict=False,
+                force_guide=False,
+                camera_keys=("wrist_0_rgb",),),
+            data=LeRobotHandcapDataConfig(
+                repo_id="lihongcs/block_to_pot_handcap",
+                data_root="Data/handcap30",
+                base_config=DataConfig(
+                    prompt_from_task=True,
+                    use_handcap=True,
+                ),
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader("/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pi05_base/params"),
+            num_train_steps=200_000,
+            batch_size=8,
+            log_interval=100,
+            save_interval=5000,
+            keep_period=20_000,
+        ),
+        TrainConfig(
+            name="pi05_simple_sorting_tactile_film_fusion",
+            model=pi0_config.Pi0Config(
+                pi05=True,
+                use_tactile=True,
+                tactile_pretrained_ckpt="/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt",
+                tactile_variant="B/16",
+                fusion_method="film",
+                force_predict=False,
+                force_guide=False,
+                camera_keys=("wrist_0_rgb",),),
+            data=LeRobotHandcapDataConfig(
+                repo_id="lihongcs/block_to_pot_handcap",
+                data_root="Data/handcap30",
+                base_config=DataConfig(
+                    prompt_from_task=True,
+                    use_handcap=True,
+                ),
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader("/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pi05_base/params"),
+            num_train_steps=200_000,
+            batch_size=8,
+            log_interval=100,
+            save_interval=5000,
+            keep_period=20_000,
+        ),
+        TrainConfig(
+            name="pi05_simple_sorting_tactile_linear_force_fusion",
+            model=pi0_config.Pi0Config(
+                pi05=True,
+                use_tactile=True,
+                tactile_pretrained_ckpt="/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt",
+                tactile_variant="B/16",
+                fusion_method="linear",
+                force_predict=True,
+                force_guide=True,
+                camera_keys=("wrist_0_rgb",),),
+            data=LeRobotHandcapDataConfig(
+                repo_id="lihongcs/block_to_pot_handcap",
+                data_root="Data/handcap30",
+                base_config=DataConfig(
+                    prompt_from_task=True,
+                    use_handcap=True,
+                ),
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader("/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pi05_base/params"),
+            num_train_steps=200_000,
+            batch_size=8,
+            log_interval=100,
+            save_interval=5000,
+            keep_period=20_000,
+        ),
+        TrainConfig(
+            name="pi05_simple_sorting_tactile_film_force_fusion",
+            model=pi0_config.Pi0Config(
+                pi05=True,
+                use_tactile=True,
+                tactile_pretrained_ckpt="/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt",
+                tactile_variant="B/16",
+                fusion_method="film",
+                force_predict=True,
+                force_guide=True,
                 camera_keys=("wrist_0_rgb",),),
             data=LeRobotHandcapDataConfig(
                 repo_id="lihongcs/block_to_pot_handcap",
