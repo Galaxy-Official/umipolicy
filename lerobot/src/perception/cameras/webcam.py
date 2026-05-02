@@ -48,13 +48,6 @@ class WebCamTactile(BaseCamera):
         color_image = frame
         height, width = color_image.shape[:2]
 
-        crop_width = int(width * 3 / 5)
-        crop_height = int(height * 3 / 5)
-        start_x = (width - crop_width) // 2
-        start_y = (height - crop_height) // 2
-
-        color_image = color_image[start_y:start_y+crop_height, 
-                                    start_x:start_x+crop_width]
         color_image = cv2.resize(color_image, (224, 224), interpolation=cv2.INTER_LANCZOS4)
         return color_image, None
 

@@ -465,9 +465,8 @@ def main(input, output, robot_ip, local_ip, camera_config,
                             tactile_img_rgb = cv2.cvtColor(
                                 tactile_img, cv2.COLOR_BGR2RGB)
                             if tactile_img_rgb.shape[:2] != (target_h, target_w):
-                                tactile_img_rgb = cv2.resize(
-                                    tactile_img_rgb, (target_w, target_h),
-                                    interpolation=cv2.INTER_AREA)
+                                tactile_img_rgb = resize_with_black_padding(
+                                    tactile_img_rgb, target_h=target_h, target_w=target_w)
                         env_obs[key].append(tactile_img_rgb)
 
                     for key, attr in obs_shape_meta.items():
