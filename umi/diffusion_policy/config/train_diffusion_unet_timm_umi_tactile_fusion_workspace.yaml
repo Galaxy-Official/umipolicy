@@ -54,8 +54,7 @@ policy:
     imagenet_norm: True
     use_tactile: ${task.use_tactile}
     tactile_keys:
-      - left_tactile
-      - right_tactile
+      - tactile_combined
     tactile_model_name: ${tactile_backbone}
     tactile_pretrained: False
     tactile_checkpoint_path: ${tactile_checkpoint_path}

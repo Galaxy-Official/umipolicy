@@ -27,14 +27,7 @@ shape_meta: &shape_meta
       down_sample_steps: ${task.obs_down_sample_steps}
       type: rgb
       ignore_by_policy: False
-    left_tactile:
-      shape: [3, 224, 224]
-      horizon: ${task.img_obs_horizon}
-      latency_steps: 0
-      down_sample_steps: ${task.obs_down_sample_steps}
-      type: rgb
-      ignore_by_policy: False
-    right_tactile:
+    tactile_combined:
       shape: [3, 224, 224]
       horizon: ${task.img_obs_horizon}
       latency_steps: 0
