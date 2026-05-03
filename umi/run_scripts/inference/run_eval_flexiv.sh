@@ -18,7 +18,7 @@ export FLEXIV_GRIPPER_NAME="Flexiv-GN01"
 export FLEXIV_INIT_POSE="[-0.0009,-0.2370,-0.0133,2.1459,-0.0058,0.8170,-0.0012]"
 
 # 预训练模型 Checkpoint 路径
-CKPT_PATH="ckpt/430towelhanging_train_490.ckpt"
+CKPT_PATH="ckpt/501breadmoving_490.ckpt"
 
 # 设置数据保存输出路径
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
