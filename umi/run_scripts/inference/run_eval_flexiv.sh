@@ -38,4 +38,4 @@ python scripts_real/eval_flexiv.py \
     --robot_ip "${FLEXIV_ROBOT_IP}" \
     --local_ip "${FLEXIV_LOCAL_IP}" \
     --frequency 5 \
-    --steps_per_inference 4
+    --steps_per_inference 8
