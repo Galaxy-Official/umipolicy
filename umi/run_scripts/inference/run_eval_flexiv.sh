@@ -18,11 +18,11 @@ export FLEXIV_GRIPPER_NAME="Flexiv-GN01"
 export FLEXIV_INIT_POSE="[-0.0009,-0.2370,-0.0133,2.1459,-0.0058,0.8170,-0.0012]"
 
 # 预训练模型 Checkpoint 路径
-CKPT_PATH="ckpt/yellow_pp_490.ckpt"
+CKPT_PATH="ckpt/ 501breadmoving_490.ckpt"
 
 # 设置数据保存输出路径
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-OUTPUT_DIR="data_local/yellow_to_pink/eval_recordings/eval_${TIMESTAMP}"
+OUTPUT_DIR="data_local/501breadmoving/eval_recordings/eval_${TIMESTAMP}"
 
 echo "=========================================="
 echo "🚀 准备启动 UMI 真机推理 (Policy Inference)"
