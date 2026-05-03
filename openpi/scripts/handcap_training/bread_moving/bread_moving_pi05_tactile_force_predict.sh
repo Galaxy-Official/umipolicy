@@ -3,7 +3,6 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../../.."
 
-# 自动保存终端日志到 logs/
 mkdir -p logs
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 SCRIPT_NAME=$(basename "$0" .sh)
@@ -11,8 +10,9 @@ exec > >(tee -a "logs/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
-CONFIG_NAME="${CONFIG_NAME:-pi05_bread_moving_tactile}"
-EXP_NAME="${EXP_NAME:-501_bread_moving_0502_handcap_pi05_4gpu_vision_tactile}"
+CONFIG_NAME="${CONFIG_NAME:-pi05_bread_moving_tactile_force_predict}"
+EXP_NAME="${EXP_NAME:-501_bread_moving_0502_handcap_pi05_4gpu_tactile_force_predict}"
+
 # ==============================================================================
 # H200 (141GB) x4 & 80-Core 900GB RAM 极致资源榨干配置
 # ==============================================================================
@@ -32,15 +32,11 @@ export XLA_FLAGS="--xla_gpu_force_compilation_parallelism=16"
 # ==============================================================================
 
 echo "=========================================="
-echo "Starting OpenPI PI05 Vision+Tactile training"
+echo "Starting OpenPI PI05 (Vision + Tactile + Force Predict) training"
 echo "Config: ${CONFIG_NAME}"
 echo "Dataset: Data/501_bread_moving_lerobot"
 echo "Experiment: ${EXP_NAME}"
-echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
-echo "FSDP devices: ${FSDP_DEVICES}"
 echo "Batch size: ${BATCH_SIZE}"
-echo "Train steps: ${NUM_TRAIN_STEPS}"
-echo "Num Workers: ${NUM_WORKERS}"
 echo "=========================================="
 
 python scripts/compute_norm_stats.py --config-name "${CONFIG_NAME}"

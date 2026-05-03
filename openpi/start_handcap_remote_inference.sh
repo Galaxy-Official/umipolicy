@@ -21,6 +21,8 @@ Usage:
     [--obs-horizon 2] \
     [--camera-config-path <path>] \
     [--use-tactile | --no-use-tactile] \
+    [--left-video-index <idx>] \
+    [--right-video-index <idx>] \
     [--force-predict | --no-force-predict] \
     [--force-guide | --no-force-guide] \
     [--action-latency 0.0] \
@@ -161,6 +163,8 @@ SERVER_DEFAULT_PROMPT=""
 STARTUP_TIMEOUT="600"
 LOG_DIR=""
 DRY_RUN="false"
+LEFT_VIDEO_INDEX=""
+RIGHT_VIDEO_INDEX=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -226,6 +230,16 @@ while [[ $# -gt 0 ]]; do
     --no-use-tactile)
       USE_TACTILE="false"
       shift
+      ;;
+    --left-video-index)
+      require_value "$1" "${2-}"
+      LEFT_VIDEO_INDEX="$2"
+      shift 2
+      ;;
+    --right-video-index)
+      require_value "$1" "${2-}"
+      RIGHT_VIDEO_INDEX="$2"
+      shift 2
       ;;
     --force-predict)
       FORCE_PREDICT="true"
@@ -347,6 +361,36 @@ SERVER_LOG="$LOG_DIR/server.log"
 CLIENT_LOG="$LOG_DIR/client.log"
 PID_FILE="$LOG_DIR/pids.env"
 CMD_FILE="$LOG_DIR/run_command.txt"
+
+if [[ -n "$LEFT_VIDEO_INDEX" || -n "$RIGHT_VIDEO_INDEX" ]]; then
+  CUSTOM_CONFIG_PATH="$LOG_DIR/custom_camera_config.json"
+  python -c "
+import json
+import sys
+import os
+
+default_path = os.path.abspath('../lerobot/src/perception/configs/camera/handcap_camera.json')
+if not os.path.exists(default_path):
+    print(f'Warning: Could not find default camera config at {default_path}')
+    sys.exit(0)
+
+with open(default_path, 'r') as f:
+    config = json.load(f)
+
+if '$LEFT_VIDEO_INDEX':
+    if 'left_tactile' in config:
+        config['left_tactile']['camera_index'] = int('$LEFT_VIDEO_INDEX')
+if '$RIGHT_VIDEO_INDEX':
+    if 'right_tactile' in config:
+        config['right_tactile']['camera_index'] = int('$RIGHT_VIDEO_INDEX')
+
+with open('$CUSTOM_CONFIG_PATH', 'w') as f:
+    json.dump(config, f, indent=4)
+"
+  if [[ -f "$CUSTOM_CONFIG_PATH" ]]; then
+    CAMERA_CONFIG_PATH="$CUSTOM_CONFIG_PATH"
+  fi
+fi
 
 SERVER_CMD=(
   python
