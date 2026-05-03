@@ -13,7 +13,7 @@ export XLA_PYTHON_CLIENT_ALLOCATOR="${XLA_PYTHON_CLIENT_ALLOCATOR:-platform}"
 export TF_FORCE_GPU_ALLOW_GROWTH="${TF_FORCE_GPU_ALLOW_GROWTH:-true}"
 
 POLICY_CONFIG="pi05_yellow_to_pink"
-POLICY_DIR="/home/rhos/umipolicy/openpi/ckpt/70000"
+POLICY_DIR="/home/rhos/umipolicy/openpi/ckpt/60000"
 PROMPT="yellow to pink task"
 
 CTRL_FREQ="5"
