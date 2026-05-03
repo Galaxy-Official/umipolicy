@@ -229,6 +229,32 @@ def get_handcap_configs():
             keep_period=20_000,
         ),
         TrainConfig(
+            name="pi05_erase_board_wrist_tactile",
+            model=pi0_config.Pi0Config(
+                pi05=True,
+                use_tactile=True,
+                tactile_pretrained_ckpt="/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt",
+                tactile_variant="B/16",
+                fusion_method="linear",
+                force_predict=False,
+                force_guide=False,
+                camera_keys=("wrist_0_rgb",),),
+            data=LeRobotHandcapDataConfig(
+                repo_id="lihongcs/erase_board_wrist",
+                data_root="Data/429_erase_board_lerobot",
+                base_config=DataConfig(
+                    prompt_from_task=True,
+                    use_handcap=True,
+                ),
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader("/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pi05_base/params"),
+            num_train_steps=200_000,
+            batch_size=8,
+            log_interval=100,
+            save_interval=5000,
+            keep_period=20_000,
+        ),
+        TrainConfig(
             name="pi05_430_clamp_seal",
             model=pi0_config.Pi0Config(
                 pi05=True,
@@ -258,6 +284,58 @@ def get_handcap_configs():
                 tactile_pretrained_ckpt="",
                 camera_keys=("wrist_0_rgb",),),
             data=LeRobotHandcapWristDataConfig(
+                repo_id="lihongcs/430_towel_hanging_lerobot",
+                data_root="Data/430_towel_hanging_lerobot",
+                base_config=DataConfig(
+                    prompt_from_task=True,
+                    use_handcap=True,
+                ),
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader("/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pi05_base/params"),
+            num_train_steps=200_000,
+            batch_size=8,
+            log_interval=100,
+            save_interval=5000,
+            keep_period=20_000,
+        ),
+        TrainConfig(
+            name="pi05_430_clamp_seal_tactile",
+            model=pi0_config.Pi0Config(
+                pi05=True,
+                use_tactile=True,
+                tactile_pretrained_ckpt="/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt",
+                tactile_variant="B/16",
+                fusion_method="linear",
+                force_predict=False,
+                force_guide=False,
+                camera_keys=("wrist_0_rgb",),),
+            data=LeRobotHandcapDataConfig(
+                repo_id="lihongcs/430_clamp_seal_lerobot",
+                data_root="Data/430_clamp_seal_lerobot",
+                base_config=DataConfig(
+                    prompt_from_task=True,
+                    use_handcap=True,
+                ),
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader("/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pi05_base/params"),
+            num_train_steps=200_000,
+            batch_size=8,
+            log_interval=100,
+            save_interval=5000,
+            keep_period=20_000,
+        ),
+        TrainConfig(
+            name="pi05_430_towel_hanging_tactile",
+            model=pi0_config.Pi0Config(
+                pi05=True,
+                use_tactile=True,
+                tactile_pretrained_ckpt="/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt",
+                tactile_variant="B/16",
+                fusion_method="linear",
+                force_predict=False,
+                force_guide=False,
+                camera_keys=("wrist_0_rgb",),),
+            data=LeRobotHandcapDataConfig(
                 repo_id="lihongcs/430_towel_hanging_lerobot",
                 data_root="Data/430_towel_hanging_lerobot",
                 base_config=DataConfig(
