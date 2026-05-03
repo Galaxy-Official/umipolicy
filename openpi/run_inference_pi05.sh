@@ -2,6 +2,10 @@
 # PI05 真机远程推理便捷启动脚本。
 # 机械臂、MVS 相机、执行频率、action 执行步数逻辑与 run_inference_pi0.sh 保持一致。
 
+# 每次启动前清理占用 8000 端口的僵尸进程
+echo "Cleaning up port 8000..."
+lsof -ti:8000 | xargs -r kill -9 || true
+
 export FLEXIV_ROBOT_IP="192.168.2.100"
 export FLEXIV_LOCAL_IP="192.168.2.102"
 export FLEXIV_ROBOT_SN="${FLEXIV_ROBOT_SN:-Rizon4-062339}"
@@ -12,9 +16,9 @@ export XLA_PYTHON_CLIENT_PREALLOCATE="${XLA_PYTHON_CLIENT_PREALLOCATE:-false}"
 export XLA_PYTHON_CLIENT_ALLOCATOR="${XLA_PYTHON_CLIENT_ALLOCATOR:-platform}"
 export TF_FORCE_GPU_ALLOW_GROWTH="${TF_FORCE_GPU_ALLOW_GROWTH:-true}"
 
-POLICY_CONFIG="pi05_430_towel_hanging"
-POLICY_DIR="ckpt/430_towel_hanging_pi05"
-PROMPT="Pick up the towel and hang it on the hook."
+POLICY_CONFIG="pi05_bread_moving"
+POLICY_DIR="ckpt/501_bread_moving_pi05_30000"
+PROMPT="Pick up the bread and put it in the bowl on the right."
 
 CTRL_FREQ="5"
 STEPS_PER_INFERENCE="20"
