@@ -12,9 +12,9 @@ export XLA_PYTHON_CLIENT_PREALLOCATE="${XLA_PYTHON_CLIENT_PREALLOCATE:-false}"
 export XLA_PYTHON_CLIENT_ALLOCATOR="${XLA_PYTHON_CLIENT_ALLOCATOR:-platform}"
 export TF_FORCE_GPU_ALLOW_GROWTH="${TF_FORCE_GPU_ALLOW_GROWTH:-true}"
 
-POLICY_CONFIG="pi05_yellow_to_pink"
+POLICY_CONFIG="pi05_erase_board_wrist"
 POLICY_DIR="/home/rhos/umipolicy/openpi/ckpt/60000"
-PROMPT="yellow to pink task"
+PROMPT="Use the blackboard eraser to wipe the blackboard"
 
 CTRL_FREQ="5"
 STEPS_PER_INFERENCE="20"
