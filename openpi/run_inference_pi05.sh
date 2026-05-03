@@ -12,9 +12,9 @@ export XLA_PYTHON_CLIENT_PREALLOCATE="${XLA_PYTHON_CLIENT_PREALLOCATE:-false}"
 export XLA_PYTHON_CLIENT_ALLOCATOR="${XLA_PYTHON_CLIENT_ALLOCATOR:-platform}"
 export TF_FORCE_GPU_ALLOW_GROWTH="${TF_FORCE_GPU_ALLOW_GROWTH:-true}"
 
-POLICY_CONFIG="pi05_430_clamp_seal"
-POLICY_DIR="ckpt/430_clamp_seal_pi05_60000"
-PROMPT="Seal the plastic bag with a clip."
+POLICY_CONFIG="pi05_430_towel_hanging"
+POLICY_DIR="ckpt/430_towel_hanging_pi05"
+PROMPT="Pick up the towel and hang it on the hook."
 
 CTRL_FREQ="5"
 STEPS_PER_INFERENCE="20"
