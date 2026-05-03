@@ -25,6 +25,7 @@ Usage:
     [--right-video-index <idx>] \
     [--force-predict | --no-force-predict] \
     [--force-guide | --no-force-guide] \
+    [--infer-force-control | --no-infer-force-control] \
     [--action-latency 0.0] \
     [--init-qpos "<7 floats, comma list, or bracket list>"] \
     [--record-root <dir>] \
@@ -165,6 +166,7 @@ LOG_DIR=""
 DRY_RUN="false"
 LEFT_VIDEO_INDEX=""
 RIGHT_VIDEO_INDEX=""
+INFER_FORCE_CONTROL="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -255,6 +257,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --no-force-guide)
       FORCE_GUIDE="false"
+      shift
+      ;;
+    --infer-force-control)
+      INFER_FORCE_CONTROL="true"
+      shift
+      ;;
+    --no-infer-force-control)
+      INFER_FORCE_CONTROL="false"
       shift
       ;;
     --action-latency)
@@ -436,6 +446,10 @@ fi
 
 if [[ "$FORCE_GUIDE" == "true" ]]; then
   CLIENT_CMD+=(--force-guide)
+fi
+
+if [[ "$INFER_FORCE_CONTROL" == "true" ]]; then
+  CLIENT_CMD+=(--infer-force-control)
 fi
 
 if [[ -n "$INIT_QPOS" ]]; then

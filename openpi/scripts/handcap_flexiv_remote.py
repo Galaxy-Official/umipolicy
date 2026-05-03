@@ -250,6 +250,7 @@ class Args:
     use_tactile: bool = True
     force_predict: bool = False
     force_guide: bool = False
+    infer_force_control: bool = False
     dry_run: bool = False
     save_states_json: bool = True
 
@@ -553,7 +554,7 @@ class FlexivRealEnv:
         except Exception:
             return np.zeros((2,), dtype=np.float32)
 
-    def exec_actions(self, actions: np.ndarray, timestamps: np.ndarray) -> None:
+    def exec_actions(self, actions: np.ndarray, timestamps: np.ndarray, target_force: float = 20.0) -> None:
         receive_time = time.time()
         is_new = timestamps > receive_time
         new_actions = actions[is_new]
@@ -581,7 +582,7 @@ class FlexivRealEnv:
                 self._robot.SendCartesianMotionForce(target_tcp, [0.0] * 6, [0.0] * 6, 0.15, 0.5, 0.3, 1.0)
                 max_width = self._gripper.params().max_width
                 safe_width = min(max(target_width, 0.001), max_width - 0.001)
-                self._gripper.Move(safe_width, 0.1, 20)
+                self._gripper.Move(safe_width, 0.1, target_force)
 
             dt = new_timestamps[i] - time.time()
             if dt > 0:
@@ -678,13 +679,14 @@ def main(args: Args) -> None:
     robot_dt = 1.0 / args.ctrl_freq
     LOGGER.info(
         "Control config: ctrl_freq=%.3fHz, robot_dt=%.4fs, steps_per_inference=%d, action_latency=%.4fs, "
-        "force_predict=%s, force_guide=%s",
+        "force_predict=%s, force_guide=%s, infer_force_control=%s",
         args.ctrl_freq,
         robot_dt,
         args.steps_per_inference,
         args.action_latency,
         args.force_predict,
         args.force_guide,
+        args.infer_force_control,
     )
 
     camera_config_path = args.camera_config_path
@@ -759,7 +761,13 @@ def main(args: Args) -> None:
                 (1 + np.arange(len(physical_actions), dtype=np.float64)) * robot_dt + time.time() - args.action_latency
             )
 
-            env.exec_actions(physical_actions, action_timestamps)
+            force_pred = action_chunk[0, 10:12] if action_chunk.shape[-1] >= 12 else np.zeros((2,), dtype=np.float64)
+            if args.infer_force_control and (args.force_predict or args.force_guide):
+                target_force = max(1.0, float(np.mean(force_pred)))
+            else:
+                target_force = 20.0
+
+            env.exec_actions(physical_actions, action_timestamps, target_force=target_force)
 
             inference_latency = time.time() - loop_start
             recorder.record_frame(latest_frame)
@@ -775,7 +783,6 @@ def main(args: Args) -> None:
 
             first_target = physical_actions[0]
             force_obs = _prepare_force(latest_frame.get("force"))
-            force_pred = action_chunk[0, 10:12] if action_chunk.shape[-1] >= 12 else np.zeros((2,), dtype=np.float64)
             exec_horizon = len(physical_actions) * robot_dt
             LOGGER.info(
                 "[step=%d] infer=%.1fms policy_chunk=%d exec_steps=%d eef_xyz=(%.3f, %.3f, %.3f) "

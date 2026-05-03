@@ -21,6 +21,9 @@ POLICY_DIR="${POLICY_DIR:-ckpt/501_bread_moving_0502_handcap_pi05_4gpu_tactile_f
 
 # 5. 任务 Prompt 提示词（输入给模型的语言指令）
 PROMPT="${PROMPT:-Pick up the bread and put it in the bowl on the right.}"
+
+# 6. 是否使用模型预测的力觉来动态控制夹爪夹持力 (最小保护为 1.0N)
+export INFER_FORCE_CONTROL="${INFER_FORCE_CONTROL:-true}"
 # ==============================================================================
 
 echo "Cleaning up port 8000..."
@@ -65,6 +68,11 @@ STEPS_PER_INFERENCE="20"
 OBS_HORIZON="${OBS_HORIZON:-2}"
 ACTION_LATENCY="${ACTION_LATENCY:-0.0}"
 
+INFER_FORCE_ARG=""
+if [[ "$INFER_FORCE_CONTROL" == "true" ]]; then
+  INFER_FORCE_ARG="--infer-force-control"
+fi
+
 bash start_handcap_remote_inference.sh \
   --policy-config "${POLICY_CONFIG}" \
   --policy-dir "${POLICY_DIR}" \
@@ -81,4 +89,5 @@ bash start_handcap_remote_inference.sh \
   --left-video-index "${TACTILE_LEFT_INDEX}" \
   --right-video-index "${TACTILE_RIGHT_INDEX}" \
   --force-predict \
-  --force-guide
+  --force-guide \
+  ${INFER_FORCE_ARG}
