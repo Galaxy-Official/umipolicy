@@ -127,25 +127,23 @@ class FlexivEnv:
         new_actions = actions[is_new]
         new_timestamps = timestamps[is_new]
         
-        if len(new_actions) > 0:
-            # Execute the last target in the chunk to avoid constant re-planning stutter
-            i = len(new_actions) - 1
+        for i in range(len(new_actions)):
             tip_pose = new_actions[i, 0:6]
-            target_width = new_actions[i, 6]
+            target_width = float(new_actions[i, 6])
             
             # Format target TCP pose to [x, y, z, qw, qx, qy, qz]
             pos, rot = pose_to_pos_rot(tip_pose)
             quat = rot.as_quat(scalar_first=False) # x,y,z,w
-            target_tcp = [pos[0], pos[1], pos[2], quat[3], quat[0], quat[1], quat[2]]
+            target_tcp = [float(pos[0]), float(pos[1]), float(pos[2]), 
+                          float(quat[3]), float(quat[0]), float(quat[1]), float(quat[2])]
             
             # --- Safety Boundary Clip ---
             from .flexiv_safety import clip_target_pose_7d
             target_tcp = clip_target_pose_7d(target_tcp)
             
             # Reduced velocity and acceleration scales for slower, smoother motion
-            # Signature: SendCartesianMotionForce(pose, wrench, velocity, max_linear_vel, max_angular_vel, max_linear_acc, max_angular_acc)
             self.robot.SendCartesianMotionForce(
-                target_tcp, [0]*6, [0]*6,
+                target_tcp, [0.0]*6, [0.0]*6,
                 self.arm_max_linear_vel,
                 self.arm_max_angular_vel,
                 self.arm_max_linear_acc,
@@ -156,5 +154,5 @@ class FlexivEnv:
             self.gripper.Move(safe_width, self.gripper_move_velocity, self.gripper_move_force)
             
             dt = new_timestamps[i] - time.time()
-            # Removed time.sleep(dt) to make exec_actions non-blocking. 
-            # Timing is handled by precise_wait in the main control loop.
+            if dt > 0:
+                time.sleep(dt)
