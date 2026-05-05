@@ -166,6 +166,96 @@ def get_handcap_configs():
     # Import here to avoid circular imports.
     from openpi.training.config import TrainConfig
 
+    pi05_base_params = "/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pi05_base/params"
+    tactile_encoder_ckpt = "/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt"
+    common_pi05_train_kwargs = {
+        "num_train_steps": 200_000,
+        "batch_size": 512,
+        "num_workers": 76,
+        "log_interval": 100,
+        "save_interval": 10000,
+        "keep_period": 20_000,
+    }
+
+    def make_pi05_505_configs(task_name: str, repo_id: str, data_root: str) -> list[TrainConfig]:
+        def model_config(
+            *,
+            use_tactile: bool,
+            force_predict: bool = False,
+            force_guide: bool = False,
+        ) -> pi0_config.Pi0Config:
+            kwargs = {
+                "pi05": True,
+                "use_tactile": use_tactile,
+                "camera_keys": ("wrist_0_rgb",),
+            }
+            if use_tactile:
+                kwargs.update(
+                    {
+                        "tactile_pretrained_ckpt": tactile_encoder_ckpt,
+                        "tactile_variant": "B/16",
+                        "fusion_method": "linear",
+                        "force_predict": force_predict,
+                        "force_guide": force_guide,
+                    }
+                )
+            else:
+                kwargs["tactile_pretrained_ckpt"] = ""
+            return pi0_config.Pi0Config(**kwargs)
+
+        def base_data_config() -> DataConfig:
+            return DataConfig(
+                prompt_from_task=True,
+                use_handcap=True,
+            )
+
+        return [
+            TrainConfig(
+                name=f"pi05_{task_name}",
+                model=model_config(use_tactile=False),
+                data=LeRobotHandcapWristDataConfig(
+                    repo_id=repo_id,
+                    data_root=data_root,
+                    base_config=base_data_config(),
+                ),
+                weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
+                **common_pi05_train_kwargs,
+            ),
+            TrainConfig(
+                name=f"pi05_{task_name}_tactile",
+                model=model_config(use_tactile=True),
+                data=LeRobotHandcapDataConfig(
+                    repo_id=repo_id,
+                    data_root=data_root,
+                    base_config=base_data_config(),
+                ),
+                weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
+                **common_pi05_train_kwargs,
+            ),
+            TrainConfig(
+                name=f"pi05_{task_name}_tactile_force_predict",
+                model=model_config(use_tactile=True, force_predict=True),
+                data=LeRobotHandcapDataConfig(
+                    repo_id=repo_id,
+                    data_root=data_root,
+                    base_config=base_data_config(),
+                ),
+                weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
+                **common_pi05_train_kwargs,
+            ),
+            TrainConfig(
+                name=f"pi05_{task_name}_tactile_force_guide",
+                model=model_config(use_tactile=True, force_predict=True, force_guide=True),
+                data=LeRobotHandcapDataConfig(
+                    repo_id=repo_id,
+                    data_root=data_root,
+                    base_config=base_data_config(),
+                ),
+                weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
+                **common_pi05_train_kwargs,
+            ),
+        ]
+
     return [
         TrainConfig(
             name="pi0_erase_board_and_write",
@@ -647,5 +737,15 @@ def get_handcap_configs():
             log_interval=100,
             save_interval=5000,
             keep_period=20_000,
+        ),
+        *make_pi05_505_configs(
+            task_name="505_screw",
+            repo_id="lihongcs/505_screw_lerobot",
+            data_root="Data/505_screw_lerobot",
+        ),
+        *make_pi05_505_configs(
+            task_name="505_stiring",
+            repo_id="lihongcs/505_stiring_lerobot",
+            data_root="Data/505_stiring_lerobot",
         ),
     ]
