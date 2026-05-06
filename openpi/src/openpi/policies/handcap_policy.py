@@ -295,31 +295,30 @@ class HandcapInputs(transforms.DataTransformFn):
         # of image, e.g. wrist images, you can comment it out here and replace it with zeros like we do for the
         # right wrist image below.
         wrist_image = _parse_image(data["observation/wrist_image"])
-        images = {"wrist_0_rgb": wrist_image}
-        image_mask = {"wrist_0_rgb": np.True_}
-
-        if self.include_tactile:
+        
+        if self.include_tactile and "observation/left_tactile" in data:
             left_tactile = _parse_image(data["observation/left_tactile"])
             right_tactile = _parse_image(data["observation/right_tactile"])
-            images.update(
-                {
-                    "left_tactile_0_rgb": left_tactile,
-                    "right_tactile_0_rgb": right_tactile,
-                }
-            )
-            image_mask.update(
-                {
-                    "left_tactile_0_rgb": np.True_,
-                    "right_tactile_0_rgb": np.True_,
-                }
-            )
+            tactile_mask = np.True_
+        else:
+            left_tactile = np.zeros_like(wrist_image)
+            right_tactile = np.zeros_like(wrist_image)
+            tactile_mask = np.False_
 
         # Create inputs dict. Do not change the keys in the dict below.
         inputs = {
             "state": state,
             "force": force,
-            "image": images,
-            "image_mask": image_mask,
+            "image": {
+                'wrist_0_rgb': wrist_image, 
+                'left_tactile_0_rgb': left_tactile,
+                'right_tactile_0_rgb': right_tactile
+            },
+            "image_mask": {
+                "wrist_0_rgb": np.True_,
+                "left_tactile_0_rgb": tactile_mask,
+                "right_tactile_0_rgb": tactile_mask
+            },
         }
 
         # Pad actions to the model action dimension. Keep this for your own dataset.
