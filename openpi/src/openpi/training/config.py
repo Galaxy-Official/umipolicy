@@ -1097,7 +1097,7 @@ def get_handcap_joint_configs():
                     repo_id=repo_id,
                     data_root=data_root,
                 ),
-                base_params=pi05_base_params,
+                weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
                 **common_pi05_train_kwargs,
             )
 
@@ -1124,6 +1124,7 @@ def get_handcap_joint_configs():
 
 import openpi.training.handcap_config as handcap_config
 _CONFIGS.extend(handcap_config.get_handcap_configs())
+_CONFIGS.extend(get_handcap_joint_configs())
 
 if len({config.name for config in _CONFIGS}) != len(_CONFIGS):
     raise ValueError("Config names must be unique.")
@@ -1143,4 +1144,3 @@ def get_config(config_name: str) -> TrainConfig:
 
     return _CONFIGS_DICT[config_name]
 
-_CONFIGS.extend(get_handcap_joint_configs())
