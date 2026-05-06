@@ -360,7 +360,7 @@ fi
 
 if ! python -c 'import numpy as np; import sys; sys.exit(0 if int(np.__version__.split(".")[0]) >= 2 else 1)' 2>/dev/null; then
   echo "NumPy < 2.0 detected. JAX 0.5+ requires NumPy >= 2.0. Upgrading numpy..."
-  pip install -q "numpy>=2.1.0"
+  pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -q "numpy>=2.1.0"
 fi
 
 cd "$REPO_ROOT"
