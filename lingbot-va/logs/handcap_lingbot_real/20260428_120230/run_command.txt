@@ -1,6 +1,0 @@
-# Generated at 2026-04-28T12:02:30+08:00
-Server command:
-python -m torch.distributed.run --nproc_per_node=1 --local-ranks-filter=0 --master_port 29501 --tee 3 -m wan_va.wan_va_server --config-name handcap --port 29536 --save_root ./train_out
-
-Client command:
-LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libstdc++.so.6 python scripts/handcap_flexiv_lingbot_remote.py --host 127.0.0.1 --port 29536 --prompt simple\ sorting\ task --robot-ip 192.168.2.100 --local-ip 192.168.2.102 --init-qpos \[-0.0\,\ -0.698\,\ -0.0\,\ 1.571\,\ -0.0\,\ 0.698\,\ -0.0\] --ctrl-freq 20 --steps-per-inference 4 --obs-horizon 1 --camera-fps 20 --action-latency 0.0 --action-pose-mode relative
