@@ -29,6 +29,7 @@ NUM_WORKERS="${NUM_WORKERS:-16}"
 # often costs throughput through extra cross-GPU communication.
 FSDP_DEVICES="${FSDP_DEVICES:-1}"
 RESUME="${RESUME:-0}"
+OVERWRITE="${OVERWRITE:-0}"
 
 export XLA_PYTHON_CLIENT_PREALLOCATE="true"
 export XLA_PYTHON_CLIENT_MEM_FRACTION="0.95"
@@ -48,14 +49,42 @@ echo "Batch size: ${BATCH_SIZE}"
 echo "Train steps: ${NUM_TRAIN_STEPS}"
 echo "Num Workers: ${NUM_WORKERS}"
 echo "Resume: ${RESUME}"
+echo "Overwrite: ${OVERWRITE}"
 echo "=========================================="
 
-python scripts/compute_norm_stats.py --config-name "${CONFIG_NAME}"
+CHECKPOINT_DIR="checkpoints/${CONFIG_NAME}/${EXP_NAME}"
+LATEST_CKPT="$(
+  find "${CHECKPOINT_DIR}" -maxdepth 1 -mindepth 1 -type d -name '[0-9]*' 2>/dev/null \
+    | awk -F/ '{print $NF}' \
+    | sort -n \
+    | tail -n 1 \
+    || true
+)"
 
-RUN_MODE_FLAG="--overwrite"
-if [[ "${RESUME}" == "1" ]]; then
-  RUN_MODE_FLAG="--resume"
+if [[ "${RESUME}" == "1" && "${OVERWRITE}" == "1" ]]; then
+  echo "ERROR: RESUME=1 and OVERWRITE=1 cannot be used together."
+  exit 1
 fi
+
+RUN_MODE_FLAGS=()
+if [[ "${RESUME}" == "1" ]]; then
+  if [[ -z "${LATEST_CKPT}" ]]; then
+    echo "ERROR: RESUME=1 but no numeric checkpoint was found under ${CHECKPOINT_DIR}."
+    echo "Refusing to start from scratch silently."
+    exit 1
+  fi
+  echo "Resuming from checkpoint step: ${LATEST_CKPT}"
+  RUN_MODE_FLAGS=(--resume)
+elif [[ "${OVERWRITE}" == "1" ]]; then
+  echo "WARNING: OVERWRITE=1 will delete any existing checkpoint directory: ${CHECKPOINT_DIR}"
+  RUN_MODE_FLAGS=(--overwrite)
+elif [[ -d "${CHECKPOINT_DIR}" ]]; then
+  echo "ERROR: Checkpoint directory already exists: ${CHECKPOINT_DIR}"
+  echo "Use RESUME=1 to continue from an existing checkpoint, or OVERWRITE=1 to intentionally start over."
+  exit 1
+fi
+
+python scripts/compute_norm_stats.py --config-name "${CONFIG_NAME}"
 
 python scripts/train.py \
   "${CONFIG_NAME}" \
@@ -66,4 +95,4 @@ python scripts/train.py \
   --num-workers "${NUM_WORKERS}" \
   --no-wandb-enabled \
   --fsdp-devices "${FSDP_DEVICES}" \
-  "${RUN_MODE_FLAG}"
+  "${RUN_MODE_FLAGS[@]}"

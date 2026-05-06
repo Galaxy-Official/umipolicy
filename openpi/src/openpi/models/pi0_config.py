@@ -33,11 +33,15 @@ class Pi0Config(_model.BaseModelConfig):
     fusion_method: str = "concat"
     force_predict: bool = False
     force_guide: bool = False
+    force_align: bool = False
     action_base_dim: int = 10
     force_dim: int = 2
     force_range: tuple[float, float] = (0.0, 10.0)
     min_vision_weight: float = 0.2
     default_tactile_weight: float = 0.5
+    force_align_weight: float = 0.05
+    force_align_temperature: float = 0.07
+    force_align_camera_key: str = "wrist_0_rgb"
     # Pi05 has two differences from Pi0:
     # - the state input is part of the discrete language tokens rather than a continuous input that is part of the suffix
     # - the action expert uses adaRMSNorm to inject the flow matching timestep
@@ -60,6 +64,15 @@ class Pi0Config(_model.BaseModelConfig):
             raise ValueError("default_tactile_weight must be in [0, 1]")
         if self.force_range[1] <= self.force_range[0]:
             raise ValueError("force_range max must be greater than min")
+        if self.force_align:
+            if not self.use_tactile:
+                raise ValueError("force_align requires use_tactile=True")
+            if self.force_align_weight < 0.0:
+                raise ValueError("force_align_weight must be non-negative")
+            if self.force_align_temperature <= 0.0:
+                raise ValueError("force_align_temperature must be positive")
+            if self.force_align_camera_key not in self.camera_keys:
+                raise ValueError("force_align_camera_key must be included in camera_keys")
         if self.max_token_len is None:
             object.__setattr__(self, "max_token_len", 200 if self.pi05 else 48)
         if self.discrete_state_input is None:

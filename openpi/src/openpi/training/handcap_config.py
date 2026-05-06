@@ -183,6 +183,7 @@ def get_handcap_configs():
             use_tactile: bool,
             force_predict: bool = False,
             force_guide: bool = False,
+            force_align: bool = False,
         ) -> pi0_config.Pi0Config:
             kwargs = {
                 "pi05": True,
@@ -197,6 +198,7 @@ def get_handcap_configs():
                         "fusion_method": "linear",
                         "force_predict": force_predict,
                         "force_guide": force_guide,
+                        "force_align": force_align,
                     }
                 )
             else:
@@ -254,6 +256,55 @@ def get_handcap_configs():
                 weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
                 **common_pi05_train_kwargs,
             ),
+            TrainConfig(
+                name=f"pi05_{task_name}_tactile_force_align",
+                model=model_config(use_tactile=True, force_predict=True, force_align=True),
+                data=LeRobotHandcapDataConfig(
+                    repo_id=repo_id,
+                    data_root=data_root,
+                    base_config=base_data_config(),
+                ),
+                weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
+                **common_pi05_train_kwargs,
+            ),
+        ]
+
+    def make_pi05_force_align_configs() -> list[TrainConfig]:
+        specs = (
+            ("bread_moving", "lihongcs/501_bread_moving_lerobot", "Data/501_bread_moving_lerobot"),
+            ("430_clamp_seal", "lihongcs/430_clamp_seal_lerobot", "Data/430_clamp_seal_lerobot"),
+            ("erase_board_wrist", "lihongcs/erase_board_wrist", "Data/429_erase_board_lerobot"),
+            ("430_towel_hanging", "lihongcs/430_towel_hanging_lerobot", "Data/430_towel_hanging_lerobot"),
+        )
+        return [
+            TrainConfig(
+                name=f"pi05_{task_name}_tactile_force_align",
+                model=pi0_config.Pi0Config(
+                    pi05=True,
+                    use_tactile=True,
+                    tactile_pretrained_ckpt=tactile_encoder_ckpt,
+                    tactile_variant="B/16",
+                    fusion_method="linear",
+                    force_predict=True,
+                    force_align=True,
+                    camera_keys=("wrist_0_rgb",),
+                ),
+                data=LeRobotHandcapDataConfig(
+                    repo_id=repo_id,
+                    data_root=data_root,
+                    base_config=DataConfig(
+                        prompt_from_task=True,
+                        use_handcap=True,
+                    ),
+                ),
+                weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
+                num_train_steps=200_000,
+                batch_size=8,
+                log_interval=100,
+                save_interval=5000,
+                keep_period=20_000,
+            )
+            for task_name, repo_id, data_root in specs
         ]
 
     return [
@@ -738,6 +789,7 @@ def get_handcap_configs():
             save_interval=5000,
             keep_period=20_000,
         ),
+        *make_pi05_force_align_configs(),
         *make_pi05_505_configs(
             task_name="505_screw",
             repo_id="lihongcs/505_screw_lerobot",
