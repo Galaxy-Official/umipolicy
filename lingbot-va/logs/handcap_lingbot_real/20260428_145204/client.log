@@ -1,0 +1,31 @@
+2026-04-28 14:52:12,372 [INFO] Control config: ctrl_freq=20.000Hz, steps_per_inference=4, camera_fps=20.000Hz, action_pose_mode=relative
+2026-04-28 14:52:12,372 [INFO] Connecting to LingBot-VA server at ws://127.0.0.1:29536
+2026-04-28 14:52:12,372 [INFO] Waiting for server at ws://127.0.0.1:29536...
+2026-04-28 14:52:12,373 [INFO] Server metadata: {}
+Traceback (most recent call last):
+  File "/home/rhos/umipolicy/lingbot-va/scripts/handcap_flexiv_lingbot_remote.py", line 471, in <module>
+    main()
+  File "/home/rhos/umipolicy/lingbot-va/scripts/handcap_flexiv_lingbot_remote.py", line 387, in main
+    policy.infer({"reset": True, "prompt": args.prompt})
+  File "/home/rhos/umipolicy/lingbot-va/wan_va/utils/Simple_Remote_Infer/deploy/websocket_client_policy.py", line 74, in infer
+    raise RuntimeError(f"Error in inference server:\n{response}")
+RuntimeError: Error in inference server:
+Traceback (most recent call last):
+  File "/home/rhos/umipolicy/lingbot-va/wan_va/utils/Simple_Remote_Infer/deploy/websocket_policy_server.py", line 63, in _handler
+    action = self._policy.infer(obs)
+  File "/home/rhos/umipolicy/lingbot-va/wan_va/utils/sever_utils.py", line 19, in infer
+    return distributed_infer(self.model, obs, self.local_rank)
+  File "/home/rhos/umipolicy/lingbot-va/wan_va/utils/sever_utils.py", line 37, in distributed_infer
+    result = model.infer(obs)
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/utils/_contextlib.py", line 120, in decorate_context
+    return func(*args, **kwargs)
+  File "/home/rhos/umipolicy/lingbot-va/wan_va/wan_va_server.py", line 619, in infer
+    self._reset(prompt=prompt)
+  File "/home/rhos/umipolicy/lingbot-va/wan_va/wan_va_server.py", line 409, in _reset
+    self.transformer.create_empty_cache(self.cache_name,
+  File "/home/rhos/umipolicy/lingbot-va/wan_va/modules/model.py", line 676, in create_empty_cache
+    block.attn1.init_kv_cache(cache_name, total_tolen,
+  File "/home/rhos/umipolicy/lingbot-va/wan_va/modules/model.py", line 360, in init_kv_cache
+    torch.empty([batch_size, total_tolen, num_head, head_dim],
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 216.00 MiB. GPU 0 has a total capacity of 15.57 GiB of which 122.62 MiB is free. Including non-PyTorch memory, this process has 14.95 GiB memory in use. Of the allocated memory 14.16 GiB is allocated by PyTorch, and 69.37 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+

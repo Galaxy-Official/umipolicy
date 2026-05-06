@@ -1,0 +1,77 @@
+[default0]:The config attributes {'clip_output': False} were passed to AutoencoderKLWan, but are not expected and will be ignored. Please verify your config.json configuration file.
+[default0]:
+[default0]:Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s][default0]:
+[default0]:Loading checkpoint shards: 100%|██████████| 3/3 [00:00<00:00, 274.20it/s]
+[default0]:
+[default0]:Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]
+[default0]:Loading checkpoint shards: 100%|██████████| 3/3 [00:00<00:00, 116.87it/s]
+[default0]:Some weights of the model checkpoint at /home/rhos/umipolicy/lingbot-va/ckpt/lingbot-va-base/transformer were not used when initializing WanTransformer3DModel: 
+[default0]: ['patch_embedding.weight, patch_embedding.bias']
+[default0]:[rank0]: Traceback (most recent call last):
+[default0]:[rank0]:   File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+[default0]:[rank0]:     return _run_code(code, main_globals, None,
+[default0]:[rank0]:   File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/runpy.py", line 86, in _run_code
+[default0]:[rank0]:     exec(code, run_globals)
+[default0]:[rank0]:   File "/home/rhos/umipolicy/lingbot-va/wan_va/wan_va_server.py", line 765, in <module>
+[default0]:[rank0]:     main()
+[default0]:[rank0]:   File "/home/rhos/umipolicy/lingbot-va/wan_va/wan_va_server.py", line 759, in main
+[default0]:[rank0]:     run(args)
+[default0]:[rank0]:   File "/home/rhos/umipolicy/lingbot-va/wan_va/wan_va_server.py", line 706, in run
+[default0]:[rank0]:     model = VA_Server(config)
+[default0]:[rank0]:   File "/home/rhos/umipolicy/lingbot-va/wan_va/wan_va_server.py", line 86, in __init__
+[default0]:[rank0]:     self.transformer = load_transformer(
+[default0]:[rank0]:   File "/home/rhos/umipolicy/lingbot-va/wan_va/modules/utils.py", line 73, in load_transformer
+[default0]:[rank0]:     return model.to(device=torch_device)
+[default0]:[rank0]:   File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/diffusers/models/modeling_utils.py", line 1435, in to
+[default0]:[rank0]:     return super().to(*args, **kwargs)
+[default0]:[rank0]:   File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1371, in to
+[default0]:[rank0]:     return self._apply(convert)
+[default0]:[rank0]:   File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/nn/modules/module.py", line 930, in _apply
+[default0]:[rank0]:     module._apply(fn)
+[default0]:[rank0]:   File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/nn/modules/module.py", line 930, in _apply
+[default0]:[rank0]:     module._apply(fn)
+[default0]:[rank0]:   File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/nn/modules/module.py", line 930, in _apply
+[default0]:[rank0]:     module._apply(fn)
+[default0]:[rank0]:   [Previous line repeated 3 more times]
+[default0]:[rank0]:   File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/nn/modules/module.py", line 957, in _apply
+[default0]:[rank0]:     param_applied = fn(param)
+[default0]:[rank0]:   File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1357, in convert
+[default0]:[rank0]:     return t.to(
+[default0]:[rank0]: torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 84.00 MiB. GPU 0 has a total capacity of 15.57 GiB of which 104.62 MiB is free. Including non-PyTorch memory, this process has 14.97 GiB memory in use. Of the allocated memory 14.23 GiB is allocated by PyTorch, and 11.69 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+[default0]:[rank0]:[W428 14:46:55.272703386 ProcessGroupNCCL.cpp:1524] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+[default0]:[rank0]:[W428 14:46:56.952159871 AllocatorConfig.cpp:28] Warning: PYTORCH_CUDA_ALLOC_CONF is deprecated, use PYTORCH_ALLOC_CONF instead (function operator())
+E0428 14:46:56.953000 544126 site-packages/torch/distributed/elastic/multiprocessing/api.py:882] failed (exitcode: 1) local_rank: 0 (pid: 544165) of binary: /home/rhos/miniconda3/envs/lingbot/bin/python
+Traceback (most recent call last):
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/distributed/run.py", line 940, in <module>
+    main()
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 357, in wrapper
+    return f(*args, **kwargs)
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/distributed/run.py", line 936, in main
+    run(args)
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/distributed/run.py", line 927, in run
+    elastic_launch(
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 156, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 293, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+wan_va.wan_va_server FAILED
+------------------------------------------------------------
+Failures:
+  <NO_OTHER_FAILURES>
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-04-28_14:46:56
+  host      : rhos-Leap
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 544165)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================
+[W428 14:46:57.362572272 AllocatorConfig.cpp:28] Warning: PYTORCH_CUDA_ALLOC_CONF is deprecated, use PYTORCH_ALLOC_CONF instead (function operator())

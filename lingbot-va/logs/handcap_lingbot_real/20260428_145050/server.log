@@ -1,0 +1,41 @@
+[default0]:The config attributes {'clip_output': False} were passed to AutoencoderKLWan, but are not expected and will be ignored. Please verify your config.json configuration file.
+[default0]:
+[default0]:Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]
+[default0]:Loading checkpoint shards: 100%|██████████| 3/3 [00:00<00:00, 277.62it/s]
+[default0]:
+[default0]:Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]
+[default0]:Loading checkpoint shards: 100%|██████████| 3/3 [00:00<00:00, 116.10it/s]
+[default0]:Some weights of the model checkpoint at /home/rhos/umipolicy/lingbot-va/ckpt/lingbot-va-base/transformer were not used when initializing WanTransformer3DModel: 
+[default0]: ['patch_embedding.weight, patch_embedding.bias']
+[default0]:2026-04-28 14:50:55,106 - root - INFO - ******************************USE Server mode******************************
+[default0]:2026-04-28 14:50:55,106 - root - INFO - Running in ASYNC SERVER mode
+[default0]:2026-04-28 14:50:55,107 - websockets.server - INFO - server listening on 0.0.0.0:29536
+[default0]:2026-04-28 14:50:55,817 - websockets.server - INFO - connection rejected (200 OK)
+W0428 14:50:56.855000 546126 site-packages/torch/distributed/elastic/agent/server/api.py:725] Received Signals.SIGTERM death signal, shutting down workers
+W0428 14:50:56.856000 546126 site-packages/torch/distributed/elastic/multiprocessing/api.py:908] Sending process 546163 closing signal SIGTERM
+Traceback (most recent call last):
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/distributed/run.py", line 940, in <module>
+    main()
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 357, in wrapper
+    return f(*args, **kwargs)
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/distributed/run.py", line 936, in main
+    run(args)
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/distributed/run.py", line 927, in run
+    elastic_launch(
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 156, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 284, in launch_agent
+    result = agent.run()
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/distributed/elastic/metrics/api.py", line 138, in wrapper
+    result = f(*args, **kwargs)
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/distributed/elastic/agent/server/api.py", line 717, in run
+    result = self._invoke_run(role)
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/distributed/elastic/agent/server/api.py", line 881, in _invoke_run
+    time.sleep(monitor_interval)
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/distributed/elastic/multiprocessing/api.py", line 85, in _terminate_process_handler
+    raise SignalException(f"Process {os.getpid()} got signal: {sigval}", sigval=sigval)
+torch.distributed.elastic.multiprocessing.api.SignalException: Process 546126 got signal: 15

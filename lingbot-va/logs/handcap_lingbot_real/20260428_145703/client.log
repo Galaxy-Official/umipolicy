@@ -1,0 +1,30 @@
+2026-04-28 14:57:11,331 [INFO] Control config: ctrl_freq=20.000Hz, steps_per_inference=4, camera_fps=20.000Hz, action_pose_mode=relative
+2026-04-28 14:57:11,331 [INFO] Connecting to LingBot-VA server at ws://127.0.0.1:29536
+2026-04-28 14:57:11,331 [INFO] Waiting for server at ws://127.0.0.1:29536...
+2026-04-28 14:57:11,332 [INFO] Server metadata: {}
+2026-04-28 14:57:50,543 [INFO] Initializing cameras from /home/rhos/umipolicy/lerobot/src/perception/configs/camera/handcap_camera.json (use_tactile=False)
+2026-04-28 14:57:50,549 [INFO] use_tactile=False: using wrist-only camera config /home/rhos/umipolicy/lerobot/src/perception/configs/camera/handcap_camera_no_tactile.json
+*******XOpenDisplay Fail ******* 
+SDK Version: [0x4070102]
+Find 1 devices!
+
+u3v device: [0]
+device model name: MV-CB060-10UC-S
+user serial number: DA8942749
+2026-04-28 14:57:51,832 [INFO] Initializing Flexiv environment at 192.168.2.100
+2026-04-28 14:57:51,837 [INFO] Initializing Flexiv Robot SN=Rizon4-062339, robot_ip=192.168.2.100, local_ip=192.168.2.101
+[2026-04-28 14:57:51.837] [info] | | | | | | | | | |  Flexiv RDK v1.9  | | | | | | | | | |
+[2026-04-28 14:57:52.945] [info] [flexiv::rdk::Robot] Searching for [Rizon4-062339] ...
+[2026-04-28 14:57:52.995] [info] [flexiv::rdk::Robot] Connected to the robot
+[2026-04-28 14:57:53.146] [info] [flexiv::rdk::Robot] Validated license: RDK-Professional
+[2026-04-28 14:57:53.147] [info] [flexiv::rdk::Robot] Initialization complete
+2026-04-28 14:57:53,150 [INFO] Enabling gripper [Flexiv-GN01].
+2026-04-28 14:57:53,256 [INFO] Switching to NRT_CARTESIAN_MOTION_FORCE mode.
+[2026-04-28 14:57:53.277] [info] [flexiv::rdk::Robot] Control mode switched to [NRT_CARTESIAN_MOTION_FORCE]
+2026-04-28 14:57:54,279 [INFO] Switching to NRT_JOINT_POSITION for reset.
+[2026-04-28 14:57:54.330] [info] [flexiv::rdk::Robot] Control mode switched to [NRT_JOINT_POSITION]
+2026-04-28 14:57:54,330 [INFO] Resetting robot to initial joint positions: [-0.0, -0.698, -0.0, 1.571, -0.0, 0.698, -0.0]
+2026-04-28 14:58:04,341 [INFO] Switching to NRT_CARTESIAN_MOTION_FORCE mode.
+[2026-04-28 14:58:04.392] [info] [flexiv::rdk::Robot] Control mode switched to [NRT_CARTESIAN_MOTION_FORCE]
+2026-04-28 14:58:04,393 [INFO] Waiting for observation queue to fill (obs_horizon=1)
+2026-04-28 14:58:04,404 [INFO] Observation queue filled. Starting LingBot-VA inference loop.

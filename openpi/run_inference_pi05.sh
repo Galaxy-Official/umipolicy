@@ -7,13 +7,13 @@
 # ==============================================================================
 # 1. 外置旁观录像相机（仅录像，不参与推理）。
 # 填入 /dev/video 编号（如 4）。若不录像则留空。
-export RECORDING_INDEX="${RECORDING_INDEX:-}"
+export RECORDING_INDEX="${RECORDING_INDEX:-14}"
 
 # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
 POLICY_CONFIG="${POLICY_CONFIG:-pi05_bread_moving}"
 
 # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
-POLICY_DIR="${POLICY_DIR:-ckpt/501_bread_moving_pi05_30000}"
+POLICY_DIR="${POLICY_DIR:-ckpt/430_clamp_seal_pi05_60000}"
 
 # 5. 任务 Prompt 提示词（输入给模型的语言指令）
 PROMPT="${PROMPT:-Pick up the bread and put it in the bowl on the right.}"

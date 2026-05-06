@@ -1,0 +1,57 @@
+[default0]:Traceback (most recent call last):
+[default0]:  File "/home/rhos/umipolicy/lingbot-va/wan_va/modules/model.py", line 30, in <module>
+[default0]:    from flash_attn_interface import flash_attn_func
+[default0]:ModuleNotFoundError: No module named 'flash_attn_interface'
+[default0]:
+[default0]:During handling of the above exception, another exception occurred:
+[default0]:
+[default0]:Traceback (most recent call last):
+[default0]:  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/runpy.py", line 187, in _run_module_as_main
+[default0]:    mod_name, mod_spec, code = _get_module_details(mod_name, _Error)
+[default0]:  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/runpy.py", line 110, in _get_module_details
+[default0]:    __import__(pkg_name)
+[default0]:  File "/home/rhos/umipolicy/lingbot-va/wan_va/__init__.py", line 2, in <module>
+[default0]:    from . import configs, distributed, modules
+[default0]:  File "/home/rhos/umipolicy/lingbot-va/wan_va/modules/__init__.py", line 2, in <module>
+[default0]:    from .utils import load_text_encoder, load_tokenizer, load_transformer, load_vae
+[default0]:  File "/home/rhos/umipolicy/lingbot-va/wan_va/modules/utils.py", line 9, in <module>
+[default0]:    from .model import WanTransformer3DModel
+[default0]:  File "/home/rhos/umipolicy/lingbot-va/wan_va/modules/model.py", line 32, in <module>
+[default0]:    from flash_attn import flash_attn_func
+[default0]:ModuleNotFoundError: No module named 'flash_attn'
+[default0]:[W428 12:04:24.128462214 AllocatorConfig.cpp:28] Warning: PYTORCH_CUDA_ALLOC_CONF is deprecated, use PYTORCH_ALLOC_CONF instead (function operator())
+E0428 12:04:25.024000 498518 site-packages/torch/distributed/elastic/multiprocessing/api.py:882] failed (exitcode: 1) local_rank: 0 (pid: 498555) of binary: /home/rhos/miniconda3/envs/lingbot/bin/python
+Traceback (most recent call last):
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/distributed/run.py", line 940, in <module>
+    main()
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 357, in wrapper
+    return f(*args, **kwargs)
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/distributed/run.py", line 936, in main
+    run(args)
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/distributed/run.py", line 927, in run
+    elastic_launch(
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 156, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+  File "/home/rhos/miniconda3/envs/lingbot/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 293, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+wan_va.wan_va_server FAILED
+------------------------------------------------------------
+Failures:
+  <NO_OTHER_FAILURES>
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-04-28_12:04:24
+  host      : rhos-Leap
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 498555)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================
+[W428 12:04:25.436924873 AllocatorConfig.cpp:28] Warning: PYTORCH_CUDA_ALLOC_CONF is deprecated, use PYTORCH_ALLOC_CONF instead (function operator())

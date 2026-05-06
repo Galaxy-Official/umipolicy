@@ -1,0 +1,49 @@
+2026-04-28 15:06:08,928 [INFO] Control config: ctrl_freq=20.000Hz, steps_per_inference=4, camera_fps=20.000Hz, action_pose_mode=relative
+2026-04-28 15:06:08,928 [INFO] Connecting to LingBot-VA server at ws://127.0.0.1:29536
+2026-04-28 15:06:08,928 [INFO] Waiting for server at ws://127.0.0.1:29536...
+2026-04-28 15:06:08,929 [INFO] Server metadata: {}
+2026-04-28 15:06:08,929 [INFO] reset: sending request to LingBot-VA server
+2026-04-28 15:06:18,929 [INFO] reset: still waiting for server response (10.0s elapsed)
+2026-04-28 15:06:28,930 [INFO] reset: still waiting for server response (20.0s elapsed)
+2026-04-28 15:06:38,930 [INFO] reset: still waiting for server response (30.0s elapsed)
+2026-04-28 15:06:48,930 [INFO] reset: still waiting for server response (40.0s elapsed)
+2026-04-28 15:06:49,568 [INFO] reset: server returned after 40.6s
+2026-04-28 15:06:49,568 [INFO] Initializing cameras from /home/rhos/umipolicy/lerobot/src/perception/configs/camera/handcap_camera.json (use_tactile=False)
+2026-04-28 15:06:49,572 [INFO] use_tactile=False: using wrist-only camera config /home/rhos/umipolicy/lerobot/src/perception/configs/camera/handcap_camera_no_tactile.json
+*******XOpenDisplay Fail ******* 
+SDK Version: [0x4070102]
+Find 1 devices!
+
+u3v device: [0]
+device model name: MV-CB060-10UC-S
+user serial number: DA8942749
+2026-04-28 15:06:50,855 [INFO] Initializing Flexiv environment at 192.168.2.100
+2026-04-28 15:06:50,859 [INFO] Initializing Flexiv Robot SN=Rizon4-062339, robot_ip=192.168.2.100, local_ip=192.168.2.101
+[2026-04-28 15:06:50.860] [info] | | | | | | | | | |  Flexiv RDK v1.9  | | | | | | | | | |
+[2026-04-28 15:06:51.968] [info] [flexiv::rdk::Robot] Searching for [Rizon4-062339] ...
+[2026-04-28 15:06:52.018] [info] [flexiv::rdk::Robot] Connected to the robot
+[2026-04-28 15:06:52.169] [info] [flexiv::rdk::Robot] Validated license: RDK-Professional
+[2026-04-28 15:06:52.169] [info] [flexiv::rdk::Robot] Initialization complete
+2026-04-28 15:06:52,173 [INFO] Enabling gripper [Flexiv-GN01].
+2026-04-28 15:06:52,279 [INFO] Switching to NRT_CARTESIAN_MOTION_FORCE mode.
+[2026-04-28 15:06:52.299] [info] [flexiv::rdk::Robot] Control mode switched to [NRT_CARTESIAN_MOTION_FORCE]
+2026-04-28 15:06:53,301 [INFO] Switching to NRT_JOINT_POSITION for reset.
+[2026-04-28 15:06:53.352] [info] [flexiv::rdk::Robot] Control mode switched to [NRT_JOINT_POSITION]
+2026-04-28 15:06:53,352 [INFO] Resetting robot to initial joint positions: [-0.0, -0.698, -0.0, 1.571, -0.0, 0.698, -0.0]
+2026-04-28 15:07:03,363 [INFO] Switching to NRT_CARTESIAN_MOTION_FORCE mode.
+[2026-04-28 15:07:03.414] [info] [flexiv::rdk::Robot] Control mode switched to [NRT_CARTESIAN_MOTION_FORCE]
+2026-04-28 15:07:03,415 [INFO] Waiting for observation queue to fill (obs_horizon=1)
+2026-04-28 15:07:03,425 [INFO] Observation queue filled. Starting LingBot-VA inference loop.
+2026-04-28 15:07:03,427 [INFO] step=1: sending request to LingBot-VA server
+2026-04-28 15:07:13,427 [INFO] step=1: still waiting for server response (10.0s elapsed)
+2026-04-28 15:07:23,428 [INFO] step=1: still waiting for server response (20.0s elapsed)
+2026-04-28 15:07:33,428 [INFO] step=1: still waiting for server response (30.0s elapsed)
+2026-04-28 15:07:43,428 [INFO] step=1: still waiting for server response (40.0s elapsed)
+2026-04-28 15:07:53,428 [INFO] step=1: still waiting for server response (50.0s elapsed)
+2026-04-28 15:08:03,428 [INFO] step=1: still waiting for server response (60.0s elapsed)
+2026-04-28 15:08:13,429 [INFO] step=1: still waiting for server response (70.0s elapsed)
+2026-04-28 15:08:23,429 [INFO] step=1: still waiting for server response (80.0s elapsed)
+2026-04-28 15:08:33,429 [INFO] step=1: still waiting for server response (90.0s elapsed)
+2026-04-28 15:08:43,429 [INFO] step=1: still waiting for server response (100.0s elapsed)
+2026-04-28 15:08:53,429 [INFO] step=1: still waiting for server response (110.0s elapsed)
+2026-04-28 15:09:03,430 [INFO] step=1: still waiting for server response (120.0s elapsed)
