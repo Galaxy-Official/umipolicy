@@ -49,4 +49,4 @@ python scripts/train.py \
   --num-workers "${NUM_WORKERS}" \
   --no-wandb-enabled \
   --fsdp-devices "${FSDP_DEVICES}" \
-  --overwrite
+  --resume

@@ -51,9 +51,6 @@ TACTILE_IMAGE_KEYS = (
     "right_tactile_0_rgb"
 )
 
-POINTCLOUD_KEYS = (
-    "phone_pointcloud",
-)
 
 # This may need change if we release a small model.
 IMAGE_RESOLUTION = (224, 224)
@@ -122,9 +119,6 @@ class Observation(Generic[ArrayT]):
     token_ar_mask: at.Int[ArrayT, "*b l"] | None = None
     # Token loss mask (for FAST autoregressive model).
     token_loss_mask: at.Bool[ArrayT, "*b l"] | None = None
-    
-    pointclouds: dict[str, at.Float[ArrayT, "*b n c"]] = dataclasses.field(default_factory=dict)
-    pointcloud_masks: dict[str, at.Bool[ArrayT, "*b"]] = dataclasses.field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: at.PyTree[ArrayT]) -> "Observation[ArrayT]":
@@ -159,24 +153,12 @@ class Observation(Generic[ArrayT]):
                 tactile_images[key] = tactile_images[key].astype(np.float32) / 255.0 * 2.0 - 1.0
             elif hasattr(tactile_images[key], "dtype") and tactile_images[key].dtype == torch.uint8:
                 tactile_images[key] = tactile_images[key].to(torch.float32).permute(0, 3, 1, 2) / 255.0 * 2.0 - 1.0
-                
-        pointclouds = {}
-        for key in data.get("pointcloud", {}):
-            if key in POINTCLOUD_KEYS:
-                pointclouds[key] = data["pointcloud"][key].astype(np.float32)
-
-        pointcloud_masks = {}
-        for key in data.get("pointcloud_mask", {}):
-            if key in POINTCLOUD_KEYS:
-                pointcloud_masks[key] = data["pointcloud_mask"][key]
 
         return cls(
             images=images,
             tactile_images=tactile_images,
             image_masks=image_masks,
             tactile_image_masks=tactile_image_masks,
-            pointclouds=pointclouds,
-            pointcloud_masks=pointcloud_masks,
             state=data["state"],
             force=data.get("force"),
             tokenized_prompt=data.get("tokenized_prompt"),
@@ -190,10 +172,6 @@ class Observation(Generic[ArrayT]):
         result = dataclasses.asdict(self)
         result["image"] = {**result.pop("images"), **result.pop("tactile_images", {})}
         result["image_mask"] = {**result.pop("image_masks"), **result.pop("tactile_image_masks", {})}
-        
-        result["pointcloud"] = result.pop("pointclouds", {})
-        result["pointcloud_mask"] = result.pop("pointcloud_masks", {})
-        
         return result
 
 
@@ -301,31 +279,18 @@ def preprocess_observation(
             out_tactile_image_masks[key] = jnp.ones(batch_shape, dtype=jnp.bool)
         else:
             out_tactile_image_masks[key] = jnp.asarray(observation.tactile_image_masks[key])
-            
-    out_pointclouds = {}
-    for key, pc in observation.pointclouds.items():
-        out_pointclouds[key] = jnp.asarray(pc, dtype=jnp.float32)
-
-    out_pointcloud_masks = {}
-    for key in out_pointclouds:
-        if key not in observation.pointcloud_masks:
-            out_pointcloud_masks[key] = jnp.ones(batch_shape, dtype=jnp.bool_)
-        else:
-            out_pointcloud_masks[key] = jnp.asarray(observation.pointcloud_masks[key])
 
     return Observation(
-    images=out_images,
-    image_masks=out_masks,
-    tactile_images=out_tactile_images,
-    tactile_image_masks=out_tactile_image_masks,
-    pointclouds=out_pointclouds,
-    pointcloud_masks=out_pointcloud_masks,
-    state=observation.state,
-    force=observation.force,
-    tokenized_prompt=observation.tokenized_prompt,
-    tokenized_prompt_mask=observation.tokenized_prompt_mask,
-    token_ar_mask=observation.token_ar_mask,
-    token_loss_mask=observation.token_loss_mask,
+        images=out_images,
+        image_masks=out_masks,
+        tactile_images=out_tactile_images,
+        tactile_image_masks=out_tactile_image_masks,
+        state=observation.state,
+        force=observation.force,
+        tokenized_prompt=observation.tokenized_prompt,
+        tokenized_prompt_mask=observation.tokenized_prompt_mask,
+        token_ar_mask=observation.token_ar_mask,
+        token_loss_mask=observation.token_loss_mask,
     )
 
 

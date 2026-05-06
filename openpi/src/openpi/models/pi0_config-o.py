@@ -33,15 +33,11 @@ class Pi0Config(_model.BaseModelConfig):
     fusion_method: str = "concat"
     force_predict: bool = False
     force_guide: bool = False
-    force_align: bool = False
     action_base_dim: int = 10
     force_dim: int = 2
     force_range: tuple[float, float] = (0.0, 10.0)
     min_vision_weight: float = 0.2
     default_tactile_weight: float = 0.5
-    force_align_weight: float = 0.05
-    force_align_temperature: float = 0.07
-    force_align_camera_key: str = "wrist_0_rgb"
     # Pi05 has two differences from Pi0:
     # - the state input is part of the discrete language tokens rather than a continuous input that is part of the suffix
     # - the action expert uses adaRMSNorm to inject the flow matching timestep
@@ -50,14 +46,6 @@ class Pi0Config(_model.BaseModelConfig):
     discrete_state_input: bool = None  # type: ignore
 
     pytorch_compile_mode: str | None = "max-autotune"
-    
-    use_point: bool = False
-    point_pretrained_ckpt: str = ""
-    pointcloud_keys: tuple = ("phone_pointcloud",)
-    point_num_points: int = 1024
-    point_dim: int = 3      # xyz，或者 6 表示 xyzrgb
-    point_token_len: int = 1
-    point_encoder_type: str = "pointbert"  # 或 "mlp", "pointnet"
 
     def __post_init__(self):
         if self.fusion_method not in ("concat", "linear", "film"):
@@ -72,15 +60,6 @@ class Pi0Config(_model.BaseModelConfig):
             raise ValueError("default_tactile_weight must be in [0, 1]")
         if self.force_range[1] <= self.force_range[0]:
             raise ValueError("force_range max must be greater than min")
-        if self.force_align:
-            if not self.use_tactile:
-                raise ValueError("force_align requires use_tactile=True")
-            if self.force_align_weight < 0.0:
-                raise ValueError("force_align_weight must be non-negative")
-            if self.force_align_temperature <= 0.0:
-                raise ValueError("force_align_temperature must be positive")
-            if self.force_align_camera_key not in self.camera_keys:
-                raise ValueError("force_align_camera_key must be included in camera_keys")
         if self.max_token_len is None:
             object.__setattr__(self, "max_token_len", 200 if self.pi05 else 48)
         if self.discrete_state_input is None:
@@ -110,51 +89,25 @@ class Pi0Config(_model.BaseModelConfig):
     def inputs_spec(self, *, batch_size: int = 1) -> tuple[_model.Observation, _model.Actions]:
         image_spec = jax.ShapeDtypeStruct([batch_size, *_model.IMAGE_RESOLUTION, 3], jnp.float32)
         image_mask_spec = jax.ShapeDtypeStruct([batch_size], jnp.bool_)
-        tactile_images = (
-            {
-                "left_tactile_0_rgb": image_spec,
-                "right_tactile_0_rgb": image_spec,
-            }
-            if self.use_tactile
-            else {}
-        )
-        tactile_image_masks = {key: image_mask_spec for key in tactile_images}
-
-        pointcloud_spec_dict = {}
-        pointcloud_mask_dict = {}
-
-        if self.use_point:
-            pointcloud_spec = jax.ShapeDtypeStruct(
-                [batch_size, self.point_num_points, self.point_dim],
-                jnp.float32,
-            )
-            pointcloud_mask_spec = jax.ShapeDtypeStruct([batch_size], jnp.bool_)
-
-            pointcloud_spec_dict = {
-                k: pointcloud_spec for k in self.pointcloud_keys
-            }
-            pointcloud_mask_dict = {
-                k: pointcloud_mask_spec for k in self.pointcloud_keys
-            }
 
         with at.disable_typechecking():
             observation_spec = _model.Observation(
                 images={k: image_spec for k in self.camera_keys},
-                tactile_images=tactile_images,
+                tactile_images={
+                    "left_tactile_0_rgb": image_spec,
+                    "right_tactile_0_rgb": image_spec,
+                },
                 image_masks={k: image_mask_spec for k in self.camera_keys},
-                tactile_image_masks=tactile_image_masks,
+                tactile_image_masks={
+                    "left_tactile_0_rgb": image_mask_spec,
+                    "right_tactile_0_rgb": image_mask_spec,
+                },
                 state=jax.ShapeDtypeStruct([batch_size, self.action_dim], jnp.float32),
                 force=jax.ShapeDtypeStruct([batch_size, self.force_dim], jnp.float32),
                 tokenized_prompt=jax.ShapeDtypeStruct([batch_size, self.max_token_len], jnp.int32),
                 tokenized_prompt_mask=jax.ShapeDtypeStruct([batch_size, self.max_token_len], bool),
-                pointclouds=pointcloud_spec_dict,
-                pointcloud_masks=pointcloud_mask_dict,
             )
-
-        action_spec = jax.ShapeDtypeStruct(
-            [batch_size, self.action_horizon, self.action_dim],
-            jnp.float32,
-        )
+        action_spec = jax.ShapeDtypeStruct([batch_size, self.action_horizon, self.action_dim], jnp.float32)
 
         return observation_spec, action_spec
 

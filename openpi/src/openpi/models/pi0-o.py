@@ -15,35 +15,6 @@ from openpi.shared import array_typing as at
 
 logger = logging.getLogger("openpi")
 
-# lerobot/policies/point_backbone.py
-import torch
-import torch.nn as nn
-import einops
-
-class PointBackbone(nnx.Module):
-    """
-    Minimal JAX/NNX point encoder.
-    Input:  [B, N, C]
-    Output: [B, S, D]
-    """
-
-    def __init__(self, input_dim: int, hidden_dim: int, num_tokens: int, rngs: nnx.Rngs):
-        self.num_tokens = num_tokens
-        self.fc1 = nnx.Linear(input_dim, hidden_dim, rngs=rngs)
-        self.fc2 = nnx.Linear(hidden_dim, hidden_dim, rngs=rngs)
-        self.token_proj = nnx.Linear(hidden_dim, hidden_dim, rngs=rngs)
-
-    def __call__(self, pc: jnp.ndarray) -> jnp.ndarray:
-        x = jnp.asarray(pc, dtype=jnp.float32)          # [B, N, C]
-        x = self.fc1(x)
-        x = nnx.relu(x)
-        x = self.fc2(x)
-        x = nnx.relu(x)
-        pooled = jnp.mean(x, axis=1)                   # [B, D]
-        tokens = jnp.repeat(pooled[:, None, :], self.num_tokens, axis=1)
-        tokens = self.token_proj(tokens)               # [B, S, D]
-        return tokens
-
 
 def make_attn_mask(input_mask, mask_ar):
     """Adapted from big_vision.
@@ -140,16 +111,6 @@ class Pi0(_model.BaseModel):
             self.fusion_gamma = nnx.Linear(paligemma_config.width, paligemma_config.width, rngs=rngs)
             self.fusion_beta = nnx.Linear(paligemma_config.width, paligemma_config.width, rngs=rngs)
 
-        if self.config.force_align:
-            self.force_align_vision_proj = nnx.Linear(paligemma_config.width, paligemma_config.width, rngs=rngs)
-            
-            # Force encoder MLP
-            self.force_align_force_mlp_in = nnx.Linear(config.force_dim, 128, rngs=rngs)
-            self.force_align_force_mlp_out = nnx.Linear(128, 128, rngs=rngs)
-            
-            # Linear Fusion for tactile_context and force_feature
-            self.force_align_fusion_proj = nnx.Linear(paligemma_config.width + 128, paligemma_config.width, rngs=rngs)
-
         self.action_in_proj = nnx.Linear(config.action_dim, action_expert_config.width, rngs=rngs)
         if config.pi05:
             self.time_mlp_in = nnx.Linear(action_expert_config.width, action_expert_config.width, rngs=rngs)
@@ -162,17 +123,6 @@ class Pi0(_model.BaseModel):
 
         # This attribute gets automatically set by model.train() and model.eval().
         self.deterministic = True
-        
-        if self.config.use_point:
-            logger.info("Using pointcloud encoder.")
-            self.point_encoder = PointBackbone(
-                input_dim=config.point_dim,
-                hidden_dim=paligemma_config.width,
-                num_tokens=config.point_token_len,
-                rngs=rngs,
-            )
-        else:
-            logger.info("Not using pointcloud encoder.")
 
     def _force_modality_weights(self, obs: _model.Observation) -> tuple[at.Float[at.Array, "b 1 1"], at.Float[at.Array, "b 1 1"]]:
         batch_size = obs.state.shape[0]
@@ -189,84 +139,16 @@ class Pi0(_model.BaseModel):
         vision_weight = 1.0 - tactile_weight
         return vision_weight[:, None, :], tactile_weight[:, None, :]
 
-    def _masked_mean(self, tokens, mask):
-        mask = jnp.asarray(mask, dtype=jnp.float32)
-        denom = jnp.maximum(jnp.sum(mask, axis=1, keepdims=True), 1.0)
-        return jnp.sum(jnp.asarray(tokens, dtype=jnp.float32) * mask[:, :, None], axis=1) / denom
-
-    def _force_align_loss(
-        self,
-        vision_tokens,
-        vision_mask,
-        tactile_tokens: list[at.Array],
-        tactile_masks: list[at.Array],
-        obs: _model.Observation,
-    ) -> at.Float[at.Array, "b"]:
-        batch_size = obs.state.shape[0]
-        zeros = jnp.zeros((batch_size,), dtype=jnp.float32)
-        if not self.config.force_align or vision_tokens is None or vision_mask is None or not tactile_tokens:
-            return zeros
-
-        tactile_tokens = jnp.concatenate(tactile_tokens, axis=1)
-        tactile_mask = jnp.concatenate(tactile_masks, axis=1)
-        vision_context = self._masked_mean(vision_tokens, vision_mask)
-        tactile_context = self._masked_mean(tactile_tokens, tactile_mask)
-
-        if obs.force is None:
-            force = jnp.zeros((batch_size, self.config.force_dim), dtype=jnp.float32)
-        else:
-            force = jnp.asarray(obs.force[..., : self.config.force_dim], dtype=jnp.float32)
-            
-        # Basic NaN handling, avoid aggressive clipping. We expect forces roughly 0~9.8N
-        force = jnp.nan_to_num(force, nan=0.0, posinf=9.8, neginf=0.0)
-
-        # Pass through the new force encoder
-        force_feature = self.force_align_force_mlp_in(force)
-        force_feature = nnx.relu(force_feature)
-        force_feature = self.force_align_force_mlp_out(force_feature)
-
-        vision_embed = self.force_align_vision_proj(vision_context)
-        
-        # Concatenate tactile context and force feature, then linear fuse
-        tactile_force_context = jnp.concatenate([tactile_context, force_feature], axis=-1)
-        tactile_force_embed = self.force_align_fusion_proj(tactile_force_context)
-        
-        vision_embed = vision_embed / jnp.maximum(jnp.linalg.norm(vision_embed, axis=-1, keepdims=True), 1e-6)
-        tactile_force_embed = tactile_force_embed / jnp.maximum(
-            jnp.linalg.norm(tactile_force_embed, axis=-1, keepdims=True), 1e-6
-        )
-
-        logits = jnp.matmul(vision_embed, tactile_force_embed.T) / self.config.force_align_temperature
-        vision_valid = jnp.sum(jnp.asarray(vision_mask, dtype=jnp.float32), axis=1) > 0.0
-        tactile_valid = jnp.sum(jnp.asarray(tactile_mask, dtype=jnp.float32), axis=1) > 0.0
-        valid = jnp.logical_and(vision_valid, tactile_valid)
-        valid_pair = jnp.logical_and(valid[:, None], valid[None, :])
-        logits = jnp.where(valid_pair, logits, -1e9)
-
-        image_to_touch = -jnp.diag(jax.nn.log_softmax(logits, axis=-1))
-        touch_to_image = -jnp.diag(jax.nn.log_softmax(logits, axis=0))
-        per_sample_loss = 0.5 * (image_to_touch + touch_to_image)
-        valid_float = valid.astype(jnp.float32)
-        valid_count = jnp.sum(valid_float)
-        return jnp.where(valid_count > 1.0, per_sample_loss * valid_float, zeros)
-
     @at.typecheck
     def embed_prefix(
-        self, obs: _model.Observation, *, compute_force_align_loss: bool = False
-    ) -> tuple[
-        at.Float[at.Array, "b s emb"],
-        at.Bool[at.Array, "b s"],
-        at.Bool[at.Array, " s"],
-        at.Float[at.Array, "b"],
-    ]:
+        self, obs: _model.Observation
+    ) -> tuple[at.Float[at.Array, "b s emb"], at.Bool[at.Array, "b s"], at.Bool[at.Array, " s"]]:
         input_mask = []
         ar_mask = []
         tokens = []
 
         vision_tokens = []
         vision_masks = []
-        force_align_vision_tokens = None
-        force_align_vision_mask = None
         # embed images
         for name in obs.images:
             image_tokens, _ = self.PaliGemma.img(obs.images[name], train=False)
@@ -279,9 +161,6 @@ class Pi0(_model.BaseModel):
                     s=image_tokens.shape[1],
                 )
             )
-            if compute_force_align_loss and name == self.config.force_align_camera_key:
-                force_align_vision_tokens = image_tokens
-                force_align_vision_mask = vision_masks[-1]
 
         tactile_tokens = []
         tactile_masks = []
@@ -296,14 +175,6 @@ class Pi0(_model.BaseModel):
                         s=tactile_image_tokens.shape[1],
                     )
                 )
-
-        force_align_loss = self._force_align_loss(
-            force_align_vision_tokens,
-            force_align_vision_mask,
-            tactile_tokens,
-            tactile_masks,
-            obs,
-        )
 
         if self.config.use_tactile and tactile_tokens and self.config.fusion_method in ("linear", "film"):
             vision_weight, tactile_weight = self._force_modality_weights(obs)
@@ -320,20 +191,6 @@ class Pi0(_model.BaseModel):
                 jnp.logical_and(mask, einops.repeat(tactile_active, "b -> b s", s=mask.shape[1]))
                 for mask in tactile_masks
             ]
-            
-        point_tokens = []
-        point_masks = []
-        if self.config.use_point:
-            for name in obs.pointclouds:
-                pc_tokens = self.point_encoder(obs.pointclouds[name])
-                point_tokens.append(pc_tokens)
-                point_masks.append(
-                    einops.repeat(
-                        obs.pointcloud_masks[name],
-                        "b -> b s",
-                        s=pc_tokens.shape[1],
-                    )
-                )
 
         for image_tokens, mask in zip(vision_tokens, vision_masks, strict=True):
             tokens.append(image_tokens)
@@ -346,11 +203,6 @@ class Pi0(_model.BaseModel):
             input_mask.append(mask)
             # tactile image tokens attend to each other
             ar_mask += [False] * tactile_image_tokens.shape[1]
-            
-        for pc_tokens, mask in zip(point_tokens, point_masks, strict=True):
-            tokens.append(pc_tokens)
-            input_mask.append(mask)
-            ar_mask += [False] * pc_tokens.shape[1]
 
         # add language (aka tokenized inputs)
         if obs.tokenized_prompt is not None:
@@ -362,7 +214,7 @@ class Pi0(_model.BaseModel):
         tokens = jnp.concatenate(tokens, axis=1)
         input_mask = jnp.concatenate(input_mask, axis=1)
         ar_mask = jnp.array(ar_mask)
-        return tokens, input_mask, ar_mask, force_align_loss
+        return tokens, input_mask, ar_mask
 
     @at.typecheck
     def embed_suffix(
@@ -428,9 +280,7 @@ class Pi0(_model.BaseModel):
         u_t = noise - actions
 
         # one big forward pass of prefix + suffix at once
-        prefix_tokens, prefix_mask, prefix_ar_mask, force_align_loss = self.embed_prefix(
-            observation, compute_force_align_loss=True
-        )
+        prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(observation)
         suffix_tokens, suffix_mask, suffix_ar_mask, adarms_cond = self.embed_suffix(observation, x_t, time)
         input_mask = jnp.concatenate([prefix_mask, suffix_mask], axis=1)
         ar_mask = jnp.concatenate([prefix_ar_mask, suffix_ar_mask], axis=0)
@@ -441,10 +291,7 @@ class Pi0(_model.BaseModel):
         )
         v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
 
-        flow_loss = jnp.mean(jnp.square(v_t - u_t), axis=-1)
-        if self.config.force_align and self.config.force_align_weight > 0.0:
-            flow_loss = flow_loss + self.config.force_align_weight * force_align_loss[:, None]
-        return flow_loss
+        return jnp.mean(jnp.square(v_t - u_t), axis=-1)
 
     @override
     def sample_actions(
@@ -464,7 +311,7 @@ class Pi0(_model.BaseModel):
             noise = jax.random.normal(rng, (batch_size, self.action_horizon, self.action_dim))
 
         # first fill KV cache with a forward pass of the prefix
-        prefix_tokens, prefix_mask, prefix_ar_mask, _ = self.embed_prefix(observation)
+        prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(observation)
         prefix_attn_mask = make_attn_mask(prefix_mask, prefix_ar_mask)
         positions = jnp.cumsum(prefix_mask, axis=1) - 1
         _, kv_cache = self.PaliGemma.llm([prefix_tokens, None], mask=prefix_attn_mask, positions=positions)
