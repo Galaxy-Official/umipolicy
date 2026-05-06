@@ -102,19 +102,22 @@ class Pi0Config(_model.BaseModelConfig):
     def inputs_spec(self, *, batch_size: int = 1) -> tuple[_model.Observation, _model.Actions]:
         image_spec = jax.ShapeDtypeStruct([batch_size, *_model.IMAGE_RESOLUTION, 3], jnp.float32)
         image_mask_spec = jax.ShapeDtypeStruct([batch_size], jnp.bool_)
+        tactile_images = (
+            {
+                "left_tactile_0_rgb": image_spec,
+                "right_tactile_0_rgb": image_spec,
+            }
+            if self.use_tactile
+            else {}
+        )
+        tactile_image_masks = {key: image_mask_spec for key in tactile_images}
 
         with at.disable_typechecking():
             observation_spec = _model.Observation(
                 images={k: image_spec for k in self.camera_keys},
-                tactile_images={
-                    "left_tactile_0_rgb": image_spec,
-                    "right_tactile_0_rgb": image_spec,
-                },
+                tactile_images=tactile_images,
                 image_masks={k: image_mask_spec for k in self.camera_keys},
-                tactile_image_masks={
-                    "left_tactile_0_rgb": image_mask_spec,
-                    "right_tactile_0_rgb": image_mask_spec,
-                },
+                tactile_image_masks=tactile_image_masks,
                 state=jax.ShapeDtypeStruct([batch_size, self.action_dim], jnp.float32),
                 force=jax.ShapeDtypeStruct([batch_size, self.force_dim], jnp.float32),
                 tokenized_prompt=jax.ShapeDtypeStruct([batch_size, self.max_token_len], jnp.int32),

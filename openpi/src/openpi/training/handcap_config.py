@@ -40,6 +40,7 @@ class LeRobotHandcapDataConfig(DataConfigFactory):
         force_dim = getattr(model_config, "force_dim", 2)
         force_predict = getattr(model_config, "force_predict", False)
         force_guide = getattr(model_config, "force_guide", False)
+        include_tactile = getattr(model_config, "use_tactile", False)
         output_action_dim = action_base_dim + (force_dim if force_predict else 0)
 
         repack_transform = _transforms.Group(
@@ -62,6 +63,7 @@ class LeRobotHandcapDataConfig(DataConfigFactory):
                 handcap_policy.HandcapInputs(
                     action_dim=model_config.action_dim,
                     model_type=model_config.model_type,
+                    include_tactile=include_tactile,
                     force_predict=force_predict,
                     force_guide=force_guide,
                     action_base_dim=action_base_dim,

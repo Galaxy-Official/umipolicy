@@ -58,6 +58,42 @@ if [ "${USE_TACTILE}" = "true" ]; then
     TACTILE_FLAG="--use_tactile"
 fi
 
+START_TIME=$(date +%s)
+
+function on_exit {
+    # Ensure this only runs once
+    if [ -z "${EXIT_PROCESSED}" ]; then
+        export EXIT_PROCESSED=1
+        END_TIME=$(date +%s)
+        DURATION=$((END_TIME - START_TIME))
+
+        # Compute hours, minutes, seconds
+        HOURS=$((DURATION / 3600))
+        MINUTES=$(((DURATION % 3600) / 60))
+        SECONDS=$((DURATION % 60))
+        FORMATTED_TIME=$(printf "%02d:%02d:%02d" $HOURS $MINUTES $SECONDS)
+
+        # Append to summary file
+        SUMMARY_FILE="${ROOT_DIR}/${REPO_ID}/collection_summary.txt"
+        if [ -f "$SUMMARY_FILE" ]; then
+            if ! grep -q "Total Duration (seconds)" "$SUMMARY_FILE"; then
+                echo "Total Duration (seconds): ${DURATION}" >> "$SUMMARY_FILE"
+                echo "Total Duration (formatted): ${FORMATTED_TIME}" >> "$SUMMARY_FILE"
+            fi
+            
+            echo ""
+            echo "====================================================="
+            echo "             Collection Finished!                    "
+            echo "====================================================="
+            cat "$SUMMARY_FILE"
+            echo "====================================================="
+        fi
+    fi
+}
+
+# Trap EXIT and SIGINT so the summary is always printed, even if Ctrl+C is pressed
+trap on_exit EXIT SIGINT
+
 python -m lerobot.scripts.lerobot_flexiv_teleop_record \
     --repo-id "${REPO_ID}" \
     --root "${ROOT_DIR}" \
@@ -68,3 +104,4 @@ python -m lerobot.scripts.lerobot_flexiv_teleop_record \
     --fps ${FPS} \
     --single-task "${TASK_NAME}" \
     ${TACTILE_FLAG}
+

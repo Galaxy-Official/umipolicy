@@ -50,6 +50,10 @@ class TimmObsEncoderTactile(ModuleAttrMixin):
             fusion_method: str = 'concat',
             fusion_output_dim: Optional[int] = None,
             force_guide: bool = False,
+            force_align: bool = False,
+            force_align_temperature: float = 0.07,
+            force_align_weight: float = 0.1,
+            force_align_force_dim: int = 128,
             force_keys: Optional[list] = None,
             force_range: Tuple[float, float] = (0.0, 10.0),
             min_vision_weight: float = 0.2,
@@ -259,6 +263,10 @@ class TimmObsEncoderTactile(ModuleAttrMixin):
         self.fusion_method = fusion_method
         self.fusion_output_dim = fusion_output_dim
         self.force_guide = bool(force_guide)
+        self.force_align = bool(force_align)
+        self.force_align_temperature = float(force_align_temperature)
+        self.force_align_weight = float(force_align_weight)
+        self.force_align_force_dim = int(force_align_force_dim)
         self.force_keys = (
             sorted(force_keys) if force_keys is not None
             else sorted([key for key in low_dim_keys if 'force' in key])
@@ -276,10 +284,22 @@ class TimmObsEncoderTactile(ModuleAttrMixin):
                     nn.LayerNorm(self.fusion_output_dim),
                     nn.Linear(self.fusion_output_dim, 2 * self.fusion_output_dim)
                 )
+                
+        if self.force_align:
+            # Note: assuming fusion_output_dim is populated (default 1024 typically)
+            align_dim = self.fusion_output_dim if self.fusion_output_dim else 1024
+            self.force_align_vision_proj = nn.LazyLinear(align_dim)
+            self.force_align_force_mlp = nn.Sequential(
+                nn.LazyLinear(self.force_align_force_dim),
+                nn.ReLU(),
+                nn.Linear(self.force_align_force_dim, self.force_align_force_dim)
+            )
+            self.force_align_fusion_proj = nn.LazyLinear(align_dim)
 
         print('use_tactile:      ', self.use_tactile)
         print('fusion_method:    ', self.fusion_method)
         print('force_guide:      ', self.force_guide)
+        print('force_align:      ', self.force_align)
         print('force_keys:       ', self.force_keys)
 
         logger.info(
@@ -500,7 +520,8 @@ class TimmObsEncoderTactile(ModuleAttrMixin):
             batch_size: int,
             device: torch.device,
             dtype: torch.dtype,
-            raw_obs_dict: Optional[Dict[str, torch.Tensor]] = None):
+            raw_obs_dict: Optional[Dict[str, torch.Tensor]] = None,
+            return_align_loss: bool = False):
         if not self.force_guide:
             tactile_weight = torch.full(
                 (batch_size, 1),
@@ -548,7 +569,8 @@ class TimmObsEncoderTactile(ModuleAttrMixin):
             tactile_features,
             low_dim_features,
             batch_size: int,
-            raw_obs_dict: Optional[Dict[str, torch.Tensor]] = None):
+            raw_obs_dict: Optional[Dict[str, torch.Tensor]] = None,
+            return_align_loss: bool = False):
         if self.fusion_method == 'concat':
             return torch.cat(vision_features + tactile_features + low_dim_features, dim=-1)
 
@@ -589,10 +611,67 @@ class TimmObsEncoderTactile(ModuleAttrMixin):
             fused_feature = torch.cat([fused_feature] + low_dim_features, dim=-1)
         return fused_feature
 
+    def _compute_force_align_loss(
+            self,
+            vision_features,
+            tactile_features,
+            batch_size: int,
+            device: torch.device,
+            dtype: torch.dtype,
+            raw_obs_dict: Optional[Dict[str, torch.Tensor]] = None,
+            return_align_loss: bool = False):
+        
+        if len(vision_features) == 0 or len(tactile_features) == 0 or raw_obs_dict is None:
+            return torch.tensor(0.0, device=device, dtype=dtype)
+
+        force_values = list()
+        for key in self.force_keys:
+            if key not in raw_obs_dict:
+                continue
+            force = raw_obs_dict[key]
+            if force.shape[0] != batch_size:
+                continue
+            if force.ndim >= 3:
+                force = force[:, -1]
+            else:
+                force = force.reshape(batch_size, -1)
+            force_values.append(force.to(device=device, dtype=dtype).reshape(batch_size, -1))
+
+        if len(force_values) == 0:
+            return torch.tensor(0.0, device=device, dtype=dtype)
+        
+        force_tensor = torch.cat(force_values, dim=-1)
+        
+        # force feature
+        force_embed = self.force_align_force_mlp(force_tensor)
+        
+        # combine tactile and force
+        tactile_feature = torch.cat(tactile_features, dim=-1)
+        tactile_force_concat = torch.cat([tactile_feature, force_embed], dim=-1)
+        tactile_force_embed = self.force_align_fusion_proj(tactile_force_concat)
+        
+        # vision feature
+        vision_feature = torch.cat(vision_features, dim=-1)
+        vision_embed = self.force_align_vision_proj(vision_feature)
+        
+        # normalize
+        vision_embed = nn.functional.normalize(vision_embed, dim=-1)
+        tactile_force_embed = nn.functional.normalize(tactile_force_embed, dim=-1)
+        
+        # cosine similarity logits
+        logits = torch.matmul(vision_embed, tactile_force_embed.T) / self.force_align_temperature
+        
+        # infoNCE loss
+        labels = torch.arange(batch_size, device=device, dtype=torch.long)
+        loss_a = nn.functional.cross_entropy(logits, labels)
+        loss_b = nn.functional.cross_entropy(logits.T, labels)
+        return (loss_a + loss_b) / 2.0
+
     def forward(
             self,
             obs_dict: Dict[str, torch.Tensor],
-            raw_obs_dict: Optional[Dict[str, torch.Tensor]] = None):
+            raw_obs_dict: Optional[Dict[str, torch.Tensor]] = None,
+            return_align_loss: bool = False):
         rgb_features = list()
         vision_features = list()
         tactile_features = list()
@@ -624,15 +703,30 @@ class TimmObsEncoderTactile(ModuleAttrMixin):
             assert data.shape[2:] == self.key_shape_map[key]
             low_dim_features.append(data.reshape(B, -1))
 
-        if self.fusion_method == 'concat':
-            return torch.cat(rgb_features + low_dim_features, dim=-1)
+        align_loss = 0.0
+        if return_align_loss and getattr(self, 'force_align', False):
+            align_loss = self._compute_force_align_loss(
+                vision_features=vision_features,
+                tactile_features=tactile_features,
+                batch_size=batch_size,
+                device=vision_features[0].device if len(vision_features)>0 else next(iter(obs_dict.values())).device,
+                dtype=vision_features[0].dtype if len(vision_features)>0 else next(iter(obs_dict.values())).dtype,
+                raw_obs_dict=raw_obs_dict
+            )
 
-        return self._fuse_features(
-            vision_features=vision_features,
-            tactile_features=tactile_features,
-            low_dim_features=low_dim_features,
-            batch_size=batch_size,
-            raw_obs_dict=raw_obs_dict)
+        if self.fusion_method == 'concat':
+            fused_feature = torch.cat(rgb_features + low_dim_features, dim=-1)
+        else:
+            fused_feature = self._fuse_features(
+                vision_features=vision_features,
+                tactile_features=tactile_features,
+                low_dim_features=low_dim_features,
+                batch_size=batch_size,
+                raw_obs_dict=raw_obs_dict)
+            
+        if return_align_loss:
+            return fused_feature, align_loss
+        return fused_feature
 
     @torch.no_grad()
     def output_shape(self):

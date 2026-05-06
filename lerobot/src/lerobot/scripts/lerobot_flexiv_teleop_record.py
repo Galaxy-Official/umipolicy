@@ -68,6 +68,12 @@ def record(
     features["action"] = {
         "dtype": "float32", "shape": (10,), "names": ["x", "y", "z", "qx", "qy", "qz", "gripper", "none1", "none2", "none3"]
     }
+    features["observation.joint"] = {
+        "dtype": "float32", "shape": (8,), "names": ["j1", "j2", "j3", "j4", "j5", "j6", "j7", "gripper"]
+    }
+    features["action_joint"] = {
+        "dtype": "float32", "shape": (8,), "names": ["j1", "j2", "j3", "j4", "j5", "j6", "j7", "gripper"]
+    }
 
     # ---------------------------------------------------------
     # Zero-Latency Monkey-patch 10D eef pose representation
@@ -110,6 +116,19 @@ def record(
             if res is not None:
                 obs, act = res
                 # obs["observation.state"] is natively 10D thanks to fast_new_get_state
+                try:
+                    # Capture Joint State manually
+                    states = robot.flexiv.states()
+                    arm_state = list(states.q)[:7]
+                    gripper_w = float(robot.gripper.states().width)
+                    obs["observation.joint"] = torch.tensor(arm_state + [gripper_w], dtype=torch.float32)
+                    
+                    # Clone initial raw action from teleop as joint action
+                    if "action" in act:
+                        act["action_joint"] = act["action"].clone()
+                except Exception as e:
+                    logger.error(f"Failed to extract joint states: {e}")
+
                 target_action = obs["observation.state"].tolist() 
                 try:
                     if hasattr(robot, "teleop") and robot.teleop is not None:
@@ -253,65 +272,70 @@ def record(
         visual_process.daemon = True
         visual_process.start()
 
-    while not state["exit_app"] and recorded_episodes < num_episodes:
-        start_loop_t = time.perf_counter()
+    try:
+        while not state["exit_app"] and recorded_episodes < num_episodes:
+            start_loop_t = time.perf_counter()
 
-        observation, action = robot.teleop_step(record_data=True)
+            observation, action = robot.teleop_step(record_data=True)
 
-        if state["is_recording"]:
-            frame = {**observation, **action}
-            if task is not None:
-                frame["task"] = task
-            dataset.add_frame(frame)
+            if state["is_recording"]:
+                frame = {**observation, **action}
+                if task is not None:
+                    frame["task"] = task
+                dataset.add_frame(frame)
 
-        if display_cameras and visual_queue is not None:
-            now_t = time.perf_counter()
-            if now_t - last_render_time >= 0.033: # max 30 FPS UI refresh
-                image_keys = [k for k in observation if "image" in k]
+            if display_cameras and visual_queue is not None:
+                now_t = time.perf_counter()
+                if now_t - last_render_time >= 0.033: # max 30 FPS UI refresh
+                    image_keys = [k for k in observation if "image" in k]
                 
-                # Debug print exactly once
-                if _ui_debug_counter == 0:
-                    logger.info(f"UI Debug: First payload intercepted. Detected keys: {image_keys}")
-                    _ui_debug_counter = 1
+                    # Debug print exactly once
+                    if _ui_debug_counter == 0:
+                        logger.info(f"UI Debug: First payload intercepted. Detected keys: {image_keys}")
+                        _ui_debug_counter = 1
                 
-                render_dict = {}
-                for k in image_keys:
+                    render_dict = {}
+                    for k in image_keys:
+                        try:
+                            # Ensure we convert to numpy natively without errors
+                            render_dict[k] = cv2.cvtColor(observation[k].cpu().numpy(), cv2.COLOR_RGB2BGR)
+                        except Exception as e:
+                            if _ui_debug_counter == 1:
+                                logger.error(f"UI Debug Conversion Error: {e}")
+                                _ui_debug_counter = 2
+
                     try:
-                        # Ensure we convert to numpy natively without errors
-                        render_dict[k] = cv2.cvtColor(observation[k].cpu().numpy(), cv2.COLOR_RGB2BGR)
-                    except Exception as e:
-                        if _ui_debug_counter == 1:
-                            logger.error(f"UI Debug Conversion Error: {e}")
-                            _ui_debug_counter = 2
+                        if not visual_queue.full():
+                            visual_queue.put_nowait(render_dict)
+                    except Exception:
+                        pass
+                    last_render_time = now_t
 
+            if state["discard_episode"]:
+                dataset.clear_episode_buffer()
+                state["is_recording"] = False
+                state["discard_episode"] = False
+                logger.opt(colors=True).warning("<red>=> Episode discarded. Returned to [PAUSED]</red>")
+
+            if state["save_episode"]:
                 try:
-                    if not visual_queue.full():
-                        visual_queue.put_nowait(render_dict)
-                except Exception:
-                    pass
-                last_render_time = now_t
-
-        if state["discard_episode"]:
-            dataset.clear_episode_buffer()
-            state["is_recording"] = False
-            state["discard_episode"] = False
-            logger.opt(colors=True).warning("<red>=> Episode discarded. Returned to [PAUSED]</red>")
-
-        if state["save_episode"]:
-            try:
-                dataset.save_episode(task)
-                recorded_episodes += 1
-                logger.success(f"=== Episode {recorded_episodes} Saved Successfully! ===")
-            except Exception as e:
-                logger.error(f"Failed to save episode: {e}. Is the buffer empty?")
+                    dataset.save_episode(task)
+                    recorded_episodes += 1
+                    logger.success(f"=== Episode {recorded_episodes} Saved Successfully! ===")
+                except Exception as e:
+                    logger.error(f"Failed to save episode: {e}. Is the buffer empty?")
             
-            state["is_recording"] = False
-            state["save_episode"] = False
-            logger.opt(colors=True).warning("<red>=> Current State: [PAUSED] (Move arms freely to next target)</red>")
+                state["is_recording"] = False
+                state["save_episode"] = False
+                logger.opt(colors=True).warning("<red>=> Current State: [PAUSED] (Move arms freely to next target)</red>")
 
-        if fps is not None:
-            dt_s = time.perf_counter() - start_loop_t
-            busy_wait(1 / fps - dt_s)
+            if fps is not None:
+                dt_s = time.perf_counter() - start_loop_t
+                busy_wait(1 / fps - dt_s)
+
+    except KeyboardInterrupt:
+        logger.warning("KeyboardInterrupt (Ctrl+C) caught! Stopping recording and saving data...")
+        state["exit_app"] = True
 
     # ---------------------------------------------------------
     # Auto-save buffer if ESC was pressed while still recording
@@ -336,6 +360,19 @@ def record(
             logger.success("Dataset finalized successfully!")
     except Exception as e:
         logger.error(f"Error finalizing dataset: {e}")
+
+    try:
+        if dataset is not None:
+            summary_file = dataset.root / "collection_summary.txt"
+            num_episodes = dataset.num_episodes
+            num_frames = dataset.num_frames
+            with open(summary_file, "w") as f:
+                f.write(f"Repository ID: {repo_id}\n")
+                f.write(f"Total Episodes: {num_episodes}\n")
+                f.write(f"Total Frames (Data Records): {num_frames}\n")
+            logger.info(f"Saved collection summary to {summary_file}")
+    except Exception as e:
+        logger.error(f"Failed to write summary: {e}")
         
     if visual_process is not None:
         try:

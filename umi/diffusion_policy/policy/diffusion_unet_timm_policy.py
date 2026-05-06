@@ -82,10 +82,19 @@ class DiffusionUnetTimmPolicy(BaseImagePolicy):
             num_inference_steps = noise_scheduler.config.num_train_timesteps
         self.num_inference_steps = num_inference_steps
 
-    def _encode_obs(self, nobs, raw_obs_dict=None):
-        if hasattr(self.obs_encoder, 'force_guide'):
-            return self.obs_encoder(nobs, raw_obs_dict=raw_obs_dict)
-        return self.obs_encoder(nobs)
+    def _encode_obs(self, nobs, raw_obs_dict=None, return_align_loss=False):
+        kwargs = {}
+        if hasattr(self.obs_encoder, 'force_guide') or hasattr(self.obs_encoder, 'force_align'):
+            kwargs['raw_obs_dict'] = raw_obs_dict
+            
+        if return_align_loss and getattr(self.obs_encoder, 'force_align', False):
+            kwargs['return_align_loss'] = True
+            return self.obs_encoder(nobs, **kwargs)
+        else:
+            out = self.obs_encoder(nobs, **kwargs)
+            if return_align_loss:
+                return out, 0.0
+            return out
 
     def _format_action_result(self, action_pred):
         result = {
@@ -203,7 +212,12 @@ class DiffusionUnetTimmPolicy(BaseImagePolicy):
         nactions = self.normalizer['action'].normalize(batch['action'])
         
         assert self.obs_as_global_cond
-        global_cond = self._encode_obs(nobs, raw_obs_dict=batch['obs'])
+        
+        align_loss = 0.0
+        if getattr(self.obs_encoder, 'force_align', False):
+            global_cond, align_loss = self._encode_obs(nobs, raw_obs_dict=batch['obs'], return_align_loss=True)
+        else:
+            global_cond = self._encode_obs(nobs, raw_obs_dict=batch['obs'])
 
         # train on multiple diffusion samples per obs
         if self.train_diffusion_n_samples != 1:
@@ -253,6 +267,9 @@ class DiffusionUnetTimmPolicy(BaseImagePolicy):
         loss = loss.type(loss.dtype)
         loss = reduce(loss, 'b ... -> b (...)', 'mean')
         loss = loss.mean()
+        
+        if getattr(self.obs_encoder, 'force_align', False) and isinstance(align_loss, torch.Tensor):
+            loss = loss + self.obs_encoder.force_align_weight * align_loss
 
         return loss
 
