@@ -33,7 +33,7 @@ cleanup_recording() {
     if [[ -f "$RECORD_FILE" ]]; then
       echo "Applying 3x speedup to $RECORD_FILE..."
       SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-      python "${SCRIPT_DIR}/../speedup_video.py" "$RECORD_FILE" --speed 3
+      python "${SCRIPT_DIR}/../pip .py" "$RECORD_FILE" --speed 3
     fi
   fi
 }
