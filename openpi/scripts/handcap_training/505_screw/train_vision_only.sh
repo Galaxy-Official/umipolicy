@@ -12,7 +12,7 @@ exec > >(tee -a "logs/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
 CONFIG_NAME="${CONFIG_NAME:-pi05_505_screw}"
-EXP_NAME="${EXP_NAME:-505_screw_handcap_pi05_4gpu_vision_only}"
+EXP_NAME="${EXP_NAME:-505_screw_handcap_pi05_4gpu_vision_only_test}"
 
 # ==============================================================================
 # H200 (141GB) x4 & 80-Core 900GB RAM throughput-oriented defaults
