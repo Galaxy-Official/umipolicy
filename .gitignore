@@ -86,6 +86,8 @@ monitor_output/
 obsutil_output/
 obsutil_checkpoint/
 .sii/
+**/.sii/
+*-o.py
 umi/.sii/
 umi/logs/
 umi/outputs/

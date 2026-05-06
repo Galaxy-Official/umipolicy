@@ -217,6 +217,7 @@ class LeRobotHandcapWristDataConfig(DataConfigFactory):
                 handcap_policy.HandcapInputs(
                     action_dim=model_config.action_dim,
                     model_type=model_config.model_type,
+                    include_tactile=False,
                     force_predict=force_predict,
                     force_guide=force_guide,
                     action_base_dim=action_base_dim,
