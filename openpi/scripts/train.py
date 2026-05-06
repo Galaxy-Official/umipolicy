@@ -273,8 +273,15 @@ def main(config: _config.TrainConfig):
             reduced_info = jax.device_get(jax.tree.map(jnp.mean, stacked_infos))
             
             avg_data = float(np.mean(data_times)) if data_times else 0.0
+            max_data = float(np.max(data_times)) if data_times else 0.0
             avg_step = float(np.mean(step_times)) if step_times else 0.0
-            time_str = f"[Avg over {len(step_times)} steps] Data: {avg_data:.3f}s | Model: {avg_step:.3f}s | Total: {avg_data+avg_step:.3f}s"
+            max_step = float(np.max(step_times)) if step_times else 0.0
+            time_str = (
+                f"[Avg over {len(step_times)} steps] "
+                f"Data: {avg_data:.3f}s max:{max_data:.3f}s | "
+                f"Model: {avg_step:.3f}s max:{max_step:.3f}s | "
+                f"Total: {avg_data+avg_step:.3f}s"
+            )
             info_str = ", ".join(f"{k}={v:.4f}" for k, v in reduced_info.items())
             final_log = f"Step {step:06d}: {time_str} || {info_str}"
             
