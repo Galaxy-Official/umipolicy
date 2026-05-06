@@ -28,6 +28,7 @@ lerobot/realworld_replay_recording
 lerobot/src/recordings
 
 # openpi specific
+openpi/uv.lock
 openpi/ckpt/
 openpi/checkpoints/
 openpi/logs/
