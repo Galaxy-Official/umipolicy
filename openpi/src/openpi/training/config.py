@@ -20,7 +20,6 @@ import openpi.models.tokenizer as _tokenizer
 import openpi.policies.aloha_policy as aloha_policy
 import openpi.policies.droid_policy as droid_policy
 import openpi.policies.libero_policy as libero_policy
-import openpi.policies.handcap_policy as handcap_policy
 import openpi.shared.download as _download
 import openpi.shared.normalize as _normalize
 import openpi.training.droid_rlds_dataset as droid_rlds_dataset
@@ -467,76 +466,6 @@ class LeRobotDROIDDataConfig(DataConfigFactory):
             model_transforms=model_transforms,
         )
 
-
-@dataclasses.dataclass(frozen=True)
-class LeRobotHandcapJointDataConfig(DataConfigFactory):
-    """
-    This config is used for training on Joint data instead of EEF.
-    """
-    data_root: str = tyro.MISSING
-    action_sequence_keys: Sequence[str] = ("action",)
-
-    @override
-    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
-        action_base_dim = getattr(model_config, "action_base_dim", 8)
-        force_dim = getattr(model_config, "force_dim", 2)
-        force_predict = getattr(model_config, "force_predict", False)
-        force_guide = getattr(model_config, "force_guide", False)
-        include_tactile = getattr(model_config, "use_tactile", False)
-        output_action_dim = action_base_dim + (force_dim if force_predict else 0)
-
-        repack_transform = _transforms.Group(
-            inputs=[
-                _transforms.HandcapRepackTransform(
-                    {
-                        "observation/wrist_image": "wrist_image",
-                        "observation/left_tactile": "left_tactile",
-                        "observation/right_tactile": "right_tactile",
-                        "observation/joint": "state",
-                        "action_joint": "action",
-                        "prompt": "prompt",
-                    }
-                )
-            ]
-        )
-
-        data_transforms = _transforms.Group(
-            inputs=[
-                handcap_policy.HandcapInputs(
-                    action_dim=model_config.action_dim,
-                    model_type=model_config.model_type,
-                    include_tactile=include_tactile,
-                    force_predict=force_predict,
-                    force_guide=force_guide,
-                    action_base_dim=action_base_dim,
-                    force_dim=force_dim,
-                )
-            ],
-            outputs=[
-                handcap_policy.HandcapOutputs(
-                    output_action_dim=output_action_dim,
-                    force_predict=force_predict,
-                    action_base_dim=action_base_dim,
-                    force_dim=force_dim,
-                )
-            ],
-        )
-
-        delta_action_mask = _transforms.make_bool_mask(action_base_dim, -(model_config.action_dim - action_base_dim))
-        data_transforms = data_transforms.push(
-            inputs=[_transforms.DeltaActions(delta_action_mask)],
-            outputs=[_transforms.AbsoluteActions(delta_action_mask)],
-        )
-
-        model_transforms = ModelTransformFactory()(model_config)
-
-        return dataclasses.replace(
-            self.create_base_config(assets_dirs, model_config),
-            repack_transforms=repack_transform,
-            data_transforms=data_transforms,
-            model_transforms=model_transforms,
-            action_sequence_keys=self.action_sequence_keys,
-        )
 
 @dataclasses.dataclass(frozen=True)
 class TrainConfig:
@@ -1046,85 +975,8 @@ _CONFIGS = [
     *polaris_config.get_polaris_configs(),
 ]
 
-
-def get_handcap_joint_configs():
-    pi05_base_params = "/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pi05_base/params"
-    tactile_encoder_ckpt = "/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt"
-    common_pi05_train_kwargs = {
-        "num_train_steps": 200_000,
-        "batch_size": 512,
-        "num_workers": 76,
-        "log_interval": 100,
-        "save_interval": 10000,
-        "keep_period": 20_000,
-    }
-
-    def make_pi05_506_joint_configs(task_name: str, repo_id: str, data_root: str) -> list[TrainConfig]:
-        def model_config(
-            *,
-            use_tactile: bool,
-            force_predict: bool = False,
-            force_guide: bool = False,
-            force_align: bool = False,
-        ) -> pi0_config.Pi0Config:
-            kwargs = {
-                "pi05": True,
-                "use_tactile": use_tactile,
-                "camera_keys": ("wrist_0_rgb",),
-            }
-            if use_tactile:
-                kwargs.update(
-                    {
-                        "tactile_pretrained_ckpt": tactile_encoder_ckpt,
-                        "tactile_variant": "B/16",
-                        "fusion_method": "linear",
-                        "force_predict": force_predict,
-                        "force_guide": force_guide,
-                        "force_align": force_align,
-                    }
-                )
-            return pi0_config.Pi0Config(
-                action_base_dim=8,  # joint space is 8D (7 joints + 1 gripper)
-                action_dim=14,      # base openpi expects 14
-                **kwargs,
-            )
-
-        def make_train_config(name_suffix: str, **model_kwargs) -> TrainConfig:
-            return TrainConfig(
-                name=f"pi05_{task_name}_joint_{name_suffix}",
-                model=model_config(**model_kwargs),
-                data=LeRobotHandcapJointDataConfig(
-                    repo_id=repo_id,
-                    data_root=data_root,
-                ),
-                weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
-                **common_pi05_train_kwargs,
-            )
-
-        return [
-            make_train_config("vision_only", use_tactile=False),
-            make_train_config("tactile", use_tactile=True),
-            make_train_config("tactile_force_predict", use_tactile=True, force_predict=True),
-            make_train_config("tactile_force_guide", use_tactile=True, force_guide=True),
-            make_train_config("tactile_force_align", use_tactile=True, force_align=True),
-        ]
-
-    return [
-        *make_pi05_506_joint_configs(
-            "506_open_bottle",
-            repo_id="xuyue/506_open_bottle_lerobot",
-            data_root="Data/506_open_bottle_lerobot"
-        ),
-        *make_pi05_506_joint_configs(
-            "506_peg_flowers",
-            repo_id="xuyue/506_peg_flowers_lerobot",
-            data_root="Data/506_peg_flowers_lerobot"
-        ),
-    ]
-
 import openpi.training.handcap_config as handcap_config
 _CONFIGS.extend(handcap_config.get_handcap_configs())
-_CONFIGS.extend(get_handcap_joint_configs())
 
 if len({config.name for config in _CONFIGS}) != len(_CONFIGS):
     raise ValueError("Config names must be unique.")

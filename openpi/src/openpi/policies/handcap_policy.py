@@ -89,159 +89,6 @@ def _ensure_action_force(actions: np.ndarray, force_dim: int, action_base_dim: i
     force_pad = np.zeros(force_pad_shape, dtype=actions.dtype)
     return np.concatenate([actions[..., :action_base_dim], force_pad], axis=-1)
 
-def _pointcloud_from_phone_rgbd(
-    depth: np.ndarray,
-    rgb: np.ndarray | None,
-    num_points: int,
-    point_dim: int,
-) -> np.ndarray:
-    """
-    Minimal RGB-D to pointcloud fallback for smoke test.
-
-    Assumption:
-        depth shape: [H, W, 1] or [H, W]
-        rgb shape: [H, W, 3] or [3, H, W], optional
-
-    Output:
-        [num_points, point_dim]
-    """
-    depth = np.asarray(depth)
-
-    if depth.ndim == 3 and depth.shape[-1] == 1:
-        depth = depth[..., 0]
-    elif depth.ndim == 3 and depth.shape[0] == 1:
-        depth = depth[0]
-
-    depth = depth.astype(np.float32)
-
-    # 如果 depth 是 uint16/mm，转成 meter；如果本来就是 meter，这一步不会太离谱但可按实际再修
-    if depth.max() > 20.0:
-        depth = depth / 1000.0
-
-    H, W = depth.shape
-
-    ys, xs = np.meshgrid(
-        np.arange(H, dtype=np.float32),
-        np.arange(W, dtype=np.float32),
-        indexing="ij",
-    )
-
-    # smoke test 用的简化内参。正式训练应换成真实 phone intrinsic。
-    fx = fy = float(max(H, W))
-    cx = float(W - 1) / 2.0
-    cy = float(H - 1) / 2.0
-
-    z = depth
-    x = (xs - cx) / fx * z
-    y = (ys - cy) / fy * z
-
-    xyz = np.stack([x, y, z], axis=-1).reshape(-1, 3)
-
-    valid = np.isfinite(xyz).all(axis=-1) & (xyz[:, 2] > 1e-6)
-    xyz = xyz[valid]
-
-    if point_dim <= 3:
-        pc = xyz
-    else:
-        if rgb is None:
-            color = np.zeros((xyz.shape[0], point_dim - 3), dtype=np.float32)
-        else:
-            rgb_arr = _parse_image(rgb)
-            if rgb_arr.shape[:2] != (H, W):
-                # smoke test 简化处理：不做 resize，直接不用颜色
-                color = np.zeros((xyz.shape[0], point_dim - 3), dtype=np.float32)
-            else:
-                rgb_flat = rgb_arr.reshape(-1, 3)[valid].astype(np.float32) / 255.0
-                if point_dim - 3 <= 3:
-                    color = rgb_flat[:, : point_dim - 3]
-                else:
-                    extra = np.zeros((rgb_flat.shape[0], point_dim - 6), dtype=np.float32)
-                    color = np.concatenate([rgb_flat, extra], axis=-1)
-        pc = np.concatenate([xyz, color], axis=-1)
-
-    return _sample_or_pad_pointcloud(pc, num_points, point_dim)
-
-def _sample_or_pad_pointcloud(
-    pointcloud: np.ndarray,
-    num_points: int,
-    point_dim: int,
-    *,
-    random_sample: bool = True,
-) -> np.ndarray:
-    """
-    Convert an arbitrary pointcloud to fixed shape [num_points, point_dim].
-
-    Args:
-        pointcloud:
-            Supported shapes:
-              - [N, C]
-              - [H, W, C]
-              - [1, N, C]  # will squeeze leading singleton batch
-            C can be >= point_dim. Extra channels are truncated.
-        num_points:
-            Target number of points.
-        point_dim:
-            Target point feature dimension, e.g. 3 for xyz, 6 for xyzrgb.
-        random_sample:
-            If True, randomly sample when N > num_points.
-            If False, use deterministic evenly-spaced sampling.
-
-    Returns:
-        pc_out: np.float32 array with shape [num_points, point_dim].
-    """
-    pc = np.asarray(pointcloud, dtype=np.float32)
-
-    # Remove a singleton batch dimension if present: [1, N, C] -> [N, C]
-    if pc.ndim == 3 and pc.shape[0] == 1 and pc.shape[-1] <= 16:
-        pc = pc[0]
-
-    # Flatten image-like pointcloud: [H, W, C] -> [H*W, C]
-    if pc.ndim == 3:
-        pc = pc.reshape(-1, pc.shape[-1])
-
-    if pc.ndim != 2:
-        raise ValueError(f"pointcloud must be [N,C] or [H,W,C], got shape={pc.shape}")
-
-    if pc.shape[-1] < 3:
-        raise ValueError(f"pointcloud last dim must be at least xyz=3, got shape={pc.shape}")
-
-    # Remove invalid rows. This is important for online RGBD back-projection.
-    finite_mask = np.isfinite(pc).all(axis=-1)
-    pc = pc[finite_mask]
-
-    # Optional: remove all-zero xyz rows, common when depth is invalid.
-    if pc.shape[0] > 0:
-        nonzero_xyz = np.linalg.norm(pc[:, :3], axis=-1) > 1e-8
-        pc = pc[nonzero_xyz]
-
-    # Truncate or pad feature dim.
-    if pc.shape[-1] >= point_dim:
-        pc = pc[:, :point_dim]
-    else:
-        pad = np.zeros((pc.shape[0], point_dim - pc.shape[-1]), dtype=np.float32)
-        pc = np.concatenate([pc, pad], axis=-1)
-
-    # If no valid points, return all-zero padded cloud.
-    if pc.shape[0] == 0:
-        return np.zeros((num_points, point_dim), dtype=np.float32)
-
-    n = pc.shape[0]
-
-    if n >= num_points:
-        if random_sample:
-            idx = np.random.choice(n, size=num_points, replace=False)
-        else:
-            idx = np.linspace(0, n - 1, num_points).astype(np.int64)
-        pc = pc[idx]
-    else:
-        # Pad by repeating valid points, then truncate to exact length.
-        repeat_idx = np.random.choice(n, size=num_points - n, replace=True)
-        pc = np.concatenate([pc, pc[repeat_idx]], axis=0)
-
-    return pc.astype(np.float32, copy=False)
-
-
-
 
 @dataclasses.dataclass(frozen=True)
 class HandcapInputs(transforms.DataTransformFn):
@@ -264,11 +111,6 @@ class HandcapInputs(transforms.DataTransformFn):
     force_guide: bool = False
     action_base_dim: int = 10
     force_dim: int = 2
-    
-    use_point: bool = False
-    point_num_points: int = 1024
-    point_dim: int = 3
-    point_key: str = "phone_pointcloud"
 
     def __call__(self, data: dict) -> dict:
         # We only mask padding for pi0 model, not pi0-FAST. Do not change this for your own dataset.
@@ -295,30 +137,31 @@ class HandcapInputs(transforms.DataTransformFn):
         # of image, e.g. wrist images, you can comment it out here and replace it with zeros like we do for the
         # right wrist image below.
         wrist_image = _parse_image(data["observation/wrist_image"])
-        
-        if self.include_tactile and "observation/left_tactile" in data:
+        images = {"wrist_0_rgb": wrist_image}
+        image_mask = {"wrist_0_rgb": np.True_}
+
+        if self.include_tactile:
             left_tactile = _parse_image(data["observation/left_tactile"])
             right_tactile = _parse_image(data["observation/right_tactile"])
-            tactile_mask = np.True_
-        else:
-            left_tactile = np.zeros_like(wrist_image)
-            right_tactile = np.zeros_like(wrist_image)
-            tactile_mask = np.False_
+            images.update(
+                {
+                    "left_tactile_0_rgb": left_tactile,
+                    "right_tactile_0_rgb": right_tactile,
+                }
+            )
+            image_mask.update(
+                {
+                    "left_tactile_0_rgb": np.True_,
+                    "right_tactile_0_rgb": np.True_,
+                }
+            )
 
         # Create inputs dict. Do not change the keys in the dict below.
         inputs = {
             "state": state,
             "force": force,
-            "image": {
-                'wrist_0_rgb': wrist_image, 
-                'left_tactile_0_rgb': left_tactile,
-                'right_tactile_0_rgb': right_tactile
-            },
-            "image_mask": {
-                "wrist_0_rgb": np.True_,
-                "left_tactile_0_rgb": tactile_mask,
-                "right_tactile_0_rgb": tactile_mask
-            },
+            "image": images,
+            "image_mask": image_mask,
         }
 
         # Pad actions to the model action dimension. Keep this for your own dataset.
@@ -338,32 +181,6 @@ class HandcapInputs(transforms.DataTransformFn):
         # stored in "prompt"; the output dict always needs to have the key "prompt").
         if "prompt" in data:
             inputs["prompt"] = data["prompt"]
-            
-        if self.use_point and "observation/pointcloud" in data:
-            pc = np.asarray(data["observation/pointcloud"], dtype=np.float32)
-            pc = _sample_or_pad_pointcloud(pc, self.point_num_points, self.point_dim)
-            inputs["pointcloud"] = {self.point_key: pc}
-            inputs["pointcloud_mask"] = {self.point_key: np.True_}
-
-        elif self.use_point and "observation/phone_depth" in data:
-            depth = np.asarray(data["observation/phone_depth"])
-            rgb = data.get("observation/phone_image", None)
-            pc = _pointcloud_from_phone_rgbd(
-                depth=depth,
-                rgb=rgb,
-                num_points=self.point_num_points,
-                point_dim=self.point_dim,
-            )
-            inputs["pointcloud"] = {self.point_key: pc}
-            inputs["pointcloud_mask"] = {self.point_key: np.True_}
-
-        elif self.use_point:
-            inputs["pointcloud"] = {
-                self.point_key: np.zeros((self.point_num_points, self.point_dim), dtype=np.float32),
-            }
-            inputs["pointcloud_mask"] = {
-                self.point_key: np.False_,
-            }
 
         return inputs
 

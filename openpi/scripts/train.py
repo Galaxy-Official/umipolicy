@@ -1,7 +1,6 @@
 import dataclasses
 import functools
 import logging
-import os
 import platform
 from typing import Any
 
@@ -263,16 +262,6 @@ def main(config: _config.TrainConfig):
     for step in pbar:
         with sharding.set_mesh(mesh):
             t_model_start = time.time()
-            if step == 1 and os.environ.get("OPENPI_DEBUG_BATCH", "0") == "1":
-                import pprint
-                def _get_shape_info(x):
-                    if hasattr(x, "shape"):
-                        return f"{x.shape} {getattr(x, 'dtype', '')}"
-                    return type(x)
-                shape_info = jax.tree.map(_get_shape_info, batch)
-                print(f"\\n{'='*60}\\nDEBUG [Step {step}] Batch inputs to model:\\n")
-                pprint.pprint(shape_info)
-                print(f"{'='*60}\\n")
             train_state, info = ptrain_step(train_rng, train_state, batch)
             info = jax.tree.map(lambda x: x.block_until_ready(), info)
             step_times.append(time.time() - t_model_start)
@@ -284,15 +273,8 @@ def main(config: _config.TrainConfig):
             reduced_info = jax.device_get(jax.tree.map(jnp.mean, stacked_infos))
             
             avg_data = float(np.mean(data_times)) if data_times else 0.0
-            max_data = float(np.max(data_times)) if data_times else 0.0
             avg_step = float(np.mean(step_times)) if step_times else 0.0
-            max_step = float(np.max(step_times)) if step_times else 0.0
-            time_str = (
-                f"[Avg over {len(step_times)} steps] "
-                f"Data: {avg_data:.3f}s max:{max_data:.3f}s | "
-                f"Model: {avg_step:.3f}s max:{max_step:.3f}s | "
-                f"Total: {avg_data+avg_step:.3f}s"
-            )
+            time_str = f"[Avg over {len(step_times)} steps] Data: {avg_data:.3f}s | Model: {avg_step:.3f}s | Total: {avg_data+avg_step:.3f}s"
             info_str = ", ".join(f"{k}={v:.4f}" for k, v in reduced_info.items())
             final_log = f"Step {step:06d}: {time_str} || {info_str}"
             

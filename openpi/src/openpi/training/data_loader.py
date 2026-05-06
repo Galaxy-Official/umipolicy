@@ -26,28 +26,6 @@ import openpi.transforms as _transforms
 T_co = TypeVar("T_co", covariant=True)
 
 
-class _InfiniteRandomSampler(torch.utils.data.Sampler[int]):
-    """Yields shuffled dataset indices forever without ending an epoch.
-
-    The training loop already treats the data loader as infinite. Keeping the
-    sampler infinite avoids tearing down and recreating a PyTorch DataLoader
-    iterator at every dataset boundary, which can be very expensive for video
-    datasets with many worker processes.
-    """
-
-    def __init__(self, data_source, generator: torch.Generator):
-        self._data_source = data_source
-        self._generator = generator
-
-    def __iter__(self):
-        num_samples = len(self._data_source)
-        while True:
-            yield from torch.randperm(num_samples, generator=self._generator).tolist()
-
-    def __len__(self) -> int:
-        return len(self._data_source)
-
-
 class Dataset(Protocol[T_co]):
     """Interface for a dataset with random access."""
 
@@ -472,12 +450,6 @@ class TorchDataLoader:
 
         generator = torch.Generator()
         generator.manual_seed(seed)
-
-        if sampler is None and shuffle and num_batches is None:
-            sampler = _InfiniteRandomSampler(dataset, generator)
-            shuffle = False
-            logging.info("Using infinite random sampler to avoid epoch-boundary data stalls.")
-
         self._data_loader = torch.utils.data.DataLoader(
             typing.cast(torch.utils.data.Dataset, dataset),
             batch_size=local_batch_size,
