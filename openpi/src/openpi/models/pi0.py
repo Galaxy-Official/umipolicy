@@ -113,8 +113,13 @@ class Pi0(_model.BaseModel):
 
         if self.config.force_align:
             self.force_align_vision_proj = nnx.Linear(paligemma_config.width, paligemma_config.width, rngs=rngs)
-            self.force_align_tactile_proj = nnx.Linear(paligemma_config.width, paligemma_config.width, rngs=rngs)
-            self.force_align_force_proj = nnx.Linear(config.force_dim, paligemma_config.width, rngs=rngs)
+            
+            # Force encoder MLP
+            self.force_align_force_mlp_in = nnx.Linear(config.force_dim, 128, rngs=rngs)
+            self.force_align_force_mlp_out = nnx.Linear(128, 128, rngs=rngs)
+            
+            # Linear Fusion for tactile_context and force_feature
+            self.force_align_fusion_proj = nnx.Linear(paligemma_config.width + 128, paligemma_config.width, rngs=rngs)
 
         self.action_in_proj = nnx.Linear(config.action_dim, action_expert_config.width, rngs=rngs)
         if config.pi05:
@@ -171,13 +176,21 @@ class Pi0(_model.BaseModel):
             force = jnp.zeros((batch_size, self.config.force_dim), dtype=jnp.float32)
         else:
             force = jnp.asarray(obs.force[..., : self.config.force_dim], dtype=jnp.float32)
-        force_min, force_max = self.config.force_range
-        force = jnp.nan_to_num(force, nan=force_min, posinf=force_max, neginf=force_min)
-        force = jnp.clip((force - force_min) / (force_max - force_min), 0.0, 1.0)
-        force = force * 2.0 - 1.0
+            
+        # Basic NaN handling, avoid aggressive clipping. We expect forces roughly 0~9.8N
+        force = jnp.nan_to_num(force, nan=0.0, posinf=9.8, neginf=0.0)
+
+        # Pass through the new force encoder
+        force_feature = self.force_align_force_mlp_in(force)
+        force_feature = nnx.relu(force_feature)
+        force_feature = self.force_align_force_mlp_out(force_feature)
 
         vision_embed = self.force_align_vision_proj(vision_context)
-        tactile_force_embed = self.force_align_tactile_proj(tactile_context + self.force_align_force_proj(force))
+        
+        # Concatenate tactile context and force feature, then linear fuse
+        tactile_force_context = jnp.concatenate([tactile_context, force_feature], axis=-1)
+        tactile_force_embed = self.force_align_fusion_proj(tactile_force_context)
+        
         vision_embed = vision_embed / jnp.maximum(jnp.linalg.norm(vision_embed, axis=-1, keepdims=True), 1e-6)
         tactile_force_embed = tactile_force_embed / jnp.maximum(
             jnp.linalg.norm(tactile_force_embed, axis=-1, keepdims=True), 1e-6
