@@ -85,3 +85,7 @@ cosmos-policy/train_out/
 monitor_output/
 obsutil_output/
 obsutil_checkpoint/
+.sii/
+umi/.sii/
+umi/logs/
+umi/outputs/

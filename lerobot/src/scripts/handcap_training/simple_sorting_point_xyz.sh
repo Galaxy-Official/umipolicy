@@ -2,7 +2,7 @@
 set -e
 
 # 修改为你要指定的显卡槽位 (例如使用 4 张卡则是 0,1,2,3)
-export CUDA_VISIBLE_DEVICES=0,1
+export CUDA_VISIBLE_DEVICES=2,3
 
 # 屏蔽烦人的 torchvision pyav 弃用警告刷屏问题
 export PYTHONWARNINGS="ignore"
@@ -11,7 +11,7 @@ export PYTHONWARNINGS="ignore"
 # 交互式训练控制逻辑：只有发现旧存档时才提示断点续训 (Resume)
 # ==========================================
 RESUME_PARAM="--resume=false"
-OUTPUT_DIR="outputs/train/test_point_xyz_only_1"
+OUTPUT_DIR="outputs/train/simple_sorting_425_point_xyz"
 
 if [ -d "$OUTPUT_DIR/checkpoints" ]; then
     read -p "🤔 发现曾经的训练存档！是否从上一个断点恢复训练？[输入 r 继续训练(Resume) / 直接回车重新开始并且覆盖旧档案]: " choice < /dev/tty
@@ -43,7 +43,7 @@ accelerate launch \
   --dynamo_backend=inductor \
   -m lerobot.scripts.lerobot_train \
   --dataset.repo_id=lihongcs/block_to_pot_handcap \
-  --dataset.root=/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/lerobot/src/Data/handcap_simple_sorting_phone_409 \
+  --dataset.root=/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/lerobot/src/Data/simple_sorting_425train \
   --dataset.video_backend=pyav \
   --policy.type=diffusion \
   --policy.pointbert_repo_root=/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/third_party/Point-BERT    \
@@ -63,17 +63,18 @@ accelerate launch \
   --policy.point_use_rgb=false \
   --optimizer.type=adamw \
   --output_dir=${OUTPUT_DIR} \
-  --job_name=dp_test_point_xyz_only \
+  --job_name=pp425_point_xyz \
   --policy.device=cuda \
   --wandb.enable=true \
   --wandb.mode=offline \
   --use_handcap=true \
   --steps=200000 \
-  --save_freq=2000 \
+  --save_freq=5000 \
+  --resume=true \
+  --config_path=/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/lerobot/src/outputs/train/simple_sorting_425_point_xyz/checkpoints/last/pretrained_model/train_config.json \
   --policy.push_to_hub=false \
-  --eval_freq=50 \
+  --eval_freq=500 \
   --log_freq=10 \
   --resume=true  \
-  --config_path=/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/lerobot/src/outputs/train/test_point_xyz_only/checkpoints/023000/pretrained_model \
   --policy.repo_id=test_point_xyz_only/dp \
   ${RESUME_PARAM}
