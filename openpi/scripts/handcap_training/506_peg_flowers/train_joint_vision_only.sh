@@ -87,11 +87,12 @@ fi
 # ==============================================================================
 # DISK SPACE RESERVATION & WATCHDOG
 # ==============================================================================
-RESERVE_FILE="${CHECKPOINT_DIR}/reserved_50G_buffer.bin"
-mkdir -p "${CHECKPOINT_DIR}"
+CHECKPOINT_PARENT_DIR="checkpoints/${CONFIG_NAME}"
+RESERVE_FILE="${CHECKPOINT_PARENT_DIR}/.${EXP_NAME}_reserved_50G_buffer.bin"
+mkdir -p "${CHECKPOINT_PARENT_DIR}"
 
 # Check free space in KB (50GB = 52428800 KB). If more than 50GB free, reserve it.
-FREE_KB=$(df -k "${CHECKPOINT_DIR}" | awk 'NR==2 {print $4}')
+FREE_KB=$(df -k "${CHECKPOINT_PARENT_DIR}" | awk 'NR==2 {print $4}')
 if [[ "${FREE_KB:-0}" =~ ^[0-9]+$ ]] && [ "${FREE_KB:-0}" -gt 52428800 ]; then
     echo "Reserving 50GB of disk space to prevent exhaustion by other processes..."
     if command -v fallocate >/dev/null 2>&1; then
@@ -104,7 +105,7 @@ fi
 # Watchdog to release space if disk gets too full (e.g. < 10GB free)
 (
     while true; do
-        CURRENT_FREE=$(df -k "${CHECKPOINT_DIR}" | awk 'NR==2 {print $4}')
+        CURRENT_FREE=$(df -k "${CHECKPOINT_PARENT_DIR}" | awk 'NR==2 {print $4}')
         if [[ "${CURRENT_FREE:-0}" =~ ^[0-9]+$ ]] && [ "${CURRENT_FREE:-0}" -lt 10485760 ]; then # 10GB
             if [ -f "$RESERVE_FILE" ]; then
                 echo "WARNING: Disk space low. Releasing reserved 50GB to allow training to continue."

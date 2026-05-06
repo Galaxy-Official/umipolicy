@@ -1,6 +1,7 @@
 import dataclasses
 import functools
 import logging
+import os
 import platform
 from typing import Any
 
@@ -262,6 +263,16 @@ def main(config: _config.TrainConfig):
     for step in pbar:
         with sharding.set_mesh(mesh):
             t_model_start = time.time()
+            if step == 1 and os.environ.get("OPENPI_DEBUG_BATCH", "0") == "1":
+                import pprint
+                def _get_shape_info(x):
+                    if hasattr(x, "shape"):
+                        return f"{x.shape} {getattr(x, 'dtype', '')}"
+                    return type(x)
+                shape_info = jax.tree.map(_get_shape_info, batch)
+                print(f"\\n{'='*60}\\nDEBUG [Step {step}] Batch inputs to model:\\n")
+                pprint.pprint(shape_info)
+                print(f"{'='*60}\\n")
             train_state, info = ptrain_step(train_rng, train_state, batch)
             info = jax.tree.map(lambda x: x.block_until_ready(), info)
             step_times.append(time.time() - t_model_start)
