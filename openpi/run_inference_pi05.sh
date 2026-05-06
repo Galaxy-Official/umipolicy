@@ -32,7 +32,8 @@ cleanup_recording() {
     wait "$RECORD_PID" 2>/dev/null || true
     if [[ -f "$RECORD_FILE" ]]; then
       echo "Applying 3x speedup to $RECORD_FILE..."
-      python /Users/macbookpro/Desktop/workspace/umipolicy/speedup_video.py "$RECORD_FILE" --speed 3
+      SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+      python "${SCRIPT_DIR}/../speedup_video.py" "$RECORD_FILE" --speed 3
     fi
   fi
 }
