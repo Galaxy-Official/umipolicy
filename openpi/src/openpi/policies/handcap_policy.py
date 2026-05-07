@@ -33,11 +33,12 @@ def _parse_image(image) -> np.ndarray:
 def _force_from_value(value, force_dim: int) -> np.ndarray:
     force = np.asarray(value, dtype=np.float32)
     if force.ndim == 0:
-        force = force[None]
-    force = np.reshape(force, (-1,))
+        force = np.array([force], dtype=np.float32)
     if force.shape[-1] < force_dim:
-        force = np.pad(force, (0, force_dim - force.shape[-1]))
-    return force[:force_dim]
+        pad_width = [(0, 0)] * force.ndim
+        pad_width[-1] = (0, force_dim - force.shape[-1])
+        force = np.pad(force, pad_width)
+    return force[..., :force_dim]
 
 
 def _extract_force(data: dict, state: np.ndarray, force_dim: int, action_base_dim: int) -> np.ndarray:
@@ -123,8 +124,10 @@ class HandcapInputs(transforms.DataTransformFn):
         # in a different key than "observation/state", you should change it below.
         raw_state = np.asarray(data["observation/state"], dtype=np.float32)
         force = _extract_force(data, raw_state, self.force_dim, self.action_base_dim)
+        current_force = force[0] if force.ndim > 1 else force
+        
         if self.force_predict or self.force_guide:
-            raw_state = _append_force_to_state(raw_state, force, self.action_base_dim)
+            raw_state = _append_force_to_state(raw_state, current_force, self.action_base_dim)
         state = transforms.pad_to_dim(raw_state, self.action_dim)
 
         # Possibly need to parse images to uint8 (H,W,C) since LeRobot automatically
@@ -167,12 +170,14 @@ class HandcapInputs(transforms.DataTransformFn):
         # Pad actions to the model action dimension. Keep this for your own dataset.
         # Actions are only available during training.
         if "actions" in data:
-            # We are padding to the model action dim.
-            # For pi0-FAST, this is a no-op (since action_dim = 7).
-            
             actions = np.asarray(data["actions"], dtype=np.float32)
             if self.force_predict:
-                actions = _ensure_action_force(actions, self.force_dim, self.action_base_dim)
+                if force.ndim > 1 and force.shape[0] == actions.shape[0]:
+                    # force sequence is available, concatenate with actions
+                    actions = np.concatenate([actions[..., :self.action_base_dim], force], axis=-1)
+                else:
+                    # fallback to padding with zero
+                    actions = _ensure_action_force(actions, self.force_dim, self.action_base_dim)
             actions = transforms.pad_to_dim(actions, self.action_dim)
             inputs["actions"] = actions
 

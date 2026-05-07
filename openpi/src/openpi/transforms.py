@@ -128,7 +128,10 @@ class HandcapRepackTransform(DataTransformFn):
             if left_key in flat_item and right_key in flat_item:
                 left = np.asarray(flat_item[left_key])
                 right = np.asarray(flat_item[right_key])
-                output["observation/force"] = np.concatenate([left.reshape(-1), right.reshape(-1)], axis=-1)
+                # Make sure they have at least 1 dimension
+                if left.ndim == 0: left = left[None]
+                if right.ndim == 0: right = right[None]
+                output["observation/force"] = np.concatenate([left, right], axis=-1)
             elif left_key in flat_item:
                 output["observation/force"] = flat_item[left_key]
 

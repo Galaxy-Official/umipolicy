@@ -42,6 +42,13 @@ class LeRobotHandcapDataConfig(DataConfigFactory):
         force_guide = getattr(model_config, "force_guide", False)
         output_action_dim = action_base_dim + (force_dim if force_predict else 0)
 
+        seq_keys = list(self.action_sequence_keys)
+        if force_predict or force_guide:
+            if "observation.forces.left" not in seq_keys:
+                seq_keys.append("observation.forces.left")
+            if "observation.forces.right" not in seq_keys:
+                seq_keys.append("observation.forces.right")
+
         repack_transform = _transforms.Group(
             inputs=[
                 _transforms.HandcapRepackTransform(
@@ -91,7 +98,7 @@ class LeRobotHandcapDataConfig(DataConfigFactory):
             repack_transforms=repack_transform,
             data_transforms=data_transforms,
             model_transforms=model_transforms,
-            action_sequence_keys=self.action_sequence_keys,
+            action_sequence_keys=seq_keys,
         )
 
 
@@ -109,6 +116,13 @@ class LeRobotHandcapWristDataConfig(DataConfigFactory):
         force_predict = getattr(model_config, "force_predict", False)
         force_guide = getattr(model_config, "force_guide", False)
         output_action_dim = action_base_dim + (force_dim if force_predict else 0)
+
+        seq_keys = list(self.action_sequence_keys)
+        if force_predict or force_guide:
+            if "observation.forces.left" not in seq_keys:
+                seq_keys.append("observation.forces.left")
+            if "observation.forces.right" not in seq_keys:
+                seq_keys.append("observation.forces.right")
 
         repack_transform = _transforms.Group(
             inputs=[
@@ -158,7 +172,7 @@ class LeRobotHandcapWristDataConfig(DataConfigFactory):
             repack_transforms=repack_transform,
             data_transforms=data_transforms,
             model_transforms=model_transforms,
-            action_sequence_keys=self.action_sequence_keys,
+            action_sequence_keys=seq_keys,
         )
 
 
