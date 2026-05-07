@@ -1095,7 +1095,7 @@ def get_handcap_joint_configs():
                     repo_id=repo_id,
                     data_root=data_root,
                 ),
-                base_params=pi05_base_params,
+                weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
                 **common_pi05_train_kwargs,
             )
 
