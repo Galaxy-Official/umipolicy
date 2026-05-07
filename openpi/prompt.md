@@ -32,3 +32,7 @@ turn to loose the cap of the bottle.
 
 506_peg_flowers
 pick up the flower and insert it into the red vase.
+
+
+507_orangnize_cord 
+Organize the power cords into the cable organizer.

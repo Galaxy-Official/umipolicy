@@ -18,7 +18,7 @@ EXP_NAME="${EXP_NAME:-501_bread_moving_0502_handcap_pi05_4gpu_tactile_force_pred
 # ==============================================================================
 # 批量大小：由于 H200 有 141GB 显存，256 太过保守，直接拉升至 512（每张卡分担 128）
 BATCH_SIZE="${BATCH_SIZE:-512}"
-NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-100000}"
+NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-50000}"
 SAVE_INTERVAL="${SAVE_INTERVAL:-5000}"
 # 数据加载线程：80核CPU，保留 8 核给系统/调度，使用 72 核满载预处理
 NUM_WORKERS="${NUM_WORKERS:-72}"
