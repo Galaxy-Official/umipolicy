@@ -763,11 +763,13 @@ def main(args: Args) -> None:
 
             force_pred = action_chunk[0, 10:12] if action_chunk.shape[-1] >= 12 else np.zeros((2,), dtype=np.float64)
             if args.infer_force_control and (args.force_predict or args.force_guide):
-                target_force = max(1.0, float(np.mean(force_pred)))
+                target_force = max(1.0, float(np.sum(force_pred))) # 使用预测的左侧和右侧之和
             else:
                 target_force = 20.0
 
-            LOGGER.info(f"===> 预测夹爪力 (Predicted Force): left={force_pred[0]:.2f}N, right={force_pred[1]:.2f}N | 实际控制力 (Target Force)={target_force:.2f}N")
+            LOGGER.info(f"===> 输入给模型的夹爪宽度 (Input Gripper Width): {latest_frame['gripper_width']:.4f} | "
+                        f"预测夹爪力 (Predicted Force): left={force_pred[0]:.2f}N, right={force_pred[1]:.2f}N, sum={np.sum(force_pred):.2f}N | "
+                        f"实际控制力 (Target Force)={target_force:.2f}N")
 
             env.exec_actions(physical_actions, action_timestamps, target_force=target_force)
 
