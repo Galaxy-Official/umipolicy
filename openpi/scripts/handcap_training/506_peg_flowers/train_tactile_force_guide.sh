@@ -81,9 +81,16 @@ elif [[ -d "${CHECKPOINT_DIR}" ]]; then
 fi
 
 # ==============================================================================
-# DISK SPACE RESERVATION & WATCHDOG
-# ==============================================================================
-CHECKPOINT_PARENT_DIR="checkpoints/${CONFIG_NAME}"
-RESERVE_FILE="${CHECKPOINT_PARENT_DIR}/.${EXP_NAME}_reserved_50G_buffer.bin"
-mkdir -p "${CHECKPOINT_PARENT_DIR}"
 
+python scripts/compute_norm_stats.py --config-name "${CONFIG_NAME}"
+
+python scripts/train.py \
+  "${CONFIG_NAME}" \
+  --exp-name "${EXP_NAME}" \
+  --batch-size "${BATCH_SIZE}" \
+  --num-train-steps "${NUM_TRAIN_STEPS}" \
+  --save-interval "${SAVE_INTERVAL}" \
+  --num-workers "${NUM_WORKERS}" \
+  --no-wandb-enabled \
+  --fsdp-devices "${FSDP_DEVICES}" \
+  "${RUN_MODE_FLAGS[@]}"
