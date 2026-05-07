@@ -21,8 +21,8 @@ EXP_NAME="${EXP_NAME:-505_screw_handcap_pi05_4gpu_vision_only_test}"
 BATCH_SIZE="${BATCH_SIZE:-512}"
 NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-100000}"
 SAVE_INTERVAL="${SAVE_INTERVAL:-5000}"
-# 数据加载线程：80核CPU，保留 8 核给系统/调度，使用 72 核满载预处理
-NUM_WORKERS="${NUM_WORKERS:-72}"
+# 数据加载线程：降低并发，避免视频随机读取时 HDD / CPU worker 过度竞争
+NUM_WORKERS="${NUM_WORKERS:-24}"
 FSDP_DEVICES="${FSDP_DEVICES:-4}"
 
 export XLA_PYTHON_CLIENT_PREALLOCATE="true"
