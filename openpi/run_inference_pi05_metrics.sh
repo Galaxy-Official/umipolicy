@@ -52,7 +52,7 @@ cleanup_recording() {
     y|Y|yes|Yes ) 
       echo "✅ 已保留数据。"
       if [[ -n "$RECORD_FILE" && -f "$RECORD_FILE" ]]; then
-        SPEEDUP_SCRIPT="${SCRIPT_DIR}/speedup_video.py"
+        SPEEDUP_SCRIPT="${SCRIPT_DIR}/../speedup_video.py"
         if [[ -f "$SPEEDUP_SCRIPT" ]]; then
           echo "Applying 3x speedup to $RECORD_FILE..."
           python "$SPEEDUP_SCRIPT" "$RECORD_FILE" --speed 3
