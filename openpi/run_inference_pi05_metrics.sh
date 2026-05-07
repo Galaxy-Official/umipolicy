@@ -28,21 +28,54 @@ lsof -ti:8000 | xargs -r kill -9 || true
 
 RECORD_PID=""
 RECORD_FILE=""
+CLEANED_UP=0
 cleanup_recording() {
+  if [[ "$CLEANED_UP" == "1" ]]; then
+    return
+  fi
+  CLEANED_UP=1
+
   if [[ -n "$RECORD_PID" ]]; then
     echo "Stopping external recording process $RECORD_PID..."
     kill -TERM "$RECORD_PID" 2>/dev/null || true
     wait "$RECORD_PID" 2>/dev/null || true
-    if [[ -f "$RECORD_FILE" ]]; then
-      SPEEDUP_SCRIPT="${SCRIPT_DIR}/speedup_video.py"
-      if [[ -f "$SPEEDUP_SCRIPT" ]]; then
-        echo "Applying 3x speedup to $RECORD_FILE..."
-        python "$SPEEDUP_SCRIPT" "$RECORD_FILE" --speed 3
-      else
-        echo "Skipping 3x speedup because $SPEEDUP_SCRIPT was not found."
-      fi
-    fi
   fi
+
+  # 等待内部脚本清理和打印日志完毕
+  sleep 1.5
+
+  # 无论是否使用外置录像，都询问是否保留当前推理的所有数据
+  echo ""
+  read -p "❓ 刚刚的推理数据 (录像和轨迹代价函数) 是否需要保留? 输入 y 保留，直接回车或其他键删除 [y/N]: " keep_data </dev/tty
+  
+  case "$keep_data" in
+    y|Y|yes|Yes ) 
+      echo "✅ 已保留数据。"
+      if [[ -n "$RECORD_FILE" && -f "$RECORD_FILE" ]]; then
+        SPEEDUP_SCRIPT="${SCRIPT_DIR}/speedup_video.py"
+        if [[ -f "$SPEEDUP_SCRIPT" ]]; then
+          echo "Applying 3x speedup to $RECORD_FILE..."
+          python "$SPEEDUP_SCRIPT" "$RECORD_FILE" --speed 3
+        else
+          echo "Skipping 3x speedup because $SPEEDUP_SCRIPT was not found."
+        fi
+      fi
+      ;;
+    * ) 
+      echo "🗑️  不保留，正在清理本次产生的数据..."
+      if [[ -n "$RECORD_FILE" && -f "$RECORD_FILE" ]]; then
+        rm -f "$RECORD_FILE"
+        echo "已删除外部录像: $RECORD_FILE"
+      fi
+      
+      # 删除最新生成的 realworld_replay_recording 目录
+      LATEST_DIR=$(ls -td "${SCRIPT_DIR}/realworld_replay_recording/${TASK_NAME}/"* 2>/dev/null | head -n 1)
+      if [[ -n "$LATEST_DIR" ]]; then
+        rm -rf "$LATEST_DIR"
+        echo "已删除推理内部记录: $LATEST_DIR"
+      fi
+      ;;
+  esac
 }
 trap cleanup_recording EXIT INT TERM
 
