@@ -591,6 +591,8 @@ def main(config: _config.TrainConfig):
         range(start_step, config.num_train_steps),
         initial=start_step,
         total=config.num_train_steps,
+        desc=f"{config.name}/{config.exp_name}",
+        unit="step",
         dynamic_ncols=True,
     )
 
@@ -607,6 +609,7 @@ def main(config: _config.TrainConfig):
         infos.append(info)
         
         if step % config.log_interval == 0:
+            completed_steps = int(jax.device_get(train_state.step))
             stacked_infos = common_utils.stack_forest(infos)
             reduced_info = jax.device_get(jax.tree.map(jnp.mean, stacked_infos))
             
@@ -631,7 +634,11 @@ def main(config: _config.TrainConfig):
             )
             metric_values = {k: float(np.asarray(v)) for k, v in reduced_info.items()}
             info_str = ", ".join(f"{k}={v:.4f}" for k, v in metric_values.items())
-            final_log = f"Step {step:06d}: {time_str} || {info_str} || resources: {_resource_summary(resources)}"
+            final_log = (
+                f"Config {config.name} | Exp {config.exp_name} | "
+                f"Completed {completed_steps:06d}/{config.num_train_steps:06d} steps | "
+                f"Loop step {step:06d}: {time_str} || {info_str} || resources: {_resource_summary(resources)}"
+            )
             
             pbar.write(final_log)
             
@@ -644,6 +651,10 @@ def main(config: _config.TrainConfig):
                     {
                         "event": "step",
                         "step": int(step),
+                        "completed_steps": completed_steps,
+                        "total_steps": config.num_train_steps,
+                        "config_name": config.name,
+                        "exp_name": config.exp_name,
                         "timing": {
                             "num_steps": len(step_times),
                             "data": data_stats,
