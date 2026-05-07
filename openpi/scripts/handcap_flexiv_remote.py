@@ -767,7 +767,7 @@ def main(args: Args) -> None:
             else:
                 target_force = 20.0
 
-            LOGGER.info(f"===> 输入给模型的夹爪宽度 (Input Gripper Width): {latest_frame['gripper_width']:.4f} | "
+            LOGGER.info(f"===> 输入夹爪宽度 (Input Gripper): {latest_frame['gripper_width']:.4f} | 预测夹爪宽度 (Predicted Gripper): {action_chunk[0, 9]:.4f} | "
                         f"预测夹爪力 (Predicted Force): left={force_pred[0]:.2f}N, right={force_pred[1]:.2f}N, sum={np.sum(force_pred):.2f}N | "
                         f"实际控制力 (Target Force)={target_force:.2f}N")
 
