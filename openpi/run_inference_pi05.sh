@@ -7,7 +7,7 @@
 # ==============================================================================
 # 1. 外置旁观录像相机（仅录像，不参与推理）。
 # 填入 /dev/video 编号（如 4）。若不录像则留空。
-export RECORDING_INDEX="${RECORDING_INDEX:-14}"
+export RECORDING_INDEX="${RECORDING_INDEX:-0}"
 
 # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
 POLICY_CONFIG="${POLICY_CONFIG:-pi05_430_clamp_seal}"
