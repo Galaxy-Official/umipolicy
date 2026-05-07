@@ -1263,6 +1263,20 @@ def main(args: Args) -> None:
                 float(force_pred[0]),
                 float(force_pred[1]),
             )
+            
+            # Print metrics periodically during inference
+            if step % 10 == 0:
+                metric_samples_snapshot = metric_monitor.snapshot()
+                metric_summary = compute_trajectory_cost(metric_samples_snapshot, metric_config)
+                if metric_summary.get("valid"):
+                    LOGGER.info(
+                        "[step=%d] Current Trajectory Cost: J=%.3f (J_e=%.3f, J_m=%.3f, J_c=%.3f)",
+                        step,
+                        metric_summary.get("J", 0.0),
+                        metric_summary.get("J_e", 0.0),
+                        metric_summary.get("J_m", 0.0),
+                        metric_summary.get("J_c", 0.0),
+                    )
     finally:
         metric_monitor.stop()
         if metric_started:
