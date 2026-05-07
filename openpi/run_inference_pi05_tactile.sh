@@ -14,10 +14,10 @@ export TACTILE_LEFT_INDEX="${TACTILE_LEFT_INDEX:-4}"
 export TACTILE_RIGHT_INDEX="${TACTILE_RIGHT_INDEX:-2}"
 
 # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
-POLICY_CONFIG="${POLICY_CONFIG:-pi05_430_clamp_seal_tactile}"
+POLICY_CONFIG="${POLICY_CONFIG:-pi05_430_towel_hanging_tactile}"
 
 # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
-POLICY_DIR="${POLICY_DIR:-ckpt/430_clamp_seal_tactile_55000}"
+POLICY_DIR="${POLICY_DIR:-ckpt/430_towel_hanging_tactile_55000}"
 
 # 5. 任务 Prompt 提示词（输入给模型的语言指令）
 PROMPT="${PROMPT:-Hang the towel over the rock.}"
