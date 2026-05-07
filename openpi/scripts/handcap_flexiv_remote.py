@@ -767,6 +767,8 @@ def main(args: Args) -> None:
             else:
                 target_force = 20.0
 
+            LOGGER.info(f"===> 预测夹爪力 (Predicted Force): left={force_pred[0]:.2f}N, right={force_pred[1]:.2f}N | 实际控制力 (Target Force)={target_force:.2f}N")
+
             env.exec_actions(physical_actions, action_timestamps, target_force=target_force)
 
             inference_latency = time.time() - loop_start
