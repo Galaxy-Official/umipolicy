@@ -1265,7 +1265,7 @@ def main(args: Args) -> None:
             )
             
             # Print metrics periodically during inference
-            if step % 10 == 0:
+            if step % 2 == 0:
                 metric_samples_snapshot = metric_monitor.snapshot()
                 metric_summary = compute_trajectory_cost(metric_samples_snapshot, metric_config)
                 if metric_summary.get("valid"):
