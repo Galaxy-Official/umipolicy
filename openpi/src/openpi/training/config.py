@@ -1063,7 +1063,6 @@ def get_handcap_joint_configs():
             use_tactile: bool,
             force_predict: bool = False,
             force_guide: bool = False,
-            force_align: bool = False,
         ) -> pi0_config.Pi0Config:
             kwargs = {
                 "pi05": True,
@@ -1078,7 +1077,6 @@ def get_handcap_joint_configs():
                         "fusion_method": "linear",
                         "force_predict": force_predict,
                         "force_guide": force_guide,
-                        "force_align": force_align,
                     }
                 )
             return pi0_config.Pi0Config(
@@ -1104,7 +1102,6 @@ def get_handcap_joint_configs():
             make_train_config("tactile", use_tactile=True),
             make_train_config("tactile_force_predict", use_tactile=True, force_predict=True),
             make_train_config("tactile_force_guide", use_tactile=True, force_guide=True),
-            make_train_config("tactile_force_align", use_tactile=True, force_align=True),
         ]
 
     return [
