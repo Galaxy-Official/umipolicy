@@ -16,7 +16,7 @@ POLICY_CONFIG="${POLICY_CONFIG:-pi05_430_clamp_seal}"
 POLICY_DIR="${POLICY_DIR:-ckpt/430_clamp_seal_pi05_60000}"
 
 # 5. 任务 Prompt 提示词（输入给模型的语言指令）
-PROMPT="${PROMPT:-Pick up the clip and put it in the seal.}"
+PROMPT="${PROMPT:-Hang the towel over the rock}"
 # ==============================================================================
 
 # 每次启动前清理占用 8000 端口的僵尸进程
