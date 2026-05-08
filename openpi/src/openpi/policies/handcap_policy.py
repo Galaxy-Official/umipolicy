@@ -166,6 +166,9 @@ class HandcapInputs(transforms.DataTransformFn):
             "image": images,
             "image_mask": image_mask,
         }
+        for metadata_key in ("alignment_id", "health_id", "aligned_source_index"):
+            if metadata_key in data:
+                inputs[metadata_key] = np.asarray(data[metadata_key])
 
         # Pad actions to the model action dimension. Keep this for your own dataset.
         # Actions are only available during training.

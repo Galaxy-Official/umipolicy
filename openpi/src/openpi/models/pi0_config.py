@@ -38,6 +38,9 @@ class Pi0Config(_model.BaseModelConfig):
     force_range: tuple[float, float] = (0.0, 10.0)
     min_vision_weight: float = 0.2
     default_tactile_weight: float = 0.5
+    contrastive_alignment: bool = False
+    contrastive_weight: float = 0.0
+    contrastive_temperature: float = 0.07
     # Pi05 has two differences from Pi0:
     # - the state input is part of the discrete language tokens rather than a continuous input that is part of the suffix
     # - the action expert uses adaRMSNorm to inject the flow matching timestep
@@ -60,6 +63,10 @@ class Pi0Config(_model.BaseModelConfig):
             raise ValueError("default_tactile_weight must be in [0, 1]")
         if self.force_range[1] <= self.force_range[0]:
             raise ValueError("force_range max must be greater than min")
+        if self.contrastive_weight < 0.0:
+            raise ValueError("contrastive_weight must be non-negative")
+        if self.contrastive_temperature <= 0.0:
+            raise ValueError("contrastive_temperature must be positive")
         if self.max_token_len is None:
             object.__setattr__(self, "max_token_len", 200 if self.pi05 else 48)
         if self.discrete_state_input is None:

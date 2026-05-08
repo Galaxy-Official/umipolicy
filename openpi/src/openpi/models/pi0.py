@@ -265,6 +265,40 @@ class Pi0(_model.BaseModel):
         ar_mask = jnp.array(ar_mask)
         return tokens, input_mask, ar_mask, adarms_cond
 
+    def _alignment_contrastive_loss(
+        self,
+        prefix_out: at.Float[at.Array, "b s emb"],
+        prefix_mask: at.Bool[at.Array, "b s"],
+        observation: _model.Observation,
+    ) -> at.Float[at.Array, ""]:
+        if observation.alignment_id is None or observation.health_id is None:
+            return jnp.asarray(0.0, dtype=jnp.float32)
+
+        mask = jnp.asarray(prefix_mask, dtype=jnp.float32)
+        features = jnp.asarray(prefix_out, dtype=jnp.float32)
+        pooled = jnp.sum(features * mask[..., None], axis=1) / jnp.maximum(jnp.sum(mask, axis=1, keepdims=True), 1.0)
+        pooled = pooled / jnp.maximum(jnp.linalg.norm(pooled, axis=-1, keepdims=True), 1e-6)
+
+        alignment_id = jnp.asarray(observation.alignment_id).reshape((-1,))
+        health_id = jnp.asarray(observation.health_id).reshape((-1,))
+        batch_size = alignment_id.shape[0]
+
+        valid = alignment_id >= 0
+        not_self = ~jnp.eye(batch_size, dtype=jnp.bool_)
+        valid_pair = valid[:, None] & valid[None, :] & not_self
+        positive = (alignment_id[:, None] == alignment_id[None, :]) & (health_id[:, None] != health_id[None, :])
+        positive = positive & valid_pair
+
+        logits = pooled @ pooled.T / self.config.contrastive_temperature
+        log_denom = jax.nn.logsumexp(jnp.where(valid_pair, logits, -jnp.inf), axis=1, keepdims=True)
+        log_probs = logits - log_denom
+        log_probs = jnp.where(jnp.isfinite(log_probs), log_probs, 0.0)
+
+        positive_count = jnp.sum(positive, axis=1)
+        valid_anchor = positive_count > 0
+        per_anchor = -jnp.sum(jnp.where(positive, log_probs, 0.0), axis=1) / jnp.maximum(positive_count, 1)
+        return jnp.sum(jnp.where(valid_anchor, per_anchor, 0.0)) / jnp.maximum(jnp.sum(valid_anchor), 1)
+
     @override
     def compute_loss(
         self, rng: at.KeyArrayLike, observation: _model.Observation, actions: _model.Actions, *, train: bool = False
@@ -291,7 +325,11 @@ class Pi0(_model.BaseModel):
         )
         v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
 
-        return jnp.mean(jnp.square(v_t - u_t), axis=-1)
+        loss = jnp.mean(jnp.square(v_t - u_t), axis=-1)
+        if self.config.contrastive_alignment and self.config.contrastive_weight > 0.0:
+            contrastive_loss = self._alignment_contrastive_loss(prefix_out, prefix_mask, observation)
+            loss = loss + self.config.contrastive_weight * contrastive_loss
+        return loss
 
     @override
     def sample_actions(

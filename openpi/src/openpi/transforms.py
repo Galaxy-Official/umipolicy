@@ -135,6 +135,10 @@ class HandcapRepackTransform(DataTransformFn):
             elif left_key in flat_item:
                 output["observation/force"] = flat_item[left_key]
 
+        for metadata_key in ("alignment_id", "health_id", "aligned_source_index"):
+            if metadata_key in flat_item:
+                output[metadata_key] = flat_item[metadata_key]
+
         return output
 
 

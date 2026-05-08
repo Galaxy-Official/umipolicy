@@ -12,9 +12,10 @@ import pathlib
 # 将 openpi 模块所在目录加入系统路径，使内部通过 import lerobot 能够直接寻址到本地拷贝的 lerobot
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
+import lerobot.datasets.aligned_multi_dataset_handcap as aligned_multi_dataset_handcap
+import lerobot.datasets.dataset_metadata_handcap as dataset_metadata_handcap
 import lerobot.datasets.lerobot_dataset as lerobot_dataset
 import lerobot.datasets.lerobot_dataset_handcap as lerobot_dataset_handcap
-import lerobot.datasets.dataset_metadata_handcap as dataset_metadata_handcap
 import numpy as np
 import torch
 
@@ -145,7 +146,33 @@ def create_torch_dataset(
         return FakeDataset(model_config, num_samples=1024)
 
     data_root = getattr(data_config, "data_root", None)
-    if getattr(data_config, "use_handcap", False):
+    if getattr(data_config, "use_aligned_multi_handcap", False):
+        aligned_repo_ids = tuple(getattr(data_config, "aligned_health_repo_ids"))
+        aligned_roots = tuple(getattr(data_config, "aligned_health_data_roots"))
+        dataset_meta = dataset_metadata_handcap.LeRobotDatasetMetadataHandcap(
+            aligned_repo_ids[0],
+            root=aligned_roots[0],
+        )
+        dataset = aligned_multi_dataset_handcap.AlignedMultiLeRobotDatasetHandcap(
+            aligned_repo_ids,
+            aligned_roots,
+            health_labels=tuple(getattr(data_config, "aligned_health_labels")),
+            delta_timestamps={
+                key: [t / dataset_meta.fps for t in range(action_horizon)] for key in data_config.action_sequence_keys
+            },
+            force_dim=getattr(model_config, "force_dim", 2),
+            action_base_dim=getattr(model_config, "action_base_dim", 10),
+            force_eps=getattr(data_config, "aligned_force_eps"),
+            max_progress_diff=getattr(data_config, "aligned_max_progress_diff"),
+            time_weight=getattr(data_config, "aligned_time_weight"),
+            force_smoothing_window=getattr(data_config, "aligned_force_smoothing_window"),
+            anchor_dataset_index=getattr(data_config, "aligned_anchor_dataset_index"),
+            max_alignments=getattr(data_config, "aligned_max_alignments"),
+            seed=getattr(data_config, "aligned_seed"),
+            cache_dir=getattr(data_config, "aligned_cache_dir"),
+            rebuild_cache=getattr(data_config, "aligned_rebuild_cache"),
+        )
+    elif getattr(data_config, "use_handcap", False):
         dataset_meta = dataset_metadata_handcap.LeRobotDatasetMetadataHandcap(repo_id, root=data_root)
         dataset = lerobot_dataset_handcap.LeRobotDatasetHandcap(
             data_config.repo_id,
@@ -318,8 +345,8 @@ def create_torch_data_loader(
             execute in the main process.
         seed: The seed to use for shuffling the data.
     """
-    dataset = create_torch_dataset(data_config, action_horizon, model_config)
-    dataset = transform_dataset(dataset, data_config, skip_norm_stats=skip_norm_stats)
+    raw_dataset = create_torch_dataset(data_config, action_horizon, model_config)
+    dataset = transform_dataset(raw_dataset, data_config, skip_norm_stats=skip_norm_stats)
 
     # Use TorchDataLoader for both frameworks
     # For PyTorch DDP, create DistributedSampler and divide batch size by world size
@@ -341,12 +368,27 @@ def create_torch_data_loader(
         local_batch_size = batch_size // jax.process_count()
 
     logging.info(f"local_batch_size: {local_batch_size}")
+    batch_sampler = None
+    if getattr(data_config, "use_aligned_multi_handcap", False):
+        if sampler is not None:
+            raise NotImplementedError("Distributed sampling is not implemented for aligned multi-Handcap datasets.")
+        group_size = int(getattr(raw_dataset, "group_size"))
+        num_alignments = int(getattr(raw_dataset, "num_alignments"))
+        batch_sampler = AlignedBatchSampler(
+            num_alignments=num_alignments,
+            group_size=group_size,
+            batch_size=local_batch_size,
+            shuffle=shuffle,
+            seed=seed,
+        )
+
     data_loader = TorchDataLoader(
         dataset,
         local_batch_size=local_batch_size,
         sharding=None if framework == "pytorch" else sharding,
-        shuffle=(sampler is None and shuffle),  # Don't shuffle if using sampler
+        shuffle=(batch_sampler is None and sampler is None and shuffle),
         sampler=sampler,
+        batch_sampler=batch_sampler,
         num_batches=num_batches,
         num_workers=num_workers,
         seed=seed,
@@ -397,6 +439,52 @@ def create_rlds_data_loader(
     return DataLoaderImpl(data_config, data_loader)
 
 
+class AlignedBatchSampler(torch.utils.data.Sampler):
+    """Yields batches that keep all health variants for each alignment together."""
+
+    def __init__(
+        self,
+        *,
+        num_alignments: int,
+        group_size: int,
+        batch_size: int,
+        shuffle: bool,
+        seed: int,
+    ):
+        if batch_size % group_size != 0:
+            raise ValueError(
+                f"Aligned multi-Handcap batch size ({batch_size}) must be divisible by group size ({group_size})."
+            )
+        self.num_alignments = int(num_alignments)
+        self.group_size = int(group_size)
+        self.batch_size = int(batch_size)
+        self.alignments_per_batch = self.batch_size // self.group_size
+        self.shuffle = bool(shuffle)
+        self.seed = int(seed)
+        self.epoch = 0
+
+    def __iter__(self):
+        if self.shuffle:
+            generator = torch.Generator()
+            generator.manual_seed(self.seed + self.epoch)
+            alignment_ids = torch.randperm(self.num_alignments, generator=generator).tolist()
+        else:
+            alignment_ids = list(range(self.num_alignments))
+        self.epoch += 1
+
+        usable = (len(alignment_ids) // self.alignments_per_batch) * self.alignments_per_batch
+        for start in range(0, usable, self.alignments_per_batch):
+            batch_alignment_ids = alignment_ids[start : start + self.alignments_per_batch]
+            yield [
+                alignment_id * self.group_size + health_id
+                for alignment_id in batch_alignment_ids
+                for health_id in range(self.group_size)
+            ]
+
+    def __len__(self):
+        return self.num_alignments // self.alignments_per_batch
+
+
 class TorchDataLoader:
     """Torch data loader implementation."""
 
@@ -408,6 +496,7 @@ class TorchDataLoader:
         sharding: jax.sharding.Sharding | None = None,
         shuffle: bool = False,
         sampler: torch.utils.data.Sampler | None = None,
+        batch_sampler: torch.utils.data.Sampler | None = None,
         num_batches: int | None = None,
         num_workers: int = 0,
         seed: int = 0,
@@ -450,19 +539,29 @@ class TorchDataLoader:
 
         generator = torch.Generator()
         generator.manual_seed(seed)
-        self._data_loader = torch.utils.data.DataLoader(
-            typing.cast(torch.utils.data.Dataset, dataset),
-            batch_size=local_batch_size,
-            shuffle=(sampler is None and shuffle),  # Don't shuffle if using sampler
-            sampler=sampler,
-            num_workers=num_workers,
-            multiprocessing_context=mp_context,
-            persistent_workers=num_workers > 0,
-            collate_fn=_collate_fn,
-            worker_init_fn=_worker_init_fn,
-            drop_last=True,
-            generator=generator,
-        )
+        data_loader_kwargs = {
+            "num_workers": num_workers,
+            "multiprocessing_context": mp_context,
+            "persistent_workers": num_workers > 0,
+            "collate_fn": _collate_fn,
+            "worker_init_fn": _worker_init_fn,
+            "generator": generator,
+        }
+        if batch_sampler is not None:
+            self._data_loader = torch.utils.data.DataLoader(
+                typing.cast(torch.utils.data.Dataset, dataset),
+                batch_sampler=batch_sampler,
+                **data_loader_kwargs,
+            )
+        else:
+            self._data_loader = torch.utils.data.DataLoader(
+                typing.cast(torch.utils.data.Dataset, dataset),
+                batch_size=local_batch_size,
+                shuffle=(sampler is None and shuffle),
+                sampler=sampler,
+                drop_last=True,
+                **data_loader_kwargs,
+            )
 
     @property
     def torch_loader(self) -> torch.utils.data.DataLoader:

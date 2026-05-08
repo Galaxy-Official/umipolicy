@@ -5,6 +5,8 @@ will compute the mean and standard deviation of the data in the dataset and save
 to the config assets directory.
 """
 
+import dataclasses
+
 import numpy as np
 import tqdm
 import tyro
@@ -86,8 +88,32 @@ def create_rlds_dataloader(
     return data_loader, num_batches
 
 
-def main(config_name: str, max_frames: int | None = None):
+def _maybe_override_aligned_paths(
+    config: _config.TrainConfig,
+    health_data_roots: tuple[str, ...] | None,
+    health_repo_ids: tuple[str, ...] | None,
+) -> _config.TrainConfig:
+    if health_data_roots is None and health_repo_ids is None:
+        return config
+    if not hasattr(config.data, "health_data_roots"):
+        raise ValueError("--health-data-roots can only be used with aligned Handcap data configs.")
+
+    data = config.data
+    if health_data_roots is not None:
+        data = dataclasses.replace(data, health_data_roots=health_data_roots)
+    if health_repo_ids is not None:
+        data = dataclasses.replace(data, health_repo_ids=health_repo_ids)
+    return dataclasses.replace(config, data=data)
+
+
+def main(
+    config_name: str,
+    max_frames: int | None = None,
+    health_data_roots: tuple[str, ...] | None = None,
+    health_repo_ids: tuple[str, ...] | None = None,
+):
     config = _config.get_config(config_name)
+    config = _maybe_override_aligned_paths(config, health_data_roots, health_repo_ids)
     data_config = config.data.create(config.assets_dirs, config.model)
 
     output_path = config.assets_dirs / data_config.repo_id
