@@ -32,7 +32,7 @@ HEALTH_REPO_IDS=(
 HEALTH_LABELS=("0" "50" "100")
 
 BATCH_SIZE="${BATCH_SIZE:-144}"
-NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-50000}"
+NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-100000}"
 SAVE_INTERVAL="${SAVE_INTERVAL:-5000}"
 # This workload is video-decode bound; the latest profile starves the GPUs with
 # 16 workers, while 32 workers keeps Data avg much closer to model time.
