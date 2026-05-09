@@ -19,16 +19,16 @@ EXP_NAME="${EXP_NAME:-506_peg_flowers_handcap_pi05_4gpu_vision_tactile}"
 # ==============================================================================
 # Keep the global batch large enough to use the GPUs, but tune by samples/sec,
 # not by memory percentage.
-BATCH_SIZE="${BATCH_SIZE:-512}"
-NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-50000}"
-SAVE_INTERVAL="${SAVE_INTERVAL:-5000}"
+BATCH_SIZE="${BATCH_SIZE:-64}"
+NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-100000}"
+SAVE_INTERVAL="${SAVE_INTERVAL:-10000}"
 # Too many workers can overwhelm video/parquet random I/O and cause long
 # epoch-boundary stalls. Start lower and sweep 8/16/24/32.
-NUM_WORKERS="${NUM_WORKERS:-16}"
+NUM_WORKERS="${NUM_WORKERS:-32}"
 # H200 has enough memory to prefer data parallelism first. FSDP saves memory but
 # often costs throughput through extra cross-GPU communication.
 FSDP_DEVICES="${FSDP_DEVICES:-1}"
-RESUME="${RESUME:-0}"
+RESUME="${RESUME:-1}"
 OVERWRITE="${OVERWRITE:-0}"
 
 export XLA_PYTHON_CLIENT_PREALLOCATE="true"
