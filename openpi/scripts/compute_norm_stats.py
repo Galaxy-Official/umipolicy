@@ -92,10 +92,11 @@ def _maybe_override_health_paths(
     config: _config.TrainConfig,
     health_data_roots: tuple[str, ...] | None,
     health_repo_ids: tuple[str, ...] | None,
+    data_repo_id: str | None,
 ) -> _config.TrainConfig:
-    if health_data_roots is None and health_repo_ids is None:
+    if health_data_roots is None and health_repo_ids is None and data_repo_id is None:
         return config
-    if not hasattr(config.data, "health_data_roots"):
+    if (health_data_roots is not None or health_repo_ids is not None) and not hasattr(config.data, "health_data_roots"):
         raise ValueError("--health-data-roots can only be used with multi-health Handcap data configs.")
 
     data = config.data
@@ -103,6 +104,8 @@ def _maybe_override_health_paths(
         data = dataclasses.replace(data, health_data_roots=health_data_roots)
     if health_repo_ids is not None:
         data = dataclasses.replace(data, health_repo_ids=health_repo_ids)
+    if data_repo_id is not None:
+        data = dataclasses.replace(data, repo_id=data_repo_id)
     return dataclasses.replace(config, data=data)
 
 
@@ -111,9 +114,10 @@ def main(
     max_frames: int | None = None,
     health_data_roots: tuple[str, ...] | None = None,
     health_repo_ids: tuple[str, ...] | None = None,
+    data_repo_id: str | None = None,
 ):
     config = _config.get_config(config_name)
-    config = _maybe_override_health_paths(config, health_data_roots, health_repo_ids)
+    config = _maybe_override_health_paths(config, health_data_roots, health_repo_ids, data_repo_id)
     data_config = config.data.create(config.assets_dirs, config.model)
 
     output_path = config.assets_dirs / data_config.repo_id
