@@ -10,32 +10,15 @@ exec > >(tee -a "logs/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
-CONFIG_NAME="${CONFIG_NAME:-pi05_handcap_health_vtla_vgte_baseline}"
-EXP_NAME="${EXP_NAME:-508_open_bottle_multihealth_pi05_health_vtla_vgte_baseline}"
+CONFIG_NAME="${CONFIG_NAME:-pi05_506_open_bottle_tactile_force_guide_vtla_vgte}"
+EXP_NAME="${EXP_NAME:-506_open_bottle_handcap_pi05_4gpu_vtla_vgte_baseline}"
+DATA_ROOT="Data/506_open_bottle_lerobot"
 
-# Relative to the openpi repo root after the cd above.
-DATA_ROOT_BASE="${DATA_ROOT_BASE:-Data/508_open_bottle_lerobot_multihealth}"
-HEALTH0_DATA_ROOT="${HEALTH0_DATA_ROOT:-${DATA_ROOT_BASE}/508_open_bottle_lerobot_health0}"
-HEALTH50_DATA_ROOT="${HEALTH50_DATA_ROOT:-${DATA_ROOT_BASE}/508_open_bottle_lerobot_health50}"
-HEALTH100_DATA_ROOT="${HEALTH100_DATA_ROOT:-${DATA_ROOT_BASE}/508_open_bottle_lerobot_health100}"
-
-HEALTH_DATA_ROOTS=(
-  "${HEALTH0_DATA_ROOT}"
-  "${HEALTH50_DATA_ROOT}"
-  "${HEALTH100_DATA_ROOT}"
-)
-HEALTH_REPO_IDS=(
-  "508_open_bottle_lerobot_health0"
-  "508_open_bottle_lerobot_health50"
-  "508_open_bottle_lerobot_health100"
-)
-HEALTH_LABELS=("0" "50" "100")
-
-BATCH_SIZE="${BATCH_SIZE:-384}"
+BATCH_SIZE="${BATCH_SIZE:-512}"
 NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-50000}"
 SAVE_INTERVAL="${SAVE_INTERVAL:-5000}"
-NUM_WORKERS="${NUM_WORKERS:-32}"
-FSDP_DEVICES="${FSDP_DEVICES:-4}"
+NUM_WORKERS="${NUM_WORKERS:-16}"
+FSDP_DEVICES="${FSDP_DEVICES:-1}"
 RESUME="${RESUME:-0}"
 OVERWRITE="${OVERWRITE:-0}"
 
@@ -51,8 +34,9 @@ export TF_ENABLE_ONEDNN_OPTS="${TF_ENABLE_ONEDNN_OPTS:-1}"
 export XLA_FLAGS="${XLA_FLAGS:---xla_gpu_force_compilation_parallelism=16}"
 
 echo "=========================================="
-echo "Starting OpenPI PI05 multi-health VTLA/VGTE baseline training"
+echo "Starting OpenPI PI05 ordinary VTLA/VGTE baseline training"
 echo "Config: ${CONFIG_NAME}"
+echo "Dataset: ${DATA_ROOT}"
 echo "Experiment: ${EXP_NAME}"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
 echo "FSDP devices: ${FSDP_DEVICES}"
@@ -61,20 +45,14 @@ echo "Train steps: ${NUM_TRAIN_STEPS}"
 echo "Save interval: ${SAVE_INTERVAL}"
 echo "Num workers: ${NUM_WORKERS}"
 echo "OMP/MKL/OPENBLAS/NUMEXPR threads: ${OMP_NUM_THREADS}/${MKL_NUM_THREADS}/${OPENBLAS_NUM_THREADS}/${NUMEXPR_NUM_THREADS}"
-echo "Health data roots:"
-for data_root in "${HEALTH_DATA_ROOTS[@]}"; do
-  echo "  - ${data_root}"
-done
 echo "Resume: ${RESUME}"
 echo "Overwrite: ${OVERWRITE}"
 echo "=========================================="
 
-for data_root in "${HEALTH_DATA_ROOTS[@]}"; do
-  if [[ ! -d "${data_root}/data" || ! -d "${data_root}/meta" || ! -d "${data_root}/videos" ]]; then
-    echo "ERROR: Expected LeRobot dataset folders data/meta/videos under: ${data_root}"
-    exit 1
-  fi
-done
+if [[ ! -d "${DATA_ROOT}/data" || ! -d "${DATA_ROOT}/meta" || ! -d "${DATA_ROOT}/videos" ]]; then
+  echo "ERROR: Expected LeRobot dataset folders data/meta/videos under: ${DATA_ROOT}"
+  exit 1
+fi
 
 CHECKPOINT_DIR="checkpoints/${CONFIG_NAME}/${EXP_NAME}"
 LATEST_CKPT="$(
@@ -108,10 +86,7 @@ elif [[ -d "${CHECKPOINT_DIR}" ]]; then
   exit 1
 fi
 
-python scripts/compute_norm_stats.py \
-  --config-name "${CONFIG_NAME}" \
-  --health-data-roots "${HEALTH_DATA_ROOTS[@]}" \
-  --health-repo-ids "${HEALTH_REPO_IDS[@]}"
+python scripts/compute_norm_stats.py --config-name "${CONFIG_NAME}"
 
 python scripts/train.py \
   "${CONFIG_NAME}" \
@@ -122,7 +97,4 @@ python scripts/train.py \
   --num-workers "${NUM_WORKERS}" \
   --no-wandb-enabled \
   --fsdp-devices "${FSDP_DEVICES}" \
-  --data.health-data-roots "${HEALTH_DATA_ROOTS[@]}" \
-  --data.health-repo-ids "${HEALTH_REPO_IDS[@]}" \
-  --data.health-labels "${HEALTH_LABELS[@]}" \
   "${RUN_MODE_FLAGS[@]}"

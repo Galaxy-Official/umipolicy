@@ -34,8 +34,12 @@ HEALTH_LABELS=("0" "50" "100")
 BATCH_SIZE="${BATCH_SIZE:-384}"
 NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-50000}"
 SAVE_INTERVAL="${SAVE_INTERVAL:-5000}"
+# Multi-health video decoding was showing long prefetch stalls with 32 workers.
+# Start stable, then sweep NUM_WORKERS=16/24 after checking Data avg/p95/max.
 NUM_WORKERS="${NUM_WORKERS:-32}"
-FSDP_DEVICES="${FSDP_DEVICES:-4}"
+# H200 generally has enough memory to prefer data parallel groups over full
+# 4-GPU FSDP for throughput. Override to FSDP_DEVICES=4 if this OOMs.
+FSDP_DEVICES="${FSDP_DEVICES:-1}"
 RESUME="${RESUME:-0}"
 OVERWRITE="${OVERWRITE:-0}"
 

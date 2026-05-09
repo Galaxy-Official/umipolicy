@@ -23,6 +23,15 @@ Filter: TypeAlias = nnx.filterlib.Filter
 # or just rely on openpi.training.config at the function level.
 from openpi.training.config import DataConfigFactory, DataConfig, ModelTransformFactory
 
+
+@dataclasses.dataclass(frozen=True)
+class HandcapRuntimeDataConfig(DataConfig):
+    """Runtime DataConfig for ordinary Handcap datasets."""
+
+    vtla_tactile_history: int = 1
+    vtla_tactile_keys: Sequence[str] = ()
+
+
 @dataclasses.dataclass(frozen=True)
 class LeRobotHandcapDataConfig(DataConfigFactory):
     """
@@ -33,9 +42,14 @@ class LeRobotHandcapDataConfig(DataConfigFactory):
 
     # Action sequences are stored as 'action' in handcap datasets
     action_sequence_keys: Sequence[str] = ("action",)
+    use_vtla_vgte: bool = False
+    vtla_tactile_history: int = 4
 
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
+        if self.vtla_tactile_history <= 0:
+            raise ValueError("vtla_tactile_history must be positive.")
+
         action_base_dim = getattr(model_config, "action_base_dim", 10)
         force_dim = getattr(model_config, "force_dim", 2)
         force_predict = getattr(model_config, "force_predict", False)
@@ -73,6 +87,9 @@ class LeRobotHandcapDataConfig(DataConfigFactory):
                     force_guide=force_guide,
                     action_base_dim=action_base_dim,
                     force_dim=force_dim,
+                    force_observation_current_only=self.use_vtla_vgte,
+                    tactile_temporal_grid=self.use_vtla_vgte and self.vtla_tactile_history > 1,
+                    tactile_grid_shape=(2, 2),
                 )
             ],
             outputs=[
@@ -92,13 +109,28 @@ class LeRobotHandcapDataConfig(DataConfigFactory):
         )
 
         model_transforms = ModelTransformFactory()(model_config)
+        base = self.create_base_config(assets_dirs, model_config)
+        vtla_tactile_keys = ()
+        if self.use_vtla_vgte and self.vtla_tactile_history > 1:
+            vtla_tactile_keys = ("observation.tactiles.left", "observation.tactiles.right")
 
-        return dataclasses.replace(
-            self.create_base_config(assets_dirs, model_config),
+        return HandcapRuntimeDataConfig(
+            repo_id=base.repo_id,
+            asset_id=base.asset_id,
+            use_handcap=base.use_handcap,
+            data_root=base.data_root,
+            norm_stats=base.norm_stats,
             repack_transforms=repack_transform,
             data_transforms=data_transforms,
             model_transforms=model_transforms,
+            use_quantile_norm=base.use_quantile_norm,
             action_sequence_keys=seq_keys,
+            prompt_from_task=base.prompt_from_task,
+            rlds_data_dir=base.rlds_data_dir,
+            action_space=base.action_space,
+            datasets=base.datasets,
+            vtla_tactile_history=self.vtla_tactile_history if self.use_vtla_vgte else 1,
+            vtla_tactile_keys=vtla_tactile_keys,
         )
 
 
@@ -751,6 +783,31 @@ def get_handcap_configs():
             log_interval=100,
             save_interval=5000,
             keep_period=20_000,
+        ),
+        TrainConfig(
+            name="pi05_506_open_bottle_tactile_force_guide_vtla_vgte",
+            model=pi0_config.Pi0Config(
+                pi05=True,
+                use_tactile=True,
+                tactile_pretrained_ckpt=tactile_encoder_ckpt,
+                tactile_variant="B/16",
+                fusion_method="vtla_vgte",
+                force_predict=True,
+                force_guide=True,
+                camera_keys=("wrist_0_rgb",),
+            ),
+            data=LeRobotHandcapDataConfig(
+                repo_id="lihongcs/506_open_bottle_lerobot",
+                data_root="Data/506_open_bottle_lerobot",
+                base_config=DataConfig(
+                    prompt_from_task=True,
+                    use_handcap=True,
+                ),
+                use_vtla_vgte=True,
+                vtla_tactile_history=4,
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
+            **common_pi05_train_kwargs,
         ),
         *make_pi05_505_configs(
             task_name="505_screw",

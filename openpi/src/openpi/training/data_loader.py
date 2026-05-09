@@ -177,12 +177,20 @@ def create_torch_dataset(
         )
     elif getattr(data_config, "use_handcap", False):
         dataset_meta = dataset_metadata_handcap.LeRobotDatasetMetadataHandcap(repo_id, root=data_root)
+        delta_timestamps = {
+            key: [t / dataset_meta.fps for t in range(action_horizon)] for key in data_config.action_sequence_keys
+        }
+        vtla_tactile_history = getattr(data_config, "vtla_tactile_history", 1)
+        if vtla_tactile_history > 1:
+            tactile_offsets = [
+                (t - vtla_tactile_history + 1) / dataset_meta.fps for t in range(vtla_tactile_history)
+            ]
+            for key in getattr(data_config, "vtla_tactile_keys", ()):
+                delta_timestamps[key] = tactile_offsets
         dataset = lerobot_dataset_handcap.LeRobotDatasetHandcap(
             data_config.repo_id,
             root=data_root,
-            delta_timestamps={
-                key: [t / dataset_meta.fps for t in range(action_horizon)] for key in data_config.action_sequence_keys
-            },
+            delta_timestamps=delta_timestamps,
         )
     else:
         dataset_meta = lerobot_dataset.LeRobotDatasetMetadata(repo_id, root=data_root)
@@ -469,7 +477,12 @@ class BalancedHealthBatchSampler(torch.utils.data.Sampler):
         self.shuffle = bool(shuffle)
         self.seed = int(seed)
         self.epoch = 0
-        self.batches_per_epoch = max(1, max(self.health_lengths) // self.samples_per_health)
+        batches_per_epoch = max(1, max(self.health_lengths) // self.samples_per_health)
+        # Random health-balanced sampling is with replacement, so a short real
+        # epoch only forces PyTorch to tear down/re-prime the iterator. Keep a
+        # long virtual epoch to avoid multi-minute prefetch stalls during long
+        # training runs.
+        self.batches_per_epoch = max(10_000, batches_per_epoch) if self.shuffle else batches_per_epoch
 
     def __iter__(self):
         generator = torch.Generator()

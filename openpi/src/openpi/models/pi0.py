@@ -315,9 +315,11 @@ class Pi0(_model.BaseModel):
         logits: at.Float[at.Array, "b b"],
         mask: at.Bool[at.Array, "b b"],
     ) -> at.Float[at.Array, "b b"]:
-        masked_logits = jnp.where(mask, logits, -jnp.inf)
-        log_probs = masked_logits - jax.nn.logsumexp(masked_logits, axis=1, keepdims=True)
-        return jnp.where(jnp.isfinite(log_probs), log_probs, 0.0)
+        row_has_valid = jnp.any(mask, axis=1, keepdims=True)
+        masked_logits = jnp.where(mask, logits, -1.0e9)
+        masked_logits = jnp.where(row_has_valid, masked_logits, 0.0)
+        log_probs = jax.nn.log_softmax(masked_logits, axis=1)
+        return jnp.where(mask & row_has_valid, log_probs, 0.0)
 
     def _health_distill_loss(self, modal_features: dict, observation: _model.Observation) -> at.Float[at.Array, ""]:
         if observation.health_id is None or "wrist" not in modal_features or "tactile" not in modal_features:
