@@ -571,6 +571,11 @@ class TorchDataLoader:
             "worker_init_fn": _worker_init_fn,
             "generator": generator,
         }
+        if num_workers > 0:
+            prefetch_factor = int(os.environ.get("OPENPI_DATALOADER_PREFETCH_FACTOR", "2"))
+            if prefetch_factor <= 0:
+                raise ValueError("OPENPI_DATALOADER_PREFETCH_FACTOR must be positive.")
+            data_loader_kwargs["prefetch_factor"] = prefetch_factor
         if batch_sampler is not None:
             self._data_loader = torch.utils.data.DataLoader(
                 typing.cast(torch.utils.data.Dataset, dataset),

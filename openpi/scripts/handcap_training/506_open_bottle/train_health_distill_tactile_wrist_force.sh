@@ -31,12 +31,12 @@ HEALTH_REPO_IDS=(
 )
 HEALTH_LABELS=("0" "50" "100")
 
-BATCH_SIZE="${BATCH_SIZE:-384}"
+BATCH_SIZE="${BATCH_SIZE:-144}"
 NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-50000}"
 SAVE_INTERVAL="${SAVE_INTERVAL:-5000}"
 # This workload is video-decode bound; the latest profile starves the GPUs with
 # 16 workers, while 32 workers keeps Data avg much closer to model time.
-NUM_WORKERS="${NUM_WORKERS:-40}"
+NUM_WORKERS="${NUM_WORKERS:-16}"
 # H200 generally has enough memory to prefer data parallel groups over full
 # 4-GPU FSDP for throughput. Override to FSDP_DEVICES=4 if this OOMs.
 FSDP_DEVICES="${FSDP_DEVICES:-1}"
@@ -48,6 +48,7 @@ export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
 export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
 export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-1}"
 export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
+export OPENPI_DATALOADER_PREFETCH_FACTOR="${OPENPI_DATALOADER_PREFETCH_FACTOR:-2}"
 
 export XLA_PYTHON_CLIENT_PREALLOCATE="${XLA_PYTHON_CLIENT_PREALLOCATE:-true}"
 export XLA_PYTHON_CLIENT_MEM_FRACTION="${XLA_PYTHON_CLIENT_MEM_FRACTION:-0.95}"
@@ -64,6 +65,7 @@ echo "Batch size: ${BATCH_SIZE}"
 echo "Train steps: ${NUM_TRAIN_STEPS}"
 echo "Save interval: ${SAVE_INTERVAL}"
 echo "Num workers: ${NUM_WORKERS}"
+echo "DataLoader prefetch factor: ${OPENPI_DATALOADER_PREFETCH_FACTOR}"
 echo "OMP/MKL/OPENBLAS/NUMEXPR threads: ${OMP_NUM_THREADS}/${MKL_NUM_THREADS}/${OPENBLAS_NUM_THREADS}/${NUMEXPR_NUM_THREADS}"
 echo "Health data roots:"
 for data_root in "${HEALTH_DATA_ROOTS[@]}"; do
