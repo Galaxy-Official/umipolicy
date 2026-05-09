@@ -23,7 +23,9 @@ NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-100000}"
 SAVE_INTERVAL="${SAVE_INTERVAL:-10000}"
 # 充分利用 80 核 CPU 和 900GB 内存，极大加速数据加载
 NUM_WORKERS="${NUM_WORKERS:-32}"
-FSDP_DEVICES="${FSDP_DEVICES:-1}"
+# This script resumes an existing checkpoint saved with 4-way FSDP sharding.
+# Use a new EXP_NAME/overwrite flow if you want to restart with FSDP_DEVICES=1.
+FSDP_DEVICES="${FSDP_DEVICES:-4}"
 
 export XLA_PYTHON_CLIENT_PREALLOCATE="true"
 export XLA_PYTHON_CLIENT_MEM_FRACTION="0.95"
