@@ -23,11 +23,43 @@ def make_libero_example() -> dict:
 
 def _parse_image(image) -> np.ndarray:
     image = np.asarray(image)
+    if image.ndim == 4:
+        image = image[-1]
     if np.issubdtype(image.dtype, np.floating):
-        image = (255 * image).astype(np.uint8)
-    if image.shape[0] == 3:
+        image = np.clip(255 * image, 0, 255).astype(np.uint8)
+    if image.ndim == 3 and image.shape[0] == 3:
         image = einops.rearrange(image, "c h w -> h w c")
     return image
+
+
+def _parse_temporal_grid(image, grid_shape: tuple[int, int] = (2, 2)) -> np.ndarray:
+    frames = np.asarray(image)
+    rows, cols = grid_shape
+    if rows <= 0 or cols <= 0:
+        raise ValueError("grid_shape dimensions must be positive.")
+
+    num_cells = rows * cols
+    if frames.ndim <= 3:
+        parsed = _parse_image(frames)
+        parsed_frames = [parsed] * num_cells
+    else:
+        if frames.shape[0] < num_cells:
+            pad = np.repeat(frames[:1], num_cells - frames.shape[0], axis=0)
+            frames = np.concatenate([pad, frames], axis=0)
+        parsed_frames = [_parse_image(frame) for frame in frames[-num_cells:]]
+
+    target_h, target_w = parsed_frames[-1].shape[:2]
+    grid_rows = []
+    for row in range(rows):
+        start = row * cols
+        grid_rows.append(np.concatenate(parsed_frames[start : start + cols], axis=1))
+    grid = np.concatenate(grid_rows, axis=0)
+    if grid.shape[:2] != (target_h, target_w):
+        from PIL import Image as PILImage
+
+        resampling = getattr(PILImage, "Resampling", PILImage).BILINEAR
+        grid = np.asarray(PILImage.fromarray(grid).resize((target_w, target_h), resampling))
+    return grid
 
 
 def _force_from_value(value, force_dim: int) -> np.ndarray:
@@ -112,6 +144,9 @@ class HandcapInputs(transforms.DataTransformFn):
     force_guide: bool = False
     action_base_dim: int = 10
     force_dim: int = 2
+    force_observation_current_only: bool = False
+    tactile_temporal_grid: bool = False
+    tactile_grid_shape: tuple[int, int] = (2, 2)
 
     def __call__(self, data: dict) -> dict:
         # We only mask padding for pi0 model, not pi0-FAST. Do not change this for your own dataset.
@@ -144,8 +179,12 @@ class HandcapInputs(transforms.DataTransformFn):
         image_mask = {"wrist_0_rgb": np.True_}
 
         if self.include_tactile:
-            left_tactile = _parse_image(data["observation/left_tactile"])
-            right_tactile = _parse_image(data["observation/right_tactile"])
+            if self.tactile_temporal_grid:
+                left_tactile = _parse_temporal_grid(data["observation/left_tactile"], self.tactile_grid_shape)
+                right_tactile = _parse_temporal_grid(data["observation/right_tactile"], self.tactile_grid_shape)
+            else:
+                left_tactile = _parse_image(data["observation/left_tactile"])
+                right_tactile = _parse_image(data["observation/right_tactile"])
             images.update(
                 {
                     "left_tactile_0_rgb": left_tactile,
@@ -162,11 +201,11 @@ class HandcapInputs(transforms.DataTransformFn):
         # Create inputs dict. Do not change the keys in the dict below.
         inputs = {
             "state": state,
-            "force": force,
+            "force": current_force if self.force_observation_current_only else force,
             "image": images,
             "image_mask": image_mask,
         }
-        for metadata_key in ("alignment_id", "health_id", "aligned_source_index"):
+        for metadata_key in ("health_id",):
             if metadata_key in data:
                 inputs[metadata_key] = np.asarray(data[metadata_key])
 

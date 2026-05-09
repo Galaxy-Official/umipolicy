@@ -1119,8 +1119,8 @@ def get_handcap_joint_configs():
 
 import openpi.training.handcap_config as handcap_config
 _CONFIGS.extend(handcap_config.get_handcap_configs())
-import openpi.training.handcap_aligned_config as handcap_aligned_config
-_CONFIGS.extend(handcap_aligned_config.get_aligned_handcap_configs())
+import openpi.training.handcap_health_distill_config as handcap_health_distill_config
+_CONFIGS.extend(handcap_health_distill_config.get_health_distill_handcap_configs())
 
 if len({config.name for config in _CONFIGS}) != len(_CONFIGS):
     raise ValueError("Config names must be unique.")

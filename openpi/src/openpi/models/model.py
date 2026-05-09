@@ -107,8 +107,7 @@ class Observation(Generic[ArrayT]):
     state: at.Float[ArrayT, "*b s"]
     # Optional left/right contact force in Newtons. Used by tactile force-guided fusion.
     force: at.Float[ArrayT, "*b f"] | None = None
-    # Optional metadata used by force/time aligned contrastive training.
-    alignment_id: at.Int[ArrayT, "*b"] | None = None
+    # Optional metadata used by multi-health relational distillation.
     health_id: at.Int[ArrayT, "*b"] | None = None
 
     # Tokenized prompt.
@@ -164,7 +163,6 @@ class Observation(Generic[ArrayT]):
             tactile_image_masks=tactile_image_masks,
             state=data["state"],
             force=data.get("force"),
-            alignment_id=data.get("alignment_id"),
             health_id=data.get("health_id"),
             tokenized_prompt=data.get("tokenized_prompt"),
             tokenized_prompt_mask=data.get("tokenized_prompt_mask"),
@@ -292,7 +290,6 @@ def preprocess_observation(
         tactile_image_masks=out_tactile_image_masks,
         state=observation.state,
         force=observation.force,
-        alignment_id=observation.alignment_id,
         health_id=observation.health_id,
         tokenized_prompt=observation.tokenized_prompt,
         tokenized_prompt_mask=observation.tokenized_prompt_mask,

@@ -88,7 +88,7 @@ def create_rlds_dataloader(
     return data_loader, num_batches
 
 
-def _maybe_override_aligned_paths(
+def _maybe_override_health_paths(
     config: _config.TrainConfig,
     health_data_roots: tuple[str, ...] | None,
     health_repo_ids: tuple[str, ...] | None,
@@ -96,7 +96,7 @@ def _maybe_override_aligned_paths(
     if health_data_roots is None and health_repo_ids is None:
         return config
     if not hasattr(config.data, "health_data_roots"):
-        raise ValueError("--health-data-roots can only be used with aligned Handcap data configs.")
+        raise ValueError("--health-data-roots can only be used with multi-health Handcap data configs.")
 
     data = config.data
     if health_data_roots is not None:
@@ -113,7 +113,7 @@ def main(
     health_repo_ids: tuple[str, ...] | None = None,
 ):
     config = _config.get_config(config_name)
-    config = _maybe_override_aligned_paths(config, health_data_roots, health_repo_ids)
+    config = _maybe_override_health_paths(config, health_data_roots, health_repo_ids)
     data_config = config.data.create(config.assets_dirs, config.model)
 
     output_path = config.assets_dirs / data_config.repo_id

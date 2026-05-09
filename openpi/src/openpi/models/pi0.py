@@ -139,42 +139,55 @@ class Pi0(_model.BaseModel):
         vision_weight = 1.0 - tactile_weight
         return vision_weight[:, None, :], tactile_weight[:, None, :]
 
-    @at.typecheck
-    def embed_prefix(
-        self, obs: _model.Observation
-    ) -> tuple[at.Float[at.Array, "b s emb"], at.Bool[at.Array, "b s"], at.Bool[at.Array, " s"]]:
+    def _embed_prefix_with_modal_features(self, obs: _model.Observation):
         input_mask = []
         ar_mask = []
         tokens = []
 
         vision_tokens = []
         vision_masks = []
+        wrist_tokens = []
+        wrist_masks = []
         # embed images
         for name in obs.images:
             image_tokens, _ = self.PaliGemma.img(obs.images[name], train=False)
+            image_mask = einops.repeat(
+                obs.image_masks[name],
+                "b -> b s",
+                s=image_tokens.shape[1],
+            )
 
             vision_tokens.append(image_tokens)
-            vision_masks.append(
-                einops.repeat(
-                    obs.image_masks[name],
-                    "b -> b s",
-                    s=image_tokens.shape[1],
-                )
-            )
+            vision_masks.append(image_mask)
+            if "wrist" in name:
+                wrist_tokens.append(image_tokens)
+                wrist_masks.append(image_mask)
 
         tactile_tokens = []
         tactile_masks = []
+        raw_tactile_tokens = []
+        raw_tactile_masks = []
         if self.config.use_tactile:
             for name in obs.tactile_images:
                 tactile_image_tokens, _ = self.PaliGemma.tac(obs.tactile_images[name], train=False)
-                tactile_tokens.append(tactile_image_tokens)
-                tactile_masks.append(
-                    einops.repeat(
-                        obs.tactile_image_masks[name],
-                        "b -> b s",
-                        s=tactile_image_tokens.shape[1],
-                    )
+                tactile_mask = einops.repeat(
+                    obs.tactile_image_masks[name],
+                    "b -> b s",
+                    s=tactile_image_tokens.shape[1],
                 )
+                tactile_tokens.append(tactile_image_tokens)
+                tactile_masks.append(tactile_mask)
+                raw_tactile_tokens.append(tactile_image_tokens)
+                raw_tactile_masks.append(tactile_mask)
+
+        modal_features = {}
+        if wrist_tokens:
+            modal_features["wrist"] = (jnp.concatenate(wrist_tokens, axis=1), jnp.concatenate(wrist_masks, axis=1))
+        if raw_tactile_tokens:
+            modal_features["tactile"] = (
+                jnp.concatenate(raw_tactile_tokens, axis=1),
+                jnp.concatenate(raw_tactile_masks, axis=1),
+            )
 
         if self.config.use_tactile and tactile_tokens and self.config.fusion_method in ("linear", "film"):
             vision_weight, tactile_weight = self._force_modality_weights(obs)
@@ -192,17 +205,19 @@ class Pi0(_model.BaseModel):
                 for mask in tactile_masks
             ]
 
-        for image_tokens, mask in zip(vision_tokens, vision_masks, strict=True):
-            tokens.append(image_tokens)
-            input_mask.append(mask)
-            # image tokens attend to each other
-            ar_mask += [False] * image_tokens.shape[1]
+        def append_token_group(token_group, mask_group):
+            for group_tokens, mask in zip(token_group, mask_group, strict=True):
+                tokens.append(group_tokens)
+                input_mask.append(mask)
+                ar_mask.extend([False] * group_tokens.shape[1])
 
-        for tactile_image_tokens, mask in zip(tactile_tokens, tactile_masks, strict=True):
-            tokens.append(tactile_image_tokens)
-            input_mask.append(mask)
-            # tactile image tokens attend to each other
-            ar_mask += [False] * tactile_image_tokens.shape[1]
+        if self.config.fusion_method == "vtla_vgte":
+            # VGTE-style ordering: tactile context first, then wrist vision closer to action tokens.
+            append_token_group(tactile_tokens, tactile_masks)
+            append_token_group(vision_tokens, vision_masks)
+        else:
+            append_token_group(vision_tokens, vision_masks)
+            append_token_group(tactile_tokens, tactile_masks)
 
         # add language (aka tokenized inputs)
         if obs.tokenized_prompt is not None:
@@ -214,6 +229,13 @@ class Pi0(_model.BaseModel):
         tokens = jnp.concatenate(tokens, axis=1)
         input_mask = jnp.concatenate(input_mask, axis=1)
         ar_mask = jnp.array(ar_mask)
+        return tokens, input_mask, ar_mask, modal_features
+
+    @at.typecheck
+    def embed_prefix(
+        self, obs: _model.Observation
+    ) -> tuple[at.Float[at.Array, "b s emb"], at.Bool[at.Array, "b s"], at.Bool[at.Array, " s"]]:
+        tokens, input_mask, ar_mask, _ = self._embed_prefix_with_modal_features(obs)
         return tokens, input_mask, ar_mask
 
     @at.typecheck
@@ -265,38 +287,66 @@ class Pi0(_model.BaseModel):
         ar_mask = jnp.array(ar_mask)
         return tokens, input_mask, ar_mask, adarms_cond
 
-    def _alignment_contrastive_loss(
+    def _masked_mean(
         self,
-        prefix_out: at.Float[at.Array, "b s emb"],
-        prefix_mask: at.Bool[at.Array, "b s"],
-        observation: _model.Observation,
-    ) -> at.Float[at.Array, ""]:
-        if observation.alignment_id is None or observation.health_id is None:
+        features: at.Float[at.Array, "b s emb"],
+        mask: at.Bool[at.Array, "b s"],
+    ) -> at.Float[at.Array, "b emb"]:
+        mask = jnp.asarray(mask, dtype=jnp.float32)
+        return jnp.sum(features * mask[..., None], axis=1) / jnp.maximum(jnp.sum(mask, axis=1, keepdims=True), 1.0)
+
+    def _normalize_feature(self, features: at.Float[at.Array, "b emb"]) -> at.Float[at.Array, "b emb"]:
+        return features / jnp.maximum(jnp.linalg.norm(features, axis=-1, keepdims=True), 1e-6)
+
+    def _force_feature(self, observation: _model.Observation, width: int) -> at.Float[at.Array, "b emb"]:
+        if observation.force is None:
+            return jnp.zeros((observation.state.shape[0], width), dtype=jnp.float32)
+        force = jnp.asarray(observation.force, dtype=jnp.float32)
+        force = force.reshape((force.shape[0], -1))
+        force = jnp.nan_to_num(force, nan=0.0, posinf=0.0, neginf=0.0)
+        force_min, force_max = self.config.force_range
+        force = (force - force_min) / (force_max - force_min)
+        force_basis = jnp.concatenate([force, jnp.sin(force), jnp.cos(force)], axis=-1)
+        repeat = (width + force_basis.shape[-1] - 1) // force_basis.shape[-1]
+        return jnp.tile(force_basis, (1, repeat))[:, :width]
+
+    def _masked_log_softmax(
+        self,
+        logits: at.Float[at.Array, "b b"],
+        mask: at.Bool[at.Array, "b b"],
+    ) -> at.Float[at.Array, "b b"]:
+        masked_logits = jnp.where(mask, logits, -jnp.inf)
+        log_probs = masked_logits - jax.nn.logsumexp(masked_logits, axis=1, keepdims=True)
+        return jnp.where(jnp.isfinite(log_probs), log_probs, 0.0)
+
+    def _health_distill_loss(self, modal_features: dict, observation: _model.Observation) -> at.Float[at.Array, ""]:
+        if observation.health_id is None or "wrist" not in modal_features or "tactile" not in modal_features:
             return jnp.asarray(0.0, dtype=jnp.float32)
 
-        mask = jnp.asarray(prefix_mask, dtype=jnp.float32)
-        features = jnp.asarray(prefix_out, dtype=jnp.float32)
-        pooled = jnp.sum(features * mask[..., None], axis=1) / jnp.maximum(jnp.sum(mask, axis=1, keepdims=True), 1.0)
-        pooled = pooled / jnp.maximum(jnp.linalg.norm(pooled, axis=-1, keepdims=True), 1e-6)
+        wrist_tokens, wrist_mask = modal_features["wrist"]
+        tactile_tokens, tactile_mask = modal_features["tactile"]
+        wrist_feature = self._masked_mean(jnp.asarray(wrist_tokens, dtype=jnp.float32), wrist_mask)
+        tactile_feature = self._masked_mean(jnp.asarray(tactile_tokens, dtype=jnp.float32), tactile_mask)
+        force_feature = self._force_feature(observation, wrist_feature.shape[-1])
 
-        alignment_id = jnp.asarray(observation.alignment_id).reshape((-1,))
+        wrist_force_feature = self._normalize_feature(
+            wrist_feature + self.config.health_distill_force_weight * force_feature
+        )
+        tactile_feature = self._normalize_feature(tactile_feature)
+
         health_id = jnp.asarray(observation.health_id).reshape((-1,))
-        batch_size = alignment_id.shape[0]
+        batch_size = health_id.shape[0]
+        valid_pair = (health_id[:, None] != health_id[None, :]) & ~jnp.eye(batch_size, dtype=jnp.bool_)
+        valid_anchor = jnp.any(valid_pair, axis=1)
 
-        valid = alignment_id >= 0
-        not_self = ~jnp.eye(batch_size, dtype=jnp.bool_)
-        valid_pair = valid[:, None] & valid[None, :] & not_self
-        positive = (alignment_id[:, None] == alignment_id[None, :]) & (health_id[:, None] != health_id[None, :])
-        positive = positive & valid_pair
+        teacher_feature = jax.lax.stop_gradient(wrist_force_feature)
+        teacher_logits = teacher_feature @ teacher_feature.T / self.config.health_distill_gt_temperature
+        student_logits = tactile_feature @ tactile_feature.T / self.config.health_distill_tactile_temperature
 
-        logits = pooled @ pooled.T / self.config.contrastive_temperature
-        log_denom = jax.nn.logsumexp(jnp.where(valid_pair, logits, -jnp.inf), axis=1, keepdims=True)
-        log_probs = logits - log_denom
-        log_probs = jnp.where(jnp.isfinite(log_probs), log_probs, 0.0)
-
-        positive_count = jnp.sum(positive, axis=1)
-        valid_anchor = positive_count > 0
-        per_anchor = -jnp.sum(jnp.where(positive, log_probs, 0.0), axis=1) / jnp.maximum(positive_count, 1)
+        teacher_log_probs = self._masked_log_softmax(teacher_logits, valid_pair)
+        student_log_probs = self._masked_log_softmax(student_logits, valid_pair)
+        teacher_probs = jnp.where(valid_pair, jnp.exp(teacher_log_probs), 0.0)
+        per_anchor = jnp.sum(teacher_probs * (teacher_log_probs - student_log_probs), axis=1)
         return jnp.sum(jnp.where(valid_anchor, per_anchor, 0.0)) / jnp.maximum(jnp.sum(valid_anchor), 1)
 
     @override
@@ -314,21 +364,27 @@ class Pi0(_model.BaseModel):
         u_t = noise - actions
 
         # one big forward pass of prefix + suffix at once
-        prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(observation)
+        if self.config.health_distill and self.config.health_distill_weight > 0.0:
+            prefix_tokens, prefix_mask, prefix_ar_mask, modal_features = self._embed_prefix_with_modal_features(
+                observation
+            )
+        else:
+            prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(observation)
+            modal_features = {}
         suffix_tokens, suffix_mask, suffix_ar_mask, adarms_cond = self.embed_suffix(observation, x_t, time)
         input_mask = jnp.concatenate([prefix_mask, suffix_mask], axis=1)
         ar_mask = jnp.concatenate([prefix_ar_mask, suffix_ar_mask], axis=0)
         attn_mask = make_attn_mask(input_mask, ar_mask)
         positions = jnp.cumsum(input_mask, axis=1) - 1
-        (prefix_out, suffix_out), _ = self.PaliGemma.llm(
+        (_, suffix_out), _ = self.PaliGemma.llm(
             [prefix_tokens, suffix_tokens], mask=attn_mask, positions=positions, adarms_cond=[None, adarms_cond]
         )
         v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
 
         loss = jnp.mean(jnp.square(v_t - u_t), axis=-1)
-        if self.config.contrastive_alignment and self.config.contrastive_weight > 0.0:
-            contrastive_loss = self._alignment_contrastive_loss(prefix_out, prefix_mask, observation)
-            loss = loss + self.config.contrastive_weight * contrastive_loss
+        if self.config.health_distill and self.config.health_distill_weight > 0.0:
+            distill_loss = self._health_distill_loss(modal_features, observation)
+            loss = loss + self.config.health_distill_weight * distill_loss
         return loss
 
     @override

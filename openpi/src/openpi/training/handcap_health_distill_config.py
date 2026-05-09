@@ -1,4 +1,4 @@
-"""Isolated configs for force/time aligned Handcap multi-dataset training."""
+"""Isolated configs for multi-health wrist-force to tactile distillation."""
 
 from collections.abc import Sequence
 import dataclasses
@@ -24,51 +24,32 @@ Filter: TypeAlias = nnx.filterlib.Filter
 
 
 @dataclasses.dataclass(frozen=True)
-class AlignedHandcapRuntimeDataConfig(DataConfig):
-    """Runtime DataConfig used only by aligned multi-health Handcap training."""
+class HealthDistillRuntimeDataConfig(DataConfig):
+    """Runtime DataConfig used only by multi-health distillation training."""
 
-    use_aligned_multi_handcap: bool = True
-    aligned_health_repo_ids: Sequence[str] = ()
-    aligned_health_data_roots: Sequence[str] = ()
-    aligned_health_labels: Sequence[str] = ("0", "50", "100")
-    aligned_force_eps: float = 0.5
-    aligned_max_progress_diff: float = 0.15
-    aligned_time_weight: float = 0.25
-    aligned_force_smoothing_window: int = 3
-    aligned_anchor_dataset_index: int = 1
-    aligned_max_alignments: int | None = None
-    aligned_seed: int = 0
-    aligned_cache_dir: str | None = None
-    aligned_rebuild_cache: bool = False
+    use_health_distill_multi_handcap: bool = True
+    health_repo_ids: Sequence[str] = ()
+    health_data_roots: Sequence[str] = ()
+    health_labels: Sequence[str] = ("0", "50", "100")
+    vtla_tactile_history: int = 1
+    vtla_tactile_keys: Sequence[str] = ()
 
 
 @dataclasses.dataclass(frozen=True)
-class LeRobotAlignedHandcapDataConfig(DataConfigFactory):
-    """Data config for three health-conditioned Handcap datasets.
-
-    The source datasets stay separate on disk. A runtime wrapper aligns frames by
-    force first, then by normalized episode progress, and exposes grouped samples
-    for contrastive training.
-    """
+class LeRobotHealthDistillHandcapDataConfig(DataConfigFactory):
+    """Data config for random cross-health wrist/tactile/force training."""
 
     health_data_roots: Sequence[str] = tyro.MISSING
     health_repo_ids: Sequence[str] | None = None
     health_labels: Sequence[str] = ("0", "50", "100")
     action_sequence_keys: Sequence[str] = ("action",)
-    force_eps: float = 0.5
-    max_progress_diff: float = 0.15
-    time_weight: float = 0.25
-    force_smoothing_window: int = 3
-    anchor_dataset_index: int = 1
-    max_alignments: int | None = None
-    alignment_seed: int = 0
-    alignment_cache_dir: str | None = None
-    rebuild_alignment_cache: bool = False
+    use_vtla_vgte: bool = False
+    vtla_tactile_history: int = 4
 
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
         if self.health_data_roots is tyro.MISSING:
-            raise ValueError("health_data_roots must contain the 0%, 50%, and 100% health dataset paths.")
+            raise ValueError("health_data_roots must contain the health-conditioned dataset paths.")
 
         health_data_roots = tuple(self.health_data_roots)
         if len(health_data_roots) < 2:
@@ -82,6 +63,8 @@ class LeRobotAlignedHandcapDataConfig(DataConfigFactory):
             health_repo_ids = tuple(self.health_repo_ids)
         if len(health_repo_ids) != len(health_data_roots):
             raise ValueError("health_repo_ids must have the same length as health_data_roots.")
+        if self.vtla_tactile_history <= 0:
+            raise ValueError("vtla_tactile_history must be positive.")
 
         action_base_dim = getattr(model_config, "action_base_dim", 10)
         force_dim = getattr(model_config, "force_dim", 2)
@@ -119,6 +102,9 @@ class LeRobotAlignedHandcapDataConfig(DataConfigFactory):
                     force_guide=force_guide,
                     action_base_dim=action_base_dim,
                     force_dim=force_dim,
+                    force_observation_current_only=True,
+                    tactile_temporal_grid=self.use_vtla_vgte and self.vtla_tactile_history > 1,
+                    tactile_grid_shape=(2, 2),
                 )
             ],
             outputs=[
@@ -137,8 +123,10 @@ class LeRobotAlignedHandcapDataConfig(DataConfigFactory):
         )
 
         base = self.create_base_config(assets_dirs, model_config)
-        cache_dir = self.alignment_cache_dir or str(assets_dirs / "alignment_cache")
-        return AlignedHandcapRuntimeDataConfig(
+        vtla_tactile_keys = ()
+        if self.use_vtla_vgte and self.vtla_tactile_history > 1:
+            vtla_tactile_keys = ("observation.tactiles.left", "observation.tactiles.right")
+        return HealthDistillRuntimeDataConfig(
             repo_id=base.repo_id,
             asset_id=base.asset_id,
             use_handcap=True,
@@ -153,22 +141,15 @@ class LeRobotAlignedHandcapDataConfig(DataConfigFactory):
             rlds_data_dir=base.rlds_data_dir,
             action_space=base.action_space,
             datasets=base.datasets,
-            aligned_health_repo_ids=health_repo_ids,
-            aligned_health_data_roots=health_data_roots,
-            aligned_health_labels=tuple(self.health_labels),
-            aligned_force_eps=self.force_eps,
-            aligned_max_progress_diff=self.max_progress_diff,
-            aligned_time_weight=self.time_weight,
-            aligned_force_smoothing_window=self.force_smoothing_window,
-            aligned_anchor_dataset_index=self.anchor_dataset_index,
-            aligned_max_alignments=self.max_alignments,
-            aligned_seed=self.alignment_seed,
-            aligned_cache_dir=cache_dir,
-            aligned_rebuild_cache=self.rebuild_alignment_cache,
+            health_repo_ids=health_repo_ids,
+            health_data_roots=health_data_roots,
+            health_labels=tuple(self.health_labels),
+            vtla_tactile_history=self.vtla_tactile_history if self.use_vtla_vgte else 1,
+            vtla_tactile_keys=vtla_tactile_keys,
         )
 
 
-def get_aligned_handcap_configs():
+def get_health_distill_handcap_configs():
     from openpi.training.config import TrainConfig
 
     ckpt_root = "/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt"
@@ -182,7 +163,7 @@ def get_aligned_handcap_configs():
 
     return [
         TrainConfig(
-            name="pi05_handcap_aligned_health_tactile_force_contrast",
+            name="pi05_handcap_health_distill_tactile_wrist_force",
             model=pi0_config.Pi0Config(
                 pi05=True,
                 use_tactile=True,
@@ -192,14 +173,43 @@ def get_aligned_handcap_configs():
                 force_predict=True,
                 force_guide=True,
                 camera_keys=("wrist_0_rgb",),
-                contrastive_alignment=True,
-                contrastive_weight=0.05,
-                contrastive_temperature=0.07,
+                health_distill=True,
+                health_distill_weight=0.05,
+                health_distill_gt_temperature=0.15,
+                health_distill_tactile_temperature=0.07,
+                health_distill_force_weight=0.5,
             ),
-            data=LeRobotAlignedHandcapDataConfig(
-                repo_id="handcap_aligned_health",
+            data=LeRobotHealthDistillHandcapDataConfig(
+                repo_id="handcap_health_distill",
                 health_data_roots=tyro.MISSING,
                 base_config=base_data_config,
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
+            num_train_steps=200_000,
+            batch_size=384,
+            num_workers=32,
+            log_interval=100,
+            save_interval=10000,
+            keep_period=20_000,
+        ),
+        TrainConfig(
+            name="pi05_handcap_health_vtla_vgte_baseline",
+            model=pi0_config.Pi0Config(
+                pi05=True,
+                use_tactile=True,
+                tactile_pretrained_ckpt=tactile_encoder_ckpt,
+                tactile_variant="B/16",
+                fusion_method="vtla_vgte",
+                force_predict=True,
+                force_guide=True,
+                camera_keys=("wrist_0_rgb",),
+            ),
+            data=LeRobotHealthDistillHandcapDataConfig(
+                repo_id="handcap_health_vtla_vgte",
+                health_data_roots=tyro.MISSING,
+                base_config=base_data_config,
+                use_vtla_vgte=True,
+                vtla_tactile_history=4,
             ),
             weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
             num_train_steps=200_000,

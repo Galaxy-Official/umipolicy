@@ -12,8 +12,8 @@ import pathlib
 # 将 openpi 模块所在目录加入系统路径，使内部通过 import lerobot 能够直接寻址到本地拷贝的 lerobot
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import lerobot.datasets.aligned_multi_dataset_handcap as aligned_multi_dataset_handcap
 import lerobot.datasets.dataset_metadata_handcap as dataset_metadata_handcap
+import lerobot.datasets.health_distill_dataset_handcap as health_distill_dataset_handcap
 import lerobot.datasets.lerobot_dataset as lerobot_dataset
 import lerobot.datasets.lerobot_dataset_handcap as lerobot_dataset_handcap
 import numpy as np
@@ -146,31 +146,28 @@ def create_torch_dataset(
         return FakeDataset(model_config, num_samples=1024)
 
     data_root = getattr(data_config, "data_root", None)
-    if getattr(data_config, "use_aligned_multi_handcap", False):
-        aligned_repo_ids = tuple(getattr(data_config, "aligned_health_repo_ids"))
-        aligned_roots = tuple(getattr(data_config, "aligned_health_data_roots"))
+    if getattr(data_config, "use_health_distill_multi_handcap", False):
+        health_repo_ids = tuple(getattr(data_config, "health_repo_ids"))
+        health_roots = tuple(getattr(data_config, "health_data_roots"))
         dataset_meta = dataset_metadata_handcap.LeRobotDatasetMetadataHandcap(
-            aligned_repo_ids[0],
-            root=aligned_roots[0],
+            health_repo_ids[0],
+            root=health_roots[0],
         )
-        dataset = aligned_multi_dataset_handcap.AlignedMultiLeRobotDatasetHandcap(
-            aligned_repo_ids,
-            aligned_roots,
-            health_labels=tuple(getattr(data_config, "aligned_health_labels")),
-            delta_timestamps={
-                key: [t / dataset_meta.fps for t in range(action_horizon)] for key in data_config.action_sequence_keys
-            },
-            force_dim=getattr(model_config, "force_dim", 2),
-            action_base_dim=getattr(model_config, "action_base_dim", 10),
-            force_eps=getattr(data_config, "aligned_force_eps"),
-            max_progress_diff=getattr(data_config, "aligned_max_progress_diff"),
-            time_weight=getattr(data_config, "aligned_time_weight"),
-            force_smoothing_window=getattr(data_config, "aligned_force_smoothing_window"),
-            anchor_dataset_index=getattr(data_config, "aligned_anchor_dataset_index"),
-            max_alignments=getattr(data_config, "aligned_max_alignments"),
-            seed=getattr(data_config, "aligned_seed"),
-            cache_dir=getattr(data_config, "aligned_cache_dir"),
-            rebuild_cache=getattr(data_config, "aligned_rebuild_cache"),
+        delta_timestamps = {
+            key: [t / dataset_meta.fps for t in range(action_horizon)] for key in data_config.action_sequence_keys
+        }
+        vtla_tactile_history = getattr(data_config, "vtla_tactile_history", 1)
+        if vtla_tactile_history > 1:
+            tactile_offsets = [
+                (t - vtla_tactile_history + 1) / dataset_meta.fps for t in range(vtla_tactile_history)
+            ]
+            for key in getattr(data_config, "vtla_tactile_keys", ()):
+                delta_timestamps[key] = tactile_offsets
+        dataset = health_distill_dataset_handcap.MultiHealthLeRobotDatasetHandcap(
+            health_repo_ids,
+            health_roots,
+            health_labels=tuple(getattr(data_config, "health_labels")),
+            delta_timestamps=delta_timestamps,
         )
     elif getattr(data_config, "use_handcap", False):
         dataset_meta = dataset_metadata_handcap.LeRobotDatasetMetadataHandcap(repo_id, root=data_root)
@@ -369,14 +366,12 @@ def create_torch_data_loader(
 
     logging.info(f"local_batch_size: {local_batch_size}")
     batch_sampler = None
-    if getattr(data_config, "use_aligned_multi_handcap", False):
+    if getattr(data_config, "use_health_distill_multi_handcap", False):
         if sampler is not None:
-            raise NotImplementedError("Distributed sampling is not implemented for aligned multi-Handcap datasets.")
-        group_size = int(getattr(raw_dataset, "group_size"))
-        num_alignments = int(getattr(raw_dataset, "num_alignments"))
-        batch_sampler = AlignedBatchSampler(
-            num_alignments=num_alignments,
-            group_size=group_size,
+            raise NotImplementedError("Distributed sampling is not implemented for health distillation datasets.")
+        batch_sampler = BalancedHealthBatchSampler(
+            health_lengths=tuple(getattr(raw_dataset, "health_lengths")),
+            health_offsets=tuple(getattr(raw_dataset, "health_offsets")),
             batch_size=local_batch_size,
             shuffle=shuffle,
             seed=seed,
@@ -439,50 +434,59 @@ def create_rlds_data_loader(
     return DataLoaderImpl(data_config, data_loader)
 
 
-class AlignedBatchSampler(torch.utils.data.Sampler):
-    """Yields batches that keep all health variants for each alignment together."""
+class BalancedHealthBatchSampler(torch.utils.data.Sampler):
+    """Yields random batches with equal samples from each health dataset."""
 
     def __init__(
         self,
         *,
-        num_alignments: int,
-        group_size: int,
+        health_lengths: Sequence[int],
+        health_offsets: Sequence[int],
         batch_size: int,
         shuffle: bool,
         seed: int,
     ):
-        if batch_size % group_size != 0:
+        if len(health_lengths) != len(health_offsets):
+            raise ValueError("health_lengths and health_offsets must have the same length.")
+        if batch_size % len(health_lengths) != 0:
             raise ValueError(
-                f"Aligned multi-Handcap batch size ({batch_size}) must be divisible by group size ({group_size})."
+                f"Health distillation batch size ({batch_size}) must be divisible by {len(health_lengths)}."
             )
-        self.num_alignments = int(num_alignments)
-        self.group_size = int(group_size)
+        if any(length <= 0 for length in health_lengths):
+            raise ValueError("All health datasets must contain at least one frame.")
+        self.health_lengths = tuple(int(length) for length in health_lengths)
+        self.health_offsets = tuple(int(offset) for offset in health_offsets)
+        self.num_healths = len(self.health_lengths)
         self.batch_size = int(batch_size)
-        self.alignments_per_batch = self.batch_size // self.group_size
+        self.samples_per_health = self.batch_size // self.num_healths
         self.shuffle = bool(shuffle)
         self.seed = int(seed)
         self.epoch = 0
+        self.batches_per_epoch = max(1, max(self.health_lengths) // self.samples_per_health)
 
     def __iter__(self):
-        if self.shuffle:
-            generator = torch.Generator()
-            generator.manual_seed(self.seed + self.epoch)
-            alignment_ids = torch.randperm(self.num_alignments, generator=generator).tolist()
-        else:
-            alignment_ids = list(range(self.num_alignments))
+        generator = torch.Generator()
+        generator.manual_seed(self.seed + self.epoch)
         self.epoch += 1
 
-        usable = (len(alignment_ids) // self.alignments_per_batch) * self.alignments_per_batch
-        for start in range(0, usable, self.alignments_per_batch):
-            batch_alignment_ids = alignment_ids[start : start + self.alignments_per_batch]
-            yield [
-                alignment_id * self.group_size + health_id
-                for alignment_id in batch_alignment_ids
-                for health_id in range(self.group_size)
-            ]
+        cursors = [0] * self.num_healths
+        for _ in range(self.batches_per_epoch):
+            batch = []
+            for health_id, (offset, length) in enumerate(zip(self.health_offsets, self.health_lengths, strict=True)):
+                if self.shuffle:
+                    local_indices = torch.randint(length, (self.samples_per_health,), generator=generator).tolist()
+                else:
+                    start = cursors[health_id]
+                    local_indices = [(start + i) % length for i in range(self.samples_per_health)]
+                    cursors[health_id] += self.samples_per_health
+                batch.extend(offset + local_idx for local_idx in local_indices)
+            if self.shuffle:
+                order = torch.randperm(len(batch), generator=generator).tolist()
+                batch = [batch[i] for i in order]
+            yield batch
 
     def __len__(self):
-        return self.num_alignments // self.alignments_per_batch
+        return self.batches_per_epoch
 
 
 class TorchDataLoader:
@@ -520,7 +524,7 @@ class TorchDataLoader:
         if jax.process_count() > 1:
             raise NotImplementedError("Data loading with multiple processes is not supported.")
 
-        if len(dataset) < local_batch_size:
+        if batch_sampler is None and len(dataset) < local_batch_size:
             raise ValueError(f"Local batch size ({local_batch_size}) is larger than the dataset size ({len(dataset)}).")
 
         # Store sharding - None for PyTorch, JAX sharding for JAX
