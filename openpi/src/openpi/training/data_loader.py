@@ -70,6 +70,12 @@ class TransformedDataset(Dataset[T_co]):
         return len(self._dataset)
 
 
+def _unwrap_transformed_dataset(dataset: Dataset) -> Dataset:
+    while isinstance(dataset, TransformedDataset):
+        dataset = dataset._dataset
+    return dataset
+
+
 class IterableTransformedDataset(IterableDataset[T_co]):
     def __init__(
         self,
@@ -369,9 +375,10 @@ def create_torch_data_loader(
     if getattr(data_config, "use_health_distill_multi_handcap", False):
         if sampler is not None:
             raise NotImplementedError("Distributed sampling is not implemented for health distillation datasets.")
+        health_dataset = _unwrap_transformed_dataset(raw_dataset)
         batch_sampler = BalancedHealthBatchSampler(
-            health_lengths=tuple(getattr(raw_dataset, "health_lengths")),
-            health_offsets=tuple(getattr(raw_dataset, "health_offsets")),
+            health_lengths=tuple(getattr(health_dataset, "health_lengths")),
+            health_offsets=tuple(getattr(health_dataset, "health_offsets")),
             batch_size=local_batch_size,
             shuffle=shuffle,
             seed=seed,
