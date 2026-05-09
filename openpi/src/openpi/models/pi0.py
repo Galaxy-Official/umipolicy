@@ -291,12 +291,18 @@ class Pi0(_model.BaseModel):
         self,
         features: at.Float[at.Array, "b s emb"],
         mask: at.Bool[at.Array, "b s"],
-    ) -> at.Float[at.Array, "b emb"]:
-        mask = jnp.asarray(mask, dtype=jnp.float32)
-        return jnp.sum(features * mask[..., None], axis=1) / jnp.maximum(jnp.sum(mask, axis=1, keepdims=True), 1.0)
+    ) -> tuple[at.Float[at.Array, "b emb"], at.Bool[at.Array, "b"]]:
+        features = jnp.asarray(features, dtype=jnp.float32)
+        mask_bool = jnp.asarray(mask, dtype=jnp.bool_)
+        mask_float = mask_bool.astype(jnp.float32)
+        masked_features = jnp.where(mask_bool[..., None], features, 0.0)
+        valid = jnp.any(mask_bool, axis=1)
+        return jnp.sum(masked_features, axis=1) / jnp.maximum(jnp.sum(mask_float, axis=1, keepdims=True), 1.0), valid
 
     def _normalize_feature(self, features: at.Float[at.Array, "b emb"]) -> at.Float[at.Array, "b emb"]:
-        return features / jnp.maximum(jnp.linalg.norm(features, axis=-1, keepdims=True), 1e-6)
+        features = jnp.asarray(features, dtype=jnp.float32)
+        squared_norm = jnp.sum(jnp.square(features), axis=-1, keepdims=True)
+        return features / jnp.sqrt(squared_norm + 1e-6)
 
     def _force_feature(self, observation: _model.Observation, width: int) -> at.Float[at.Array, "b emb"]:
         if observation.force is None:
@@ -327,8 +333,8 @@ class Pi0(_model.BaseModel):
 
         wrist_tokens, wrist_mask = modal_features["wrist"]
         tactile_tokens, tactile_mask = modal_features["tactile"]
-        wrist_feature = self._masked_mean(jnp.asarray(wrist_tokens, dtype=jnp.float32), wrist_mask)
-        tactile_feature = self._masked_mean(jnp.asarray(tactile_tokens, dtype=jnp.float32), tactile_mask)
+        wrist_feature, wrist_valid = self._masked_mean(jnp.asarray(wrist_tokens, dtype=jnp.float32), wrist_mask)
+        tactile_feature, tactile_valid = self._masked_mean(jnp.asarray(tactile_tokens, dtype=jnp.float32), tactile_mask)
         force_feature = self._force_feature(observation, wrist_feature.shape[-1])
 
         wrist_force_feature = self._normalize_feature(
@@ -338,7 +344,13 @@ class Pi0(_model.BaseModel):
 
         health_id = jnp.asarray(observation.health_id).reshape((-1,))
         batch_size = health_id.shape[0]
-        valid_pair = (health_id[:, None] != health_id[None, :]) & ~jnp.eye(batch_size, dtype=jnp.bool_)
+        valid_sample = wrist_valid & tactile_valid
+        valid_pair = (
+            valid_sample[:, None]
+            & valid_sample[None, :]
+            & (health_id[:, None] != health_id[None, :])
+            & ~jnp.eye(batch_size, dtype=jnp.bool_)
+        )
         valid_anchor = jnp.any(valid_pair, axis=1)
 
         teacher_feature = jax.lax.stop_gradient(wrist_force_feature)
@@ -349,7 +361,9 @@ class Pi0(_model.BaseModel):
         student_log_probs = self._masked_log_softmax(student_logits, valid_pair)
         teacher_probs = jnp.where(valid_pair, jnp.exp(teacher_log_probs), 0.0)
         per_anchor = jnp.sum(teacher_probs * (teacher_log_probs - student_log_probs), axis=1)
-        return jnp.sum(jnp.where(valid_anchor, per_anchor, 0.0)) / jnp.maximum(jnp.sum(valid_anchor), 1)
+        return jnp.sum(jnp.where(valid_anchor, per_anchor, 0.0)) / jnp.maximum(
+            jnp.sum(valid_anchor.astype(jnp.float32)), 1.0
+        )
 
     @override
     def compute_loss(
