@@ -14,7 +14,7 @@ CONFIG_NAME="${CONFIG_NAME:-pi05_handcap_health_distill_tactile_wrist_force}"
 EXP_NAME="${EXP_NAME:-508_open_bottle_multihealth_pi05_health_distill_tactile_wrist_force}"
 
 # Relative to the openpi repo root after the cd above.
-DATA_ROOT_BASE="${DATA_ROOT_BASE:-../lerobot/src/Data/508_open_bottle_lerobot_multihealth}"
+DATA_ROOT_BASE="${DATA_ROOT_BASE:-Data/508_open_bottle_lerobot_multihealth}"
 HEALTH0_DATA_ROOT="${HEALTH0_DATA_ROOT:-${DATA_ROOT_BASE}/508_open_bottle_lerobot_health0}"
 HEALTH50_DATA_ROOT="${HEALTH50_DATA_ROOT:-${DATA_ROOT_BASE}/508_open_bottle_lerobot_health50}"
 HEALTH100_DATA_ROOT="${HEALTH100_DATA_ROOT:-${DATA_ROOT_BASE}/508_open_bottle_lerobot_health100}"
