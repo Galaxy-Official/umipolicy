@@ -17,13 +17,13 @@ EXP_NAME="${EXP_NAME:-505_screw_handcap_pi05_4gpu_vision_only_test}"
 # ==============================================================================
 # H200 (141GB) x4 & 80-Core 900GB RAM 极致资源榨干配置
 # ==============================================================================
-BATCH_SIZE="${BATCH_SIZE:-256}"
+BATCH_SIZE="${BATCH_SIZE:-64}"
 # 调整总训练步数 (Batch Size 扩大 4 倍，步数相应减少)
-NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-50000}"
-SAVE_INTERVAL="${SAVE_INTERVAL:-5000}"
+NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-100000}"
+SAVE_INTERVAL="${SAVE_INTERVAL:-10000}"
 # 充分利用 80 核 CPU 和 900GB 内存，极大加速数据加载
-NUM_WORKERS="${NUM_WORKERS:-64}"
-FSDP_DEVICES="${FSDP_DEVICES:-4}"
+NUM_WORKERS="${NUM_WORKERS:-32}"
+FSDP_DEVICES="${FSDP_DEVICES:-1}"
 
 export XLA_PYTHON_CLIENT_PREALLOCATE="true"
 export XLA_PYTHON_CLIENT_MEM_FRACTION="0.95"
@@ -55,4 +55,4 @@ python scripts/train.py \
   --num-workers "${NUM_WORKERS}" \
   --no-wandb-enabled \
   --fsdp-devices "${FSDP_DEVICES}" \
-  --overwrite
+  --resume
