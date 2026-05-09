@@ -24,7 +24,7 @@ NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-50000}"
 SAVE_INTERVAL="${SAVE_INTERVAL:-5000}"
 # Too many workers can overwhelm video/parquet random I/O and cause long
 # epoch-boundary stalls. Start lower and sweep 8/16/24/32.
-NUM_WORKERS="${NUM_WORKERS:-16}"
+NUM_WORKERS="${NUM_WORKERS:-32}"
 # H200 has enough memory to prefer data parallelism first. FSDP saves memory but
 # often costs throughput through extra cross-GPU communication.
 FSDP_DEVICES="${FSDP_DEVICES:-1}"
