@@ -28,7 +28,7 @@ NUM_WORKERS="${NUM_WORKERS:-32}"
 # H200 has enough memory to prefer data parallelism first. FSDP saves memory but
 # often costs throughput through extra cross-GPU communication.
 FSDP_DEVICES="${FSDP_DEVICES:-1}"
-RESUME="${RESUME:-1}"
+RESUME="${RESUME:-0}"
 OVERWRITE="${OVERWRITE:-0}"
 
 export XLA_PYTHON_CLIENT_PREALLOCATE="true"
