@@ -20,7 +20,7 @@ Pick up the bread in the basket and put it in the blue bowl.
 
 505_stiring
 pi05
-pick up the yellow stick to stir the granules in a white box.
+pick up the red stick to stir the granules in a white box.
 
 505_screw
 pick up the red socket wrench to loose the screw on the board.
