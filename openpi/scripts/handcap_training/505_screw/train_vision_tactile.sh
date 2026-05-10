@@ -25,7 +25,7 @@ SAVE_INTERVAL="${SAVE_INTERVAL:-10000}"
 NUM_WORKERS="${NUM_WORKERS:-32}"
 # This script resumes an existing checkpoint saved with 4-way FSDP sharding.
 # Use a new EXP_NAME/overwrite flow if you want to restart with FSDP_DEVICES=1.
-FSDP_DEVICES="${FSDP_DEVICES:-4}"
+FSDP_DEVICES="${FSDP_DEVICES:-1}"
 
 export XLA_PYTHON_CLIENT_PREALLOCATE="true"
 export XLA_PYTHON_CLIENT_MEM_FRACTION="0.95"
@@ -57,4 +57,4 @@ python scripts/train.py \
   --num-workers "${NUM_WORKERS}" \
   --no-wandb-enabled \
   --fsdp-devices "${FSDP_DEVICES}" \
-  --resume
+  --overwrite
