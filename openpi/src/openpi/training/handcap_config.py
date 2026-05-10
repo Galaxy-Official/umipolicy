@@ -40,11 +40,10 @@ class LeRobotHandcapDataConfig(DataConfigFactory):
         action_base_dim = getattr(model_config, "action_base_dim", 10)
         force_dim = getattr(model_config, "force_dim", 2)
         force_predict = getattr(model_config, "force_predict", False)
-        force_guide = getattr(model_config, "force_guide", False)
         output_action_dim = action_base_dim + (force_dim if force_predict else 0)
 
         seq_keys = list(self.action_sequence_keys)
-        if force_predict or force_guide:
+        if force_predict:
             if "observation.forces.left" not in seq_keys:
                 seq_keys.append("observation.forces.left")
             if "observation.forces.right" not in seq_keys:
@@ -71,7 +70,6 @@ class LeRobotHandcapDataConfig(DataConfigFactory):
                     action_dim=model_config.action_dim,
                     model_type=model_config.model_type,
                     force_predict=force_predict,
-                    force_guide=force_guide,
                     action_base_dim=action_base_dim,
                     force_dim=force_dim,
                     tactile_grid_shape=(2, 2),
@@ -126,11 +124,10 @@ class LeRobotHandcapWristDataConfig(DataConfigFactory):
         action_base_dim = getattr(model_config, "action_base_dim", 10)
         force_dim = getattr(model_config, "force_dim", 2)
         force_predict = getattr(model_config, "force_predict", False)
-        force_guide = getattr(model_config, "force_guide", False)
         output_action_dim = action_base_dim + (force_dim if force_predict else 0)
 
         seq_keys = list(self.action_sequence_keys)
-        if force_predict or force_guide:
+        if force_predict:
             if "observation.forces.left" not in seq_keys:
                 seq_keys.append("observation.forces.left")
             if "observation.forces.right" not in seq_keys:
@@ -156,7 +153,6 @@ class LeRobotHandcapWristDataConfig(DataConfigFactory):
                     model_type=model_config.model_type,
                     include_tactile=False,
                     force_predict=force_predict,
-                    force_guide=force_guide,
                     action_base_dim=action_base_dim,
                     force_dim=force_dim,
                 )
@@ -211,7 +207,6 @@ def get_handcap_configs():
             *,
             use_tactile: bool,
             force_predict: bool = False,
-            force_guide: bool = False,
             fusion_method: str = "linear",
             tactile_encoder_type: str = "siglip",
             tactile_t3_variant: str = "tiny",
@@ -232,7 +227,6 @@ def get_handcap_configs():
                         "tactile_variant": "So400m/14",
                         "fusion_method": fusion_method,
                         "force_predict": force_predict,
-                        "force_guide": force_guide,
                     }
                 )
             else:
@@ -313,7 +307,7 @@ def get_handcap_configs():
             ),
             TrainConfig(
                 name=f"pi05_{task_name}_tactile_force_guide",
-                model=model_config(use_tactile=True, force_predict=True, force_guide=True),
+                model=model_config(use_tactile=True, force_predict=True),
                 data=LeRobotHandcapDataConfig(
                     repo_id=repo_id,
                     data_root=data_root,
@@ -395,7 +389,6 @@ def get_handcap_configs():
                 tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=False,
-                force_guide=False,
                 camera_keys=("wrist_0_rgb",),),
             data=LeRobotHandcapDataConfig(
                 repo_id="lihongcs/erase_board_wrist",
@@ -465,7 +458,6 @@ def get_handcap_configs():
                 tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=False,
-                force_guide=False,
                 camera_keys=("wrist_0_rgb",),),
             data=LeRobotHandcapDataConfig(
                 repo_id="lihongcs/430_clamp_seal_lerobot",
@@ -491,7 +483,6 @@ def get_handcap_configs():
                 tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=False,
-                force_guide=False,
                 camera_keys=("wrist_0_rgb",),),
             data=LeRobotHandcapDataConfig(
                 repo_id="lihongcs/430_towel_hanging_lerobot",
@@ -581,7 +572,6 @@ def get_handcap_configs():
                 tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=False,
-                force_guide=False,
                 camera_keys=("wrist_0_rgb",),),
             data=LeRobotHandcapDataConfig(
                 repo_id="lihongcs/501_bread_moving_lerobot",
@@ -607,7 +597,6 @@ def get_handcap_configs():
                 tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=True,
-                force_guide=False,
                 camera_keys=("wrist_0_rgb",),),
             data=LeRobotHandcapDataConfig(
                 repo_id="lihongcs/501_bread_moving_lerobot",
@@ -633,7 +622,6 @@ def get_handcap_configs():
                 tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=True,
-                force_guide=True,
                 camera_keys=("wrist_0_rgb",),),
             data=LeRobotHandcapDataConfig(
                 repo_id="lihongcs/501_bread_moving_lerobot",
@@ -659,7 +647,6 @@ def get_handcap_configs():
                 tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=True,
-                force_guide=False,
                 camera_keys=("wrist_0_rgb",),),
             data=LeRobotHandcapDataConfig(
                 repo_id="lihongcs/430_clamp_seal_lerobot",
@@ -685,7 +672,6 @@ def get_handcap_configs():
                 tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=True,
-                force_guide=True,
                 camera_keys=("wrist_0_rgb",),),
             data=LeRobotHandcapDataConfig(
                 repo_id="lihongcs/430_clamp_seal_lerobot",
@@ -711,7 +697,6 @@ def get_handcap_configs():
                 tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=True,
-                force_guide=False,
                 camera_keys=("wrist_0_rgb",),),
             data=LeRobotHandcapDataConfig(
                 repo_id="lihongcs/erase_board_wrist",
@@ -737,7 +722,6 @@ def get_handcap_configs():
                 tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=True,
-                force_guide=True,
                 camera_keys=("wrist_0_rgb",),),
             data=LeRobotHandcapDataConfig(
                 repo_id="lihongcs/erase_board_wrist",
@@ -763,7 +747,6 @@ def get_handcap_configs():
                 tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=True,
-                force_guide=False,
                 camera_keys=("wrist_0_rgb",),),
             data=LeRobotHandcapDataConfig(
                 repo_id="lihongcs/430_towel_hanging_lerobot",
@@ -789,7 +772,6 @@ def get_handcap_configs():
                 tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=True,
-                force_guide=True,
                 camera_keys=("wrist_0_rgb",),),
             data=LeRobotHandcapDataConfig(
                 repo_id="lihongcs/430_towel_hanging_lerobot",
