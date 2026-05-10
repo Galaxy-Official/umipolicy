@@ -481,7 +481,6 @@ class LeRobotHandcapJointDataConfig(DataConfigFactory):
         action_base_dim = getattr(model_config, "action_base_dim", 8)
         force_dim = getattr(model_config, "force_dim", 2)
         force_predict = getattr(model_config, "force_predict", False)
-        force_guide = getattr(model_config, "force_guide", False)
         output_action_dim = action_base_dim + (force_dim if force_predict else 0)
 
         repack_transform = _transforms.Group(
@@ -505,7 +504,6 @@ class LeRobotHandcapJointDataConfig(DataConfigFactory):
                     action_dim=model_config.action_dim,
                     model_type=model_config.model_type,
                     force_predict=force_predict,
-                    force_guide=force_guide,
                     action_base_dim=action_base_dim,
                     force_dim=force_dim,
                 )
@@ -1062,7 +1060,6 @@ def get_handcap_joint_configs():
             *,
             use_tactile: bool,
             force_predict: bool = False,
-            force_guide: bool = False,
         ) -> pi0_config.Pi0Config:
             kwargs = {
                 "pi05": True,
@@ -1076,7 +1073,6 @@ def get_handcap_joint_configs():
                         "tactile_variant": "B/16",
                         "fusion_method": "linear",
                         "force_predict": force_predict,
-                        "force_guide": force_guide,
                     }
                 )
             return pi0_config.Pi0Config(
@@ -1101,7 +1097,7 @@ def get_handcap_joint_configs():
             make_train_config("vision_only", use_tactile=False),
             make_train_config("tactile", use_tactile=True),
             make_train_config("tactile_force_predict", use_tactile=True, force_predict=True),
-            make_train_config("tactile_force_guide", use_tactile=True, force_guide=True),
+            make_train_config("tactile_force_guide", use_tactile=True),
         ]
 
     return [
