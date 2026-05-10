@@ -228,8 +228,8 @@ def get_handcap_configs():
             if use_tactile:
                 kwargs.update(
                     {
-                        "tactile_pretrained_ckpt": tactile_encoder_ckpt,
-                        "tactile_variant": "B/16",
+                        "tactile_pretrained_ckpt": "",
+                        "tactile_variant": "So400m/14",
                         "fusion_method": fusion_method,
                         "force_predict": force_predict,
                         "force_guide": force_guide,
@@ -391,8 +391,8 @@ def get_handcap_configs():
             model=pi0_config.Pi0Config(
                 pi05=True,
                 use_tactile=True,
-                tactile_pretrained_ckpt="/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt",
-                tactile_variant="B/16",
+                tactile_pretrained_ckpt="",
+                tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=False,
                 force_guide=False,
@@ -461,8 +461,8 @@ def get_handcap_configs():
             model=pi0_config.Pi0Config(
                 pi05=True,
                 use_tactile=True,
-                tactile_pretrained_ckpt="/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt",
-                tactile_variant="B/16",
+                tactile_pretrained_ckpt="",
+                tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=False,
                 force_guide=False,
@@ -487,8 +487,8 @@ def get_handcap_configs():
             model=pi0_config.Pi0Config(
                 pi05=True,
                 use_tactile=True,
-                tactile_pretrained_ckpt="/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt",
-                tactile_variant="B/16",
+                tactile_pretrained_ckpt="",
+                tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=False,
                 force_guide=False,
@@ -512,7 +512,7 @@ def get_handcap_configs():
             name="pi0_erase_board_and_write_tactile_200",
             model=pi0_config.Pi0Config(
                 use_tactile=True,
-                tactile_pretrained_ckpt="/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt",
+                tactile_pretrained_ckpt="",
                 camera_keys=("wrist_0_rgb",),),
             data=LeRobotHandcapDataConfig(
                 repo_id="lihongcs/erase_board_and_write",
@@ -533,7 +533,7 @@ def get_handcap_configs():
             name="pi0_erase_board_and_write_tactile_200_debug",
             model=pi0_config.Pi0Config(
                 use_tactile=True,
-                tactile_pretrained_ckpt="/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt",
+                tactile_pretrained_ckpt="",
                 camera_keys=("wrist_0_rgb",),),
             data=LeRobotHandcapDataConfig(
                 repo_id="lihongcs/erase_board_and_write",
@@ -577,8 +577,8 @@ def get_handcap_configs():
             model=pi0_config.Pi0Config(
                 pi05=True,
                 use_tactile=True,
-                tactile_pretrained_ckpt="/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt",
-                tactile_variant="B/16",
+                tactile_pretrained_ckpt="",
+                tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=False,
                 force_guide=False,
@@ -603,8 +603,8 @@ def get_handcap_configs():
             model=pi0_config.Pi0Config(
                 pi05=True,
                 use_tactile=True,
-                tactile_pretrained_ckpt="/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt",
-                tactile_variant="B/16",
+                tactile_pretrained_ckpt="",
+                tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=True,
                 force_guide=False,
@@ -629,8 +629,8 @@ def get_handcap_configs():
             model=pi0_config.Pi0Config(
                 pi05=True,
                 use_tactile=True,
-                tactile_pretrained_ckpt="/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt",
-                tactile_variant="B/16",
+                tactile_pretrained_ckpt="",
+                tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=True,
                 force_guide=True,
@@ -655,8 +655,8 @@ def get_handcap_configs():
             model=pi0_config.Pi0Config(
                 pi05=True,
                 use_tactile=True,
-                tactile_pretrained_ckpt="/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt",
-                tactile_variant="B/16",
+                tactile_pretrained_ckpt="",
+                tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=True,
                 force_guide=False,
@@ -681,8 +681,8 @@ def get_handcap_configs():
             model=pi0_config.Pi0Config(
                 pi05=True,
                 use_tactile=True,
-                tactile_pretrained_ckpt="/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt",
-                tactile_variant="B/16",
+                tactile_pretrained_ckpt="",
+                tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=True,
                 force_guide=True,
@@ -707,8 +707,8 @@ def get_handcap_configs():
             model=pi0_config.Pi0Config(
                 pi05=True,
                 use_tactile=True,
-                tactile_pretrained_ckpt="/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt",
-                tactile_variant="B/16",
+                tactile_pretrained_ckpt="",
+                tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=True,
                 force_guide=False,
@@ -733,8 +733,8 @@ def get_handcap_configs():
             model=pi0_config.Pi0Config(
                 pi05=True,
                 use_tactile=True,
-                tactile_pretrained_ckpt="/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt",
-                tactile_variant="B/16",
+                tactile_pretrained_ckpt="",
+                tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=True,
                 force_guide=True,
@@ -759,8 +759,8 @@ def get_handcap_configs():
             model=pi0_config.Pi0Config(
                 pi05=True,
                 use_tactile=True,
-                tactile_pretrained_ckpt="/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt",
-                tactile_variant="B/16",
+                tactile_pretrained_ckpt="",
+                tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=True,
                 force_guide=False,
@@ -785,8 +785,8 @@ def get_handcap_configs():
             model=pi0_config.Pi0Config(
                 pi05=True,
                 use_tactile=True,
-                tactile_pretrained_ckpt="/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt",
-                tactile_variant="B/16",
+                tactile_pretrained_ckpt="",
+                tactile_variant="So400m/14",
                 fusion_method="linear",
                 force_predict=True,
                 force_guide=True,

@@ -11,50 +11,66 @@ exec > >(tee -a "logs/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
-CONFIG_NAME="${CONFIG_NAME:-pi05_506_peg_flowers_tactile_force_align}"
-EXP_NAME="${EXP_NAME:-506_peg_flowers_handcap_pi05_4gpu_tactile_force_align}"
+CONFIG_NAME="${CONFIG_NAME:-pi05_clamp_seal_tactile_concat_t3}"
+EXP_NAME="${EXP_NAME:-clamp_seal_handcap_pi05_4gpu_tactile_concat_t3}"
+DATA_ROOT="${DATA_ROOT:-Data/clamp_seal_lerobot}"
+T3_ROOT="${T3_ROOT:-ckpt/t3_tiny}"
 
 # ==============================================================================
-# H200 (141GB) x4 & 80-Core 900GB RAM throughput-oriented defaults
+# Same data and throughput defaults as train_vision_tactile.sh.
+# This script uses a separate config/experiment name so it will not touch prior
+# vision-only, vision+tactile, force-predict, or health-distill checkpoints.
 # ==============================================================================
-# Keep the global batch large enough to use the GPUs, but tune by samples/sec,
-# not by memory percentage.
-BATCH_SIZE="${BATCH_SIZE:-512}"
-NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-50000}"
-SAVE_INTERVAL="${SAVE_INTERVAL:-5000}"
-# Too many workers can overwhelm video/parquet random I/O and cause long
-# epoch-boundary stalls. Start lower and sweep 8/16/24/32.
-NUM_WORKERS="${NUM_WORKERS:-16}"
-# H200 has enough memory to prefer data parallelism first. FSDP saves memory but
-# often costs throughput through extra cross-GPU communication.
+BATCH_SIZE="${BATCH_SIZE:-64}"
+NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-100000}"
+SAVE_INTERVAL="${SAVE_INTERVAL:-10000}"
+NUM_WORKERS="${NUM_WORKERS:-32}"
 FSDP_DEVICES="${FSDP_DEVICES:-1}"
 RESUME="${RESUME:-0}"
 OVERWRITE="${OVERWRITE:-0}"
 
 export XLA_PYTHON_CLIENT_PREALLOCATE="true"
 export XLA_PYTHON_CLIENT_MEM_FRACTION="0.95"
-# 开启张量核心 TF32 计算加速，并增加 XLA 编译并发度
 export TF_ENABLE_ONEDNN_OPTS=1
 export XLA_FLAGS="--xla_gpu_force_compilation_parallelism=16"
 # ==============================================================================
 
 echo "=========================================="
-echo "Starting OpenPI PI05 Vision + Tactile + Force Align training"
+echo "Starting OpenPI PI05 TactileConcat + T3 training"
 echo "Config: ${CONFIG_NAME}"
-echo "Dataset: Data/506_peg_flowers_lerobot"
+echo "Dataset: ${DATA_ROOT}"
 echo "Experiment: ${EXP_NAME}"
+echo "T3 root: ${T3_ROOT}"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
 echo "FSDP devices: ${FSDP_DEVICES}"
 echo "Batch size: ${BATCH_SIZE}"
 echo "Train steps: ${NUM_TRAIN_STEPS}"
+echo "Save interval: ${SAVE_INTERVAL}"
 echo "Num Workers: ${NUM_WORKERS}"
 echo "Resume: ${RESUME}"
 echo "Overwrite: ${OVERWRITE}"
 echo "=========================================="
 
+if [[ ! -d "${DATA_ROOT}/data" || ! -d "${DATA_ROOT}/meta" || ! -d "${DATA_ROOT}/videos" ]]; then
+  echo "ERROR: Expected LeRobot dataset folders data/meta/videos under: ${DATA_ROOT}"
+  exit 1
+fi
+
+if [[ ! -f "${T3_ROOT}/trunk.pth" || ! -f "${T3_ROOT}/encoders/mini.pth" ]]; then
+  echo "ERROR: Expected T3 tiny checkpoints:"
+  echo "  ${T3_ROOT}/trunk.pth"
+  echo "  ${T3_ROOT}/encoders/mini.pth"
+  echo "Download them first from alanz-mit/FoundationTactile, or set T3_ROOT to the local ckpt/t3_tiny directory."
+  exit 1
+fi
+
 CHECKPOINT_DIR="checkpoints/${CONFIG_NAME}/${EXP_NAME}"
 LATEST_CKPT="$(
-  find "${CHECKPOINT_DIR}" -maxdepth 1 -mindepth 1 -type d -name '[0-9]*' 2>/dev/null     | awk -F/ '{print $NF}'     | sort -n     | tail -n 1     || true
+  find "${CHECKPOINT_DIR}" -maxdepth 1 -mindepth 1 -type d -name '[0-9]*' 2>/dev/null \
+    | awk -F/ '{print $NF}' \
+    | sort -n \
+    | tail -n 1 \
+    || true
 )"
 
 if [[ "${RESUME}" == "1" && "${OVERWRITE}" == "1" ]]; then
@@ -79,8 +95,6 @@ elif [[ -d "${CHECKPOINT_DIR}" ]]; then
   echo "Use RESUME=1 to continue from an existing checkpoint, or OVERWRITE=1 to intentionally start over."
   exit 1
 fi
-
-# ==============================================================================
 
 python scripts/compute_norm_stats.py --config-name "${CONFIG_NAME}"
 

@@ -28,7 +28,7 @@ class Pi0Config(_model.BaseModelConfig):
     
     use_tactile: bool = False
     tactile_pretrained_ckpt: str = ""
-    tactile_variant: str = "B/16"
+    tactile_variant: str = "So400m/14"
     tactile_encoder_type: str = "siglip"
     tactile_t3_variant: str = "tiny"
     tactile_t3_sensor: str = "mini"

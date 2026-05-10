@@ -51,6 +51,20 @@ class CheckpointWeightLoader(WeightLoader):
     def load(self, params: at.Params) -> at.Params:
         # We are loading np.ndarray and relying on the training code to properly convert and shard the params.
         loaded_params = _model.restore_params(download.maybe_download(self.params_path), restore_type=np.ndarray)
+        
+        flat_loaded = flax.traverse_util.flatten_dict(loaded_params, sep="/")
+        
+        # EXPERIMENTAL: Auto-copy vision weights to tactile encoder if tac does not exist in the checkpoint
+        has_tac = any(k.startswith("PaliGemma/tac/") for k in flat_loaded)
+        if not has_tac:
+            new_flat_loaded = dict(flat_loaded)
+            for k, v in flat_loaded.items():
+                if k.startswith("PaliGemma/img/"):
+                    tac_key = k.replace("PaliGemma/img/", "PaliGemma/tac/", 1)
+                    new_flat_loaded[tac_key] = v
+            loaded_params = flax.traverse_util.unflatten_dict(new_flat_loaded, sep="/")
+            logger.info("Automatically copied PaliGemma/img/ weights to PaliGemma/tac/ for the tactile encoder.")
+            
         # Add newly introduced adaptation weights that are not present in base checkpoints.
         return _merge_params(loaded_params, params, missing_regex=".*(lora|PaliGemma/tac|fusion_).*")
 

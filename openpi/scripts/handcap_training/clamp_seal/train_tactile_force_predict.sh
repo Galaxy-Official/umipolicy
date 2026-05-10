@@ -11,23 +11,19 @@ exec > >(tee -a "logs/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
-CONFIG_NAME="${CONFIG_NAME:-pi05_506_open_bottle_tactile_force_align}"
-EXP_NAME="${EXP_NAME:-506_open_bottle_handcap_pi05_4gpu_tactile_force_align}"
+CONFIG_NAME="${CONFIG_NAME:-pi05_clamp_seal_tactile_force_predict}"
+EXP_NAME="${EXP_NAME:-clamp_seal_handcap_pi05_4gpu_tactile_force_predict}"
 
 # ==============================================================================
 # H200 (141GB) x4 & 80-Core 900GB RAM throughput-oriented defaults
 # ==============================================================================
-# Keep the global batch large enough to use the GPUs, but tune by samples/sec,
-# not by memory percentage.
-BATCH_SIZE="${BATCH_SIZE:-512}"
+BATCH_SIZE="${BATCH_SIZE:-256}"
+# 调整总训练步数 (Batch Size 扩大 4 倍，步数相应减少)
 NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-50000}"
 SAVE_INTERVAL="${SAVE_INTERVAL:-5000}"
-# Too many workers can overwhelm video/parquet random I/O and cause long
-# epoch-boundary stalls. Start lower and sweep 8/16/24/32.
-NUM_WORKERS="${NUM_WORKERS:-16}"
-# H200 has enough memory to prefer data parallelism first. FSDP saves memory but
-# often costs throughput through extra cross-GPU communication.
-FSDP_DEVICES="${FSDP_DEVICES:-1}"
+# 充分利用 80 核 CPU 和 900GB 内存，极大加速数据加载
+NUM_WORKERS="${NUM_WORKERS:-64}"
+FSDP_DEVICES="${FSDP_DEVICES:-4}"
 RESUME="${RESUME:-0}"
 OVERWRITE="${OVERWRITE:-0}"
 
@@ -39,9 +35,9 @@ export XLA_FLAGS="--xla_gpu_force_compilation_parallelism=16"
 # ==============================================================================
 
 echo "=========================================="
-echo "Starting OpenPI PI05 Vision + Tactile + Force Align training"
+echo "Starting OpenPI PI05 Vision + Tactile + Force Predict training"
 echo "Config: ${CONFIG_NAME}"
-echo "Dataset: Data/506_open_bottle_lerobot"
+echo "Dataset: Data/clamp_seal_lerobot"
 echo "Experiment: ${EXP_NAME}"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
 echo "FSDP devices: ${FSDP_DEVICES}"

@@ -1,6 +1,5 @@
 #!/bin/bash
-# PI05 真机远程推理 + 轨迹质量指标便捷启动脚本。
-# 原 run_inference_pi05.sh 不变；本脚本额外记录并计算 J, J_e, J_m, J_c。
+# PI05 真机远程推理便捷启动脚本 - 视觉+触觉 (T3 拼接) 版
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -12,17 +11,21 @@ cd "$SCRIPT_DIR"
 # 填入 /dev/video 编号（如 4）。若不录像则留空。
 export RECORDING_INDEX="${RECORDING_INDEX:-0}"
 
+# 2. 左侧和右侧触觉相机编号（仅参与 tactile 推理）。
+# 填入 /dev/video 编号（如 2 和 0）。
+export TACTILE_LEFT_INDEX="${TACTILE_LEFT_INDEX:-4}"
+export TACTILE_RIGHT_INDEX="${TACTILE_RIGHT_INDEX:-2}"
+
 # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
-POLICY_CONFIG="${POLICY_CONFIG:-pi05_430_towel_hanging}"
+POLICY_CONFIG="${POLICY_CONFIG:-pi05_430_towel_hanging_tactile}"
 
 # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
-POLICY_DIR="${POLICY_DIR:-ckpt/430_towel_hanging_pi05}"
+POLICY_DIR="${POLICY_DIR:-ckpt/430_towel_hanging_tactile_55000}"
 
 # 5. 任务 Prompt 提示词（输入给模型的语言指令）
-PROMPT="${PROMPT:-Hang the towel over the rock}"
+PROMPT="${PROMPT:-Hang the towel over the rock.}"
 # ==============================================================================
 
-# 每次启动前清理占用 8000 端口的僵尸进程
 echo "Cleaning up port 8000..."
 lsof -ti:8000 | xargs -r kill -9 || true
 
@@ -121,4 +124,6 @@ bash start_handcap_remote_inference_metrics.sh \
   --metric-t-ref "${METRIC_T_REF}" \
   --init-qpos "${FLEXIV_INIT_POSE}" \
   --startup-timeout 1800 \
-  --no-use-tactile
+  --use-tactile \
+  --left-video-index "${TACTILE_LEFT_INDEX}" \
+  --right-video-index "${TACTILE_RIGHT_INDEX}"
