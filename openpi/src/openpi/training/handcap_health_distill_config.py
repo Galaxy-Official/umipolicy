@@ -140,41 +140,54 @@ def get_health_distill_handcap_configs():
 
     ckpt_root = "/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt"
     pi05_base_params = f"{ckpt_root}/pi05_base/params"
-    tactile_encoder_ckpt = f"{ckpt_root}/pretrained_tactile_encoder.pt"
 
     base_data_config = DataConfig(
         prompt_from_task=True,
         use_handcap=True,
     )
 
-    return [
-        TrainConfig(
-            name="pi05_handcap_health_distill_tactile_wrist_force",
-            model=pi0_config.Pi0Config(
-                pi05=True,
-                use_tactile=True,
-                tactile_pretrained_ckpt=tactile_encoder_ckpt,
-                tactile_variant="B/16",
-                fusion_method="linear",
-                force_predict=True,
-                camera_keys=("wrist_0_rgb",),
-                health_distill=True,
-                health_distill_weight=0.05,
-                health_distill_gt_temperature=0.15,
-                health_distill_tactile_temperature=0.07,
-                health_distill_force_weight=0.5,
-            ),
-            data=LeRobotHealthDistillHandcapDataConfig(
-                repo_id="handcap_health_distill",
-                health_data_roots=tyro.MISSING,
-                base_config=base_data_config,
-            ),
-            weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
-            num_train_steps=200_000,
-            batch_size=384,
-            num_workers=32,
-            log_interval=100,
-            save_interval=10000,
-            keep_period=20_000,
-        ),
+    tasks = [
+        "505_screw",
+        "505_stiring",
+        "506_open_bottle",
+        "506_peg_flowers",
+        "430_clamp_seal",
+        "erase_board_wrist",
+        "430_towel_hanging",
+        "bread_moving",
     ]
+
+    configs = []
+    for task in tasks:
+        configs.append(
+            TrainConfig(
+                name=f"pi05_{task}_health_distill_tactile_wrist_force",
+                model=pi0_config.Pi0Config(
+                    pi05=True,
+                    use_tactile=True,
+                    tactile_pretrained_ckpt="",
+                    tactile_variant="So400m/14",
+                    fusion_method="linear",
+                    force_predict=True,
+                    camera_keys=("wrist_0_rgb",),
+                    health_distill=True,
+                    health_distill_weight=0.05,
+                    health_distill_gt_temperature=0.15,
+                    health_distill_tactile_temperature=0.07,
+                    health_distill_force_weight=0.5,
+                ),
+                data=LeRobotHealthDistillHandcapDataConfig(
+                    repo_id=f"{task}_health_distill",
+                    health_data_roots=tyro.MISSING,
+                    base_config=base_data_config,
+                ),
+                weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
+                num_train_steps=200_000,
+                batch_size=384,
+                num_workers=32,
+                log_interval=100,
+                save_interval=10000,
+                keep_period=20_000,
+            )
+        )
+    return configs
