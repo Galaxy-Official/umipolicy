@@ -16,7 +16,7 @@ export RECORDING_INDEX="${RECORDING_INDEX:-0}"
 POLICY_CONFIG="${POLICY_CONFIG:-pi05_505_stiring}"
 
 # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
-POLICY_DIR="${POLICY_DIR:-ckpt/lihong/505_stiring_handcap_pi05_vision_70000}"
+POLICY_DIR="${POLICY_DIR:-ckpt/505_stiring_handcap_pi05_vision_70000}"
 
 # 5. 任务 Prompt 提示词（输入给模型的语言指令）
 PROMPT="${PROMPT:-pick up the red stick to stir the granules in a white box.}"
