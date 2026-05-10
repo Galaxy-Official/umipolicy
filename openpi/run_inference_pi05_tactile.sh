@@ -15,6 +15,8 @@ export RECORDING_INDEX="${RECORDING_INDEX:-0}"
 # 填入 /dev/video 编号（如 2 和 0）。
 export TACTILE_LEFT_INDEX="${TACTILE_LEFT_INDEX:-4}"
 export TACTILE_RIGHT_INDEX="${TACTILE_RIGHT_INDEX:-2}"
+export TACTILE_CAPTURE_WIDTH="${TACTILE_CAPTURE_WIDTH:-640}"
+export TACTILE_CAPTURE_HEIGHT="${TACTILE_CAPTURE_HEIGHT:-480}"
 
 # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
 POLICY_CONFIG="${POLICY_CONFIG:-pi05_430_towel_hanging_tactile}"
@@ -126,4 +128,6 @@ bash start_handcap_remote_inference_metrics.sh \
   --startup-timeout 1800 \
   --use-tactile \
   --left-video-index "${TACTILE_LEFT_INDEX}" \
-  --right-video-index "${TACTILE_RIGHT_INDEX}"
+  --right-video-index "${TACTILE_RIGHT_INDEX}" \
+  --tactile-capture-width "${TACTILE_CAPTURE_WIDTH}" \
+  --tactile-capture-height "${TACTILE_CAPTURE_HEIGHT}"

@@ -13,13 +13,13 @@ cd "$SCRIPT_DIR"
 export RECORDING_INDEX="${RECORDING_INDEX:-0}"
 
 # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
-POLICY_CONFIG="${POLICY_CONFIG:-pi05_430_towel_hanging}"
+POLICY_CONFIG="${POLICY_CONFIG:-pi05_506_open_bottle}"
 
 # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
-POLICY_DIR="${POLICY_DIR:-ckpt/430_towel_hanging_pi05}"
+POLICY_DIR="${POLICY_DIR:-ckpt/lihong/506_open_bottle_vision_70000}"
 
 # 5. 任务 Prompt 提示词（输入给模型的语言指令）
-PROMPT="${PROMPT:-Hang the towel over the rock}"
+PROMPT="${PROMPT:-turn to loose the cap of the bottle.}"
 # ==============================================================================
 
 # 每次启动前清理占用 8000 端口的僵尸进程

@@ -18,12 +18,14 @@ class WebCamTactile(BaseCamera):
                 ):
         self.camera_id = camera_id
         self.v4l_path = v4l_path
+        self.capture_resolution = tuple(resolution)
+        self.output_resolution = (224, 224)
         
         if self.camera_id is None and v4l_path is None:
             raise ValueError("Either camera_id or v4l_path must be provided")
         
         if self.camera_id is not None:
-            self.cap = cv2.VideoCapture(self.camera_id)
+            self.cap = cv2.VideoCapture(self.camera_id, cv2.CAP_V4L2)
             if not self.cap.isOpened():
                 raise ValueError(f"Failed to open camera with id {self.camera_id}")
         if self.v4l_path is not None:
@@ -33,10 +35,23 @@ class WebCamTactile(BaseCamera):
             
         self.cap.set(cv2.CAP_PROP_FPS, fps)
         self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M','J','P','G'))
-        w, h = resolution
+        w, h = self.capture_resolution
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
+        actual_w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        actual_h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
+        logger.info(
+            "WebCamTactile capture requested=%sx%s actual=%sx%s@%.1f output=%sx%s",
+            w,
+            h,
+            actual_w,
+            actual_h,
+            actual_fps,
+            self.output_resolution[0],
+            self.output_resolution[1],
+        )
 
     def get_data(self):
         assert self.cap.isOpened(), "Failed to open webcam."
@@ -45,10 +60,7 @@ class WebCamTactile(BaseCamera):
             logger.error("Failed to read frame from webcam.") 
             return None, None
         
-        color_image = frame
-        height, width = color_image.shape[:2]
-
-        color_image = cv2.resize(color_image, (224, 224), interpolation=cv2.INTER_LANCZOS4)
+        color_image = cv2.resize(frame, self.output_resolution, interpolation=cv2.INTER_AREA)
         return color_image, None
 
     def __del__(self):

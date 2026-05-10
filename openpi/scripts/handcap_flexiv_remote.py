@@ -161,7 +161,8 @@ def _prepare_tactile_image(image_bgr: np.ndarray | None, use_tactile: bool) -> n
         return np.zeros((224, 224, 3), dtype=np.uint8)
 
     rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-    rgb = image_tools.resize_with_pad(rgb, 224, 224)
+    if rgb.shape[:2] != (224, 224):
+        rgb = cv2.resize(rgb, (224, 224), interpolation=cv2.INTER_AREA)
     rgb = image_tools.convert_to_uint8(rgb)
     if use_tactile:
         return rgb

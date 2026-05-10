@@ -23,6 +23,8 @@ Usage:
     [--use-tactile | --no-use-tactile] \
     [--left-video-index <idx>] \
     [--right-video-index <idx>] \
+    [--tactile-capture-width 640] \
+    [--tactile-capture-height 480] \
     [--force-predict | --no-force-predict] \
     [--force-guide | --no-force-guide] \
     [--infer-force-control | --no-infer-force-control] \
@@ -168,6 +170,8 @@ LOG_DIR=""
 DRY_RUN="false"
 LEFT_VIDEO_INDEX=""
 RIGHT_VIDEO_INDEX=""
+TACTILE_CAPTURE_WIDTH=""
+TACTILE_CAPTURE_HEIGHT=""
 INFER_FORCE_CONTROL="false"
 METRIC_MONITOR_HZ="50"
 METRIC_T_REF="10.0"
@@ -245,6 +249,16 @@ while [[ $# -gt 0 ]]; do
     --right-video-index)
       require_value "$1" "${2-}"
       RIGHT_VIDEO_INDEX="$2"
+      shift 2
+      ;;
+    --tactile-capture-width)
+      require_value "$1" "${2-}"
+      TACTILE_CAPTURE_WIDTH="$2"
+      shift 2
+      ;;
+    --tactile-capture-height)
+      require_value "$1" "${2-}"
+      TACTILE_CAPTURE_HEIGHT="$2"
       shift 2
       ;;
     --force-predict)
@@ -391,7 +405,7 @@ CLIENT_LOG="$LOG_DIR/client.log"
 PID_FILE="$LOG_DIR/pids.env"
 CMD_FILE="$LOG_DIR/run_command.txt"
 
-if [[ -n "$LEFT_VIDEO_INDEX" || -n "$RIGHT_VIDEO_INDEX" ]]; then
+if [[ -n "$LEFT_VIDEO_INDEX" || -n "$RIGHT_VIDEO_INDEX" || -n "$TACTILE_CAPTURE_WIDTH" || -n "$TACTILE_CAPTURE_HEIGHT" ]]; then
   CUSTOM_CONFIG_PATH="$LOG_DIR/custom_camera_config.json"
   python -c "
 import json
@@ -412,6 +426,16 @@ if '$LEFT_VIDEO_INDEX':
 if '$RIGHT_VIDEO_INDEX':
     if 'right_tactile' in config:
         config['right_tactile']['camera_index'] = int('$RIGHT_VIDEO_INDEX')
+
+capture_width = '$TACTILE_CAPTURE_WIDTH'
+capture_height = '$TACTILE_CAPTURE_HEIGHT'
+if capture_width or capture_height:
+    if not (capture_width and capture_height):
+        raise ValueError('Both tactile capture width and height must be set together')
+    capture_resolution = [int(capture_width), int(capture_height)]
+    for name in ('left_tactile', 'right_tactile'):
+        if name in config:
+            config[name]['resolution'] = capture_resolution
 
 with open('$CUSTOM_CONFIG_PATH', 'w') as f:
     json.dump(config, f, indent=4)

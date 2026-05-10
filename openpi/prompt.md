@@ -2,7 +2,7 @@
 pi05
 
 vision config: pi05_erase_board_wrist
-Use the blackboard eraser to wipe off the blackboard
+Pick up the blackboard eraser and wipe off the blackboard
 
 430_clamp_seal
 vision config:
