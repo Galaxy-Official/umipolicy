@@ -11,7 +11,7 @@ exec > >(tee -a "logs/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
-CONFIG_NAME="${CONFIG_NAME:-pi05_clamp_seal_tactile_tacfilm}"
+CONFIG_NAME="${CONFIG_NAME:-pi05_430_clamp_seal_tactile_tacfilm}"
 EXP_NAME="${EXP_NAME:-clamp_seal_handcap_pi05_4gpu_tacfilm}"
 DATA_ROOT="${DATA_ROOT:-Data/clamp_seal_lerobot}"
 

@@ -11,7 +11,7 @@ exec > >(tee -a "logs/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
-CONFIG_NAME="${CONFIG_NAME:-pi05_towel_hanging_tactile_concat_t3}"
+CONFIG_NAME="${CONFIG_NAME:-pi05_430_towel_hanging_tactile_concat_t3}"
 EXP_NAME="${EXP_NAME:-towel_hanging_handcap_pi05_4gpu_tactile_concat_t3}"
 DATA_ROOT="${DATA_ROOT:-Data/towel_hanging_lerobot}"
 T3_ROOT="${T3_ROOT:-ckpt/t3_tiny}"

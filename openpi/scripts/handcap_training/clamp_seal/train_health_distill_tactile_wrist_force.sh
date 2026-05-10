@@ -10,7 +10,7 @@ exec > >(tee -a "logs/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
-CONFIG_NAME="${CONFIG_NAME:-pi05_clamp_seal_health_distill_tactile_wrist_force}"
+CONFIG_NAME="${CONFIG_NAME:-pi05_430_clamp_seal_health_distill_tactile_wrist_force}"
 EXP_NAME="${EXP_NAME:-clamp_seal_multihealth_pi05_health_distill_tactile_wrist_force}"
 
 # Relative to the openpi repo root after the cd above.
