@@ -31,8 +31,6 @@ class HealthDistillRuntimeDataConfig(DataConfig):
     health_repo_ids: Sequence[str] = ()
     health_data_roots: Sequence[str] = ()
     health_labels: Sequence[str] = ("0", "50", "100")
-    vtla_tactile_history: int = 1
-    vtla_tactile_keys: Sequence[str] = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -43,8 +41,6 @@ class LeRobotHealthDistillHandcapDataConfig(DataConfigFactory):
     health_repo_ids: Sequence[str] | None = None
     health_labels: Sequence[str] = ("0", "50", "100")
     action_sequence_keys: Sequence[str] = ("action",)
-    use_vtla_vgte: bool = False
-    vtla_tactile_history: int = 4
 
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
@@ -63,8 +59,6 @@ class LeRobotHealthDistillHandcapDataConfig(DataConfigFactory):
             health_repo_ids = tuple(self.health_repo_ids)
         if len(health_repo_ids) != len(health_data_roots):
             raise ValueError("health_repo_ids must have the same length as health_data_roots.")
-        if self.vtla_tactile_history <= 0:
-            raise ValueError("vtla_tactile_history must be positive.")
 
         action_base_dim = getattr(model_config, "action_base_dim", 10)
         force_dim = getattr(model_config, "force_dim", 2)
@@ -103,7 +97,6 @@ class LeRobotHealthDistillHandcapDataConfig(DataConfigFactory):
                     action_base_dim=action_base_dim,
                     force_dim=force_dim,
                     force_observation_current_only=True,
-                    tactile_temporal_grid=self.use_vtla_vgte and self.vtla_tactile_history > 1,
                     tactile_grid_shape=(2, 2),
                 )
             ],
@@ -123,9 +116,6 @@ class LeRobotHealthDistillHandcapDataConfig(DataConfigFactory):
         )
 
         base = self.create_base_config(assets_dirs, model_config)
-        vtla_tactile_keys = ()
-        if self.use_vtla_vgte and self.vtla_tactile_history > 1:
-            vtla_tactile_keys = ("observation.tactiles.left", "observation.tactiles.right")
         return HealthDistillRuntimeDataConfig(
             repo_id=base.repo_id,
             asset_id=base.asset_id,
@@ -144,8 +134,6 @@ class LeRobotHealthDistillHandcapDataConfig(DataConfigFactory):
             health_repo_ids=health_repo_ids,
             health_data_roots=health_data_roots,
             health_labels=tuple(self.health_labels),
-            vtla_tactile_history=self.vtla_tactile_history if self.use_vtla_vgte else 1,
-            vtla_tactile_keys=vtla_tactile_keys,
         )
 
 
@@ -183,33 +171,6 @@ def get_health_distill_handcap_configs():
                 repo_id="handcap_health_distill",
                 health_data_roots=tyro.MISSING,
                 base_config=base_data_config,
-            ),
-            weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
-            num_train_steps=200_000,
-            batch_size=384,
-            num_workers=32,
-            log_interval=100,
-            save_interval=10000,
-            keep_period=20_000,
-        ),
-        TrainConfig(
-            name="pi05_handcap_health_vtla_vgte_baseline",
-            model=pi0_config.Pi0Config(
-                pi05=True,
-                use_tactile=True,
-                tactile_pretrained_ckpt=tactile_encoder_ckpt,
-                tactile_variant="B/16",
-                fusion_method="vtla_vgte",
-                force_predict=True,
-                force_guide=True,
-                camera_keys=("wrist_0_rgb",),
-            ),
-            data=LeRobotHealthDistillHandcapDataConfig(
-                repo_id="handcap_health_vtla_vgte",
-                health_data_roots=tyro.MISSING,
-                base_config=base_data_config,
-                use_vtla_vgte=True,
-                vtla_tactile_history=4,
             ),
             weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
             num_train_steps=200_000,

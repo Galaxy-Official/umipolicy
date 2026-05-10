@@ -81,10 +81,28 @@ class Encoder1DBlock(nn.Module):
     dtype_mm: str = "float32"
 
     @nn.compact
-    def __call__(self, x, deterministic=True):  # noqa: FBT002
+    def __call__(self, x, deterministic=True, film_context=None):  # noqa: FBT002
         out = {}
         x = sharding.activation_sharding_constraint(x)
         y = nn.LayerNorm(dtype=self.dtype_mm)(x)
+        if film_context is not None:
+            _, _, d = y.shape
+            film_context = jnp.asarray(film_context, self.dtype_mm)
+            gamma = nn.Dense(
+                d,
+                dtype=self.dtype_mm,
+                kernel_init=nn.initializers.zeros,
+                bias_init=nn.initializers.zeros,
+                name="tacfilm_gamma",
+            )(film_context)
+            beta = nn.Dense(
+                d,
+                dtype=self.dtype_mm,
+                kernel_init=nn.initializers.zeros,
+                bias_init=nn.initializers.zeros,
+                name="tacfilm_beta",
+            )(film_context)
+            y = y * (1.0 + gamma[:, None, :]) + beta[:, None, :]
         y = out["sa"] = nn.MultiHeadDotProductAttention(
             num_heads=self.num_heads,
             kernel_init=nn.initializers.xavier_uniform(),
@@ -120,7 +138,7 @@ class Encoder(nn.Module):
     dtype_mm: str = "float32"
 
     @nn.compact
-    def __call__(self, x, deterministic=True):  # noqa: FBT002
+    def __call__(self, x, deterministic=True, film_context=None):  # noqa: FBT002
         out = {}
 
         if self.scan:
@@ -142,7 +160,7 @@ class Encoder(nn.Module):
                 mlp_dim=self.mlp_dim,
                 num_heads=self.num_heads,
                 dropout=self.dropout,
-            )(x, deterministic)
+            )(x, deterministic, film_context)
             for lyr in range(self.depth):
                 out[f"block{lyr:02d}"] = jax.tree.map(lambda o, lyr=lyr: o[lyr], scan_out)
         else:
@@ -155,7 +173,7 @@ class Encoder(nn.Module):
                     num_heads=self.num_heads,
                     dropout=self.dropout,
                 )
-                x, out[f"block{lyr:02d}"] = block_cur(x, deterministic)
+                x, out[f"block{lyr:02d}"] = block_cur(x, deterministic, film_context)
             out["pre_ln"] = x  # Alias for last block, but without the number in it.
 
         return nn.LayerNorm(name="encoder_norm", dtype=self.dtype_mm)(x), out
@@ -205,7 +223,7 @@ class _Module(nn.Module):
     dtype_mm: str = "float32"
 
     @nn.compact
-    def __call__(self, image, *, train=False):
+    def __call__(self, image, *, train=False, film_context=None):
         out = {}
 
         # Kevin edit: do patch extraction and posemb in float32,
@@ -247,7 +265,7 @@ class _Module(nn.Module):
             remat_policy=self.remat_policy,
             dtype_mm=self.dtype_mm,
             name="Transformer",
-        )(x, deterministic=not train)
+        )(x, deterministic=not train, film_context=film_context)
         encoded = out["encoded"] = x
 
         if self.pool_type == "map":

@@ -25,14 +25,6 @@ from openpi.training.config import DataConfigFactory, DataConfig, ModelTransform
 
 
 @dataclasses.dataclass(frozen=True)
-class HandcapRuntimeDataConfig(DataConfig):
-    """Runtime DataConfig for ordinary Handcap datasets."""
-
-    vtla_tactile_history: int = 1
-    vtla_tactile_keys: Sequence[str] = ()
-
-
-@dataclasses.dataclass(frozen=True)
 class LeRobotHandcapDataConfig(DataConfigFactory):
     """
     This config is used to configure transforms that are applied at various parts of the data pipeline.
@@ -42,14 +34,9 @@ class LeRobotHandcapDataConfig(DataConfigFactory):
 
     # Action sequences are stored as 'action' in handcap datasets
     action_sequence_keys: Sequence[str] = ("action",)
-    use_vtla_vgte: bool = False
-    vtla_tactile_history: int = 4
 
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
-        if self.vtla_tactile_history <= 0:
-            raise ValueError("vtla_tactile_history must be positive.")
-
         action_base_dim = getattr(model_config, "action_base_dim", 10)
         force_dim = getattr(model_config, "force_dim", 2)
         force_predict = getattr(model_config, "force_predict", False)
@@ -87,8 +74,6 @@ class LeRobotHandcapDataConfig(DataConfigFactory):
                     force_guide=force_guide,
                     action_base_dim=action_base_dim,
                     force_dim=force_dim,
-                    force_observation_current_only=self.use_vtla_vgte,
-                    tactile_temporal_grid=self.use_vtla_vgte and self.vtla_tactile_history > 1,
                     tactile_grid_shape=(2, 2),
                 )
             ],
@@ -110,11 +95,8 @@ class LeRobotHandcapDataConfig(DataConfigFactory):
 
         model_transforms = ModelTransformFactory()(model_config)
         base = self.create_base_config(assets_dirs, model_config)
-        vtla_tactile_keys = ()
-        if self.use_vtla_vgte and self.vtla_tactile_history > 1:
-            vtla_tactile_keys = ("observation.tactiles.left", "observation.tactiles.right")
 
-        return HandcapRuntimeDataConfig(
+        return DataConfig(
             repo_id=base.repo_id,
             asset_id=base.asset_id,
             use_handcap=base.use_handcap,
@@ -129,8 +111,6 @@ class LeRobotHandcapDataConfig(DataConfigFactory):
             rlds_data_dir=base.rlds_data_dir,
             action_space=base.action_space,
             datasets=base.datasets,
-            vtla_tactile_history=self.vtla_tactile_history if self.use_vtla_vgte else 1,
-            vtla_tactile_keys=vtla_tactile_keys,
         )
 
 
@@ -214,6 +194,9 @@ def get_handcap_configs():
 
     pi05_base_params = "/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pi05_base/params"
     tactile_encoder_ckpt = "/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/pretrained_tactile_encoder.pt"
+    t3_tiny_root = "/inspire/hdd/project/robot-reasoning/xuyue-p-xuyue/lihong_workspace/lihong/umipolicy/openpi/ckpt/t3_tiny"
+    t3_tiny_trunk_ckpt = f"{t3_tiny_root}/trunk.pth"
+    t3_tiny_mini_encoder_ckpt = f"{t3_tiny_root}/encoders/mini.pth"
     common_pi05_train_kwargs = {
         "num_train_steps": 200_000,
         "batch_size": 512,
@@ -229,18 +212,25 @@ def get_handcap_configs():
             use_tactile: bool,
             force_predict: bool = False,
             force_guide: bool = False,
+            fusion_method: str = "linear",
+            tactile_encoder_type: str = "siglip",
+            tactile_t3_variant: str = "tiny",
+            tactile_t3_sensor: str = "mini",
         ) -> pi0_config.Pi0Config:
             kwargs = {
                 "pi05": True,
                 "use_tactile": use_tactile,
                 "camera_keys": ("wrist_0_rgb",),
+                "tactile_encoder_type": tactile_encoder_type,
+                "tactile_t3_variant": tactile_t3_variant,
+                "tactile_t3_sensor": tactile_t3_sensor,
             }
             if use_tactile:
                 kwargs.update(
                     {
                         "tactile_pretrained_ckpt": tactile_encoder_ckpt,
                         "tactile_variant": "B/16",
-                        "fusion_method": "linear",
+                        "fusion_method": fusion_method,
                         "force_predict": force_predict,
                         "force_guide": force_guide,
                     }
@@ -276,6 +266,38 @@ def get_handcap_configs():
                     base_config=base_data_config(),
                 ),
                 weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
+                **common_pi05_train_kwargs,
+            ),
+            TrainConfig(
+                name=f"pi05_{task_name}_tactile_tacfilm",
+                model=model_config(use_tactile=True, fusion_method="tacfilm"),
+                data=LeRobotHandcapDataConfig(
+                    repo_id=repo_id,
+                    data_root=data_root,
+                    base_config=base_data_config(),
+                ),
+                weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
+                **common_pi05_train_kwargs,
+            ),
+            TrainConfig(
+                name=f"pi05_{task_name}_tactile_concat_t3",
+                model=model_config(
+                    use_tactile=True,
+                    fusion_method="tactile_concat",
+                    tactile_encoder_type="t3",
+                    tactile_t3_variant="tiny",
+                    tactile_t3_sensor="mini",
+                ),
+                data=LeRobotHandcapDataConfig(
+                    repo_id=repo_id,
+                    data_root=data_root,
+                    base_config=base_data_config(),
+                ),
+                weight_loader=weight_loaders.T3TactileConcatWeightLoader(
+                    base_params_path=pi05_base_params,
+                    t3_encoder_path=t3_tiny_mini_encoder_ckpt,
+                    t3_trunk_path=t3_tiny_trunk_ckpt,
+                ),
                 **common_pi05_train_kwargs,
             ),
             TrainConfig(
@@ -783,31 +805,6 @@ def get_handcap_configs():
             log_interval=100,
             save_interval=5000,
             keep_period=20_000,
-        ),
-        TrainConfig(
-            name="pi05_506_open_bottle_tactile_force_guide_vtla_vgte",
-            model=pi0_config.Pi0Config(
-                pi05=True,
-                use_tactile=True,
-                tactile_pretrained_ckpt=tactile_encoder_ckpt,
-                tactile_variant="B/16",
-                fusion_method="vtla_vgte",
-                force_predict=True,
-                force_guide=True,
-                camera_keys=("wrist_0_rgb",),
-            ),
-            data=LeRobotHandcapDataConfig(
-                repo_id="lihongcs/506_open_bottle_lerobot",
-                data_root="Data/506_open_bottle_lerobot",
-                base_config=DataConfig(
-                    prompt_from_task=True,
-                    use_handcap=True,
-                ),
-                use_vtla_vgte=True,
-                vtla_tactile_history=4,
-            ),
-            weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
-            **common_pi05_train_kwargs,
         ),
         *make_pi05_505_configs(
             task_name="505_screw",

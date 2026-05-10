@@ -11,6 +11,7 @@ from openpi.models import model as _model
 from openpi.models import pi0_config
 import openpi.models.gemma as _gemma
 import openpi.models.siglip as _siglip
+import openpi.models.t3_tactile as _t3_tactile
 from openpi.shared import array_typing as at
 
 logger = logging.getLogger("openpi")
@@ -88,19 +89,33 @@ class Pi0(_model.BaseModel):
                 dtype_mm=config.dtype,
             )
         )
-        img.lazy_init(next(iter(config.fake_obs().images.values())), train=False, rngs=rngs)
+        fake_image = next(iter(config.fake_obs().images.values()))
+        if config.use_tactile and config.fusion_method == "tacfilm":
+            fake_film_context = jnp.zeros((fake_image.shape[0], paligemma_config.width), dtype=jnp.float32)
+            img.lazy_init(fake_image, train=False, film_context=fake_film_context, rngs=rngs)
+        else:
+            img.lazy_init(fake_image, train=False, rngs=rngs)
         
         if self.config.use_tactile:
             logger.info("Using tactile encoder.")
-            tac = nnx_bridge.ToNNX(
-                _siglip.Module(
-                    num_classes=paligemma_config.width,
-                    variant=config.tactile_variant,
-                    pool_type="none",
-                    scan=True,
-                    dtype_mm=config.dtype,
+            if config.tactile_encoder_type == "t3":
+                tac = nnx_bridge.ToNNX(
+                    _t3_tactile.Module(
+                        num_classes=paligemma_config.width,
+                        variant=config.tactile_t3_variant,
+                        dtype_mm=config.dtype,
+                    )
                 )
-            )
+            else:
+                tac = nnx_bridge.ToNNX(
+                    _siglip.Module(
+                        num_classes=paligemma_config.width,
+                        variant=config.tactile_variant,
+                        pool_type="none",
+                        scan=True,
+                        dtype_mm=config.dtype,
+                    )
+                )
             tac.lazy_init(next(iter(config.fake_obs().tactile_images.values())), train=True, rngs=rngs)
             self.PaliGemma = nnx.Dict(llm=llm, img=img, tac=tac)
         else:
@@ -124,21 +139,6 @@ class Pi0(_model.BaseModel):
         # This attribute gets automatically set by model.train() and model.eval().
         self.deterministic = True
 
-    def _force_modality_weights(self, obs: _model.Observation) -> tuple[at.Float[at.Array, "b 1 1"], at.Float[at.Array, "b 1 1"]]:
-        batch_size = obs.state.shape[0]
-        if self.config.force_guide and obs.force is not None:
-            force = jnp.asarray(obs.force, dtype=jnp.float32)
-            force = jnp.nan_to_num(force, nan=0.0, posinf=self.config.force_range[1], neginf=0.0)
-            force_mag = jnp.linalg.norm(force, axis=-1, keepdims=True)
-            force_min, force_max = self.config.force_range
-            alpha = jnp.clip((force_mag - force_min) / (force_max - force_min), 0.0, 1.0)
-            tactile_weight = alpha * (1.0 - self.config.min_vision_weight)
-        else:
-            tactile_weight = jnp.full((batch_size, 1), self.config.default_tactile_weight, dtype=jnp.float32)
-
-        vision_weight = 1.0 - tactile_weight
-        return vision_weight[:, None, :], tactile_weight[:, None, :]
-
     def _embed_prefix_with_modal_features(self, obs: _model.Observation):
         input_mask = []
         ar_mask = []
@@ -148,25 +148,11 @@ class Pi0(_model.BaseModel):
         vision_masks = []
         wrist_tokens = []
         wrist_masks = []
-        # embed images
-        for name in obs.images:
-            image_tokens, _ = self.PaliGemma.img(obs.images[name], train=False)
-            image_mask = einops.repeat(
-                obs.image_masks[name],
-                "b -> b s",
-                s=image_tokens.shape[1],
-            )
-
-            vision_tokens.append(image_tokens)
-            vision_masks.append(image_mask)
-            if "wrist" in name:
-                wrist_tokens.append(image_tokens)
-                wrist_masks.append(image_mask)
-
         tactile_tokens = []
         tactile_masks = []
         raw_tactile_tokens = []
         raw_tactile_masks = []
+        tacfilm_context = None
         if self.config.use_tactile:
             for name in obs.tactile_images:
                 tactile_image_tokens, _ = self.PaliGemma.tac(obs.tactile_images[name], train=False)
@@ -180,6 +166,31 @@ class Pi0(_model.BaseModel):
                 raw_tactile_tokens.append(tactile_image_tokens)
                 raw_tactile_masks.append(tactile_mask)
 
+            if self.config.fusion_method == "tacfilm" and tactile_tokens:
+                tacfilm_context, tacfilm_valid = self._masked_mean(
+                    jnp.concatenate(tactile_tokens, axis=1),
+                    jnp.concatenate(tactile_masks, axis=1),
+                )
+                tacfilm_context = jnp.where(tacfilm_valid[:, None], tacfilm_context, 0.0)
+
+        # embed images
+        for name in obs.images:
+            if tacfilm_context is not None:
+                image_tokens, _ = self.PaliGemma.img(obs.images[name], train=False, film_context=tacfilm_context)
+            else:
+                image_tokens, _ = self.PaliGemma.img(obs.images[name], train=False)
+            image_mask = einops.repeat(
+                obs.image_masks[name],
+                "b -> b s",
+                s=image_tokens.shape[1],
+            )
+
+            vision_tokens.append(image_tokens)
+            vision_masks.append(image_mask)
+            if "wrist" in name:
+                wrist_tokens.append(image_tokens)
+                wrist_masks.append(image_mask)
+
         modal_features = {}
         if wrist_tokens:
             modal_features["wrist"] = (jnp.concatenate(wrist_tokens, axis=1), jnp.concatenate(wrist_masks, axis=1))
@@ -189,21 +200,19 @@ class Pi0(_model.BaseModel):
                 jnp.concatenate(raw_tactile_masks, axis=1),
             )
 
-        if self.config.use_tactile and tactile_tokens and self.config.fusion_method in ("linear", "film"):
-            vision_weight, tactile_weight = self._force_modality_weights(obs)
-            if self.config.fusion_method == "film" and vision_tokens:
-                tactile_context = jnp.mean(jnp.concatenate(tactile_tokens, axis=1), axis=1)
-                gamma = jnp.tanh(self.fusion_gamma(tactile_context))[:, None, :] * tactile_weight
-                beta = self.fusion_beta(tactile_context)[:, None, :] * tactile_weight
-                vision_tokens = [image_tokens * (1.0 + gamma) + beta for image_tokens in vision_tokens]
+        if self.config.use_tactile and tactile_tokens and self.config.fusion_method == "tacfilm":
+            tactile_tokens = []
+            tactile_masks = []
 
-            vision_tokens = [image_tokens * vision_weight for image_tokens in vision_tokens]
-            tactile_tokens = [tactile_image_tokens * tactile_weight for tactile_image_tokens in tactile_tokens]
-            tactile_active = tactile_weight[:, 0, 0] > 0.0
-            tactile_masks = [
-                jnp.logical_and(mask, einops.repeat(tactile_active, "b -> b s", s=mask.shape[1]))
-                for mask in tactile_masks
-            ]
+        if self.config.use_tactile and tactile_tokens and self.config.fusion_method in ("linear", "film"):
+            if self.config.fusion_method == "film" and vision_tokens:
+                tactile_context, _ = self._masked_mean(
+                    jnp.concatenate(tactile_tokens, axis=1),
+                    jnp.concatenate(tactile_masks, axis=1),
+                )
+                gamma = jnp.tanh(self.fusion_gamma(tactile_context))[:, None, :]
+                beta = self.fusion_beta(tactile_context)[:, None, :]
+                vision_tokens = [image_tokens * (1.0 + gamma) + beta for image_tokens in vision_tokens]
 
         def append_token_group(token_group, mask_group):
             for group_tokens, mask in zip(token_group, mask_group, strict=True):
@@ -211,13 +220,8 @@ class Pi0(_model.BaseModel):
                 input_mask.append(mask)
                 ar_mask.extend([False] * group_tokens.shape[1])
 
-        if self.config.fusion_method == "vtla_vgte":
-            # VGTE-style ordering: tactile context first, then wrist vision closer to action tokens.
-            append_token_group(tactile_tokens, tactile_masks)
-            append_token_group(vision_tokens, vision_masks)
-        else:
-            append_token_group(vision_tokens, vision_masks)
-            append_token_group(tactile_tokens, tactile_masks)
+        append_token_group(vision_tokens, vision_masks)
+        append_token_group(tactile_tokens, tactile_masks)
 
         # add language (aka tokenized inputs)
         if obs.tokenized_prompt is not None:

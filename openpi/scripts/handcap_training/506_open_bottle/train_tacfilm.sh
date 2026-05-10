@@ -3,6 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../../.."
 
+# 自动保存终端日志到 logs/
 mkdir -p logs
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 SCRIPT_NAME=$(basename "$0" .sh)
@@ -10,31 +11,31 @@ exec > >(tee -a "logs/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
-CONFIG_NAME="${CONFIG_NAME:-pi05_506_open_bottle_tactile_force_guide_vtla_vgte}"
-EXP_NAME="${EXP_NAME:-506_open_bottle_handcap_pi05_4gpu_vtla_vgte_baseline}"
-DATA_ROOT="Data/506_open_bottle_lerobot"
+CONFIG_NAME="${CONFIG_NAME:-pi05_506_open_bottle_tactile_tacfilm}"
+EXP_NAME="${EXP_NAME:-506_open_bottle_handcap_pi05_4gpu_tacfilm}"
+DATA_ROOT="${DATA_ROOT:-Data/506_open_bottle_lerobot}"
 
-BATCH_SIZE="${BATCH_SIZE:-512}"
-NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-50000}"
-SAVE_INTERVAL="${SAVE_INTERVAL:-5000}"
-NUM_WORKERS="${NUM_WORKERS:-16}"
+# ==============================================================================
+# Same data and throughput defaults as train_vision_tactile.sh.
+# This script uses a separate config/experiment name so it will not touch prior
+# vision-only, vision+tactile, force-predict, T3, or health-distill checkpoints.
+# ==============================================================================
+BATCH_SIZE="${BATCH_SIZE:-64}"
+NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-100000}"
+SAVE_INTERVAL="${SAVE_INTERVAL:-10000}"
+NUM_WORKERS="${NUM_WORKERS:-32}"
 FSDP_DEVICES="${FSDP_DEVICES:-1}"
 RESUME="${RESUME:-0}"
 OVERWRITE="${OVERWRITE:-0}"
 
-export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
-export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
-export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
-export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-1}"
-export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
-
-export XLA_PYTHON_CLIENT_PREALLOCATE="${XLA_PYTHON_CLIENT_PREALLOCATE:-true}"
-export XLA_PYTHON_CLIENT_MEM_FRACTION="${XLA_PYTHON_CLIENT_MEM_FRACTION:-0.95}"
-export TF_ENABLE_ONEDNN_OPTS="${TF_ENABLE_ONEDNN_OPTS:-1}"
-export XLA_FLAGS="${XLA_FLAGS:---xla_gpu_force_compilation_parallelism=16}"
+export XLA_PYTHON_CLIENT_PREALLOCATE="true"
+export XLA_PYTHON_CLIENT_MEM_FRACTION="0.95"
+export TF_ENABLE_ONEDNN_OPTS=1
+export XLA_FLAGS="--xla_gpu_force_compilation_parallelism=16"
+# ==============================================================================
 
 echo "=========================================="
-echo "Starting OpenPI PI05 ordinary VTLA/VGTE baseline training"
+echo "Starting OpenPI PI05 TacFiLM training"
 echo "Config: ${CONFIG_NAME}"
 echo "Dataset: ${DATA_ROOT}"
 echo "Experiment: ${EXP_NAME}"
@@ -43,8 +44,7 @@ echo "FSDP devices: ${FSDP_DEVICES}"
 echo "Batch size: ${BATCH_SIZE}"
 echo "Train steps: ${NUM_TRAIN_STEPS}"
 echo "Save interval: ${SAVE_INTERVAL}"
-echo "Num workers: ${NUM_WORKERS}"
-echo "OMP/MKL/OPENBLAS/NUMEXPR threads: ${OMP_NUM_THREADS}/${MKL_NUM_THREADS}/${OPENBLAS_NUM_THREADS}/${NUMEXPR_NUM_THREADS}"
+echo "Num Workers: ${NUM_WORKERS}"
 echo "Resume: ${RESUME}"
 echo "Overwrite: ${OVERWRITE}"
 echo "=========================================="

@@ -29,15 +29,15 @@ class Pi0Config(_model.BaseModelConfig):
     use_tactile: bool = False
     tactile_pretrained_ckpt: str = ""
     tactile_variant: str = "B/16"
+    tactile_encoder_type: str = "siglip"
+    tactile_t3_variant: str = "tiny"
+    tactile_t3_sensor: str = "mini"
     camera_keys: tuple = ("head_0_rgb", "wrist_0_rgb", "side_0_rgb")
     fusion_method: str = "concat"
     force_predict: bool = False
-    force_guide: bool = False
     action_base_dim: int = 10
     force_dim: int = 2
     force_range: tuple[float, float] = (0.0, 10.0)
-    min_vision_weight: float = 0.2
-    default_tactile_weight: float = 0.5
     health_distill: bool = False
     health_distill_weight: float = 0.0
     health_distill_gt_temperature: float = 0.15
@@ -53,16 +53,18 @@ class Pi0Config(_model.BaseModelConfig):
     pytorch_compile_mode: str | None = "max-autotune"
 
     def __post_init__(self):
-        if self.fusion_method not in ("concat", "linear", "film", "vtla_vgte"):
+        if self.fusion_method not in ("concat", "linear", "film", "tacfilm", "tactile_concat"):
             raise ValueError(f"Unsupported fusion_method: {self.fusion_method}")
+        if self.tactile_encoder_type not in ("siglip", "t3"):
+            raise ValueError(f"Unsupported tactile_encoder_type: {self.tactile_encoder_type}")
+        if self.tactile_t3_variant not in ("tiny", "small", "medium", "large"):
+            raise ValueError(f"Unsupported tactile_t3_variant: {self.tactile_t3_variant}")
+        if self.fusion_method == "tactile_concat" and self.tactile_encoder_type != "t3":
+            raise ValueError('fusion_method="tactile_concat" requires tactile_encoder_type="t3".')
         if self.force_dim <= 0:
             raise ValueError("force_dim must be positive")
         if self.action_base_dim <= 0:
             raise ValueError("action_base_dim must be positive")
-        if not 0.0 <= self.min_vision_weight <= 1.0:
-            raise ValueError("min_vision_weight must be in [0, 1]")
-        if not 0.0 <= self.default_tactile_weight <= 1.0:
-            raise ValueError("default_tactile_weight must be in [0, 1]")
         if self.force_range[1] <= self.force_range[0]:
             raise ValueError("force_range max must be greater than min")
         if self.health_distill_weight < 0.0:

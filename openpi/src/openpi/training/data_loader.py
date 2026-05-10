@@ -162,13 +162,6 @@ def create_torch_dataset(
         delta_timestamps = {
             key: [t / dataset_meta.fps for t in range(action_horizon)] for key in data_config.action_sequence_keys
         }
-        vtla_tactile_history = getattr(data_config, "vtla_tactile_history", 1)
-        if vtla_tactile_history > 1:
-            tactile_offsets = [
-                (t - vtla_tactile_history + 1) / dataset_meta.fps for t in range(vtla_tactile_history)
-            ]
-            for key in getattr(data_config, "vtla_tactile_keys", ()):
-                delta_timestamps[key] = tactile_offsets
         dataset = health_distill_dataset_handcap.MultiHealthLeRobotDatasetHandcap(
             health_repo_ids,
             health_roots,
@@ -180,13 +173,6 @@ def create_torch_dataset(
         delta_timestamps = {
             key: [t / dataset_meta.fps for t in range(action_horizon)] for key in data_config.action_sequence_keys
         }
-        vtla_tactile_history = getattr(data_config, "vtla_tactile_history", 1)
-        if vtla_tactile_history > 1:
-            tactile_offsets = [
-                (t - vtla_tactile_history + 1) / dataset_meta.fps for t in range(vtla_tactile_history)
-            ]
-            for key in getattr(data_config, "vtla_tactile_keys", ()):
-                delta_timestamps[key] = tactile_offsets
         dataset = lerobot_dataset_handcap.LeRobotDatasetHandcap(
             data_config.repo_id,
             root=data_root,
