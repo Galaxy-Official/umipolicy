@@ -58,7 +58,18 @@ def main(args: argparse.Namespace):
 
     # get init robot pose
     init_qpos = eval(os.environ.get("FLEXIV_INIT_POSE", "[0, -40, 0, 90, 0, 40]"))
-    env = FlexivEnv(init_qpos, obs_horizon=args.obs_horizon, use_gripper_width_mapping=False, pose_type="rotvec")
+    direct_eef_control = os.environ.get("FLEXIV_DIRECT_EEF_CONTROL", "1").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    env = FlexivEnv(
+        init_qpos,
+        obs_horizon=args.obs_horizon,
+        use_gripper_width_mapping=False,
+        pose_type="rotvec",
+        direct_eef_control=direct_eef_control,
+    )
     env.reset()
 
     robot_dt = 1. / args.ctrl_freq

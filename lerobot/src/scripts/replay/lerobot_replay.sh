@@ -14,12 +14,14 @@ export FLEXIV_ROBOT_SN="Rizon4-062339"
 export FLEXIV_GRIPPER_NAME="Flexiv-GN01"
 export FLEXIV_LOCAL_IP="192.168.2.102"
 
-# Replay debug: remove the conservative joint limits so orientation tracking can be tested.
-export FLEXIV_BASE_MAX_VEL="${FLEXIV_BASE_MAX_VEL:-0.8}"
-export FLEXIV_BASE_MAX_ACC="${FLEXIV_BASE_MAX_ACC:-0.8}"
-export FLEXIV_WRIST_MAX_VEL="${FLEXIV_WRIST_MAX_VEL:-${FLEXIV_BASE_MAX_VEL}}"
-export FLEXIV_WRIST_MAX_ACC="${FLEXIV_WRIST_MAX_ACC:-${FLEXIV_BASE_MAX_ACC}}"
-export FLEXIV_WRIST_JOINT_COUNT="${FLEXIV_WRIST_JOINT_COUNT:-7}"
+# Replay 默认直接发送 EEF Cartesian pose，不再通过 reachable() 解 IK。
+export FLEXIV_DIRECT_EEF_CONTROL="${FLEXIV_DIRECT_EEF_CONTROL:-1}"
+export FLEXIV_ARM_MAX_LINEAR_VEL="${FLEXIV_ARM_MAX_LINEAR_VEL:-0.05}"
+export FLEXIV_ARM_MAX_ANGULAR_VEL="${FLEXIV_ARM_MAX_ANGULAR_VEL:-0.2}"
+export FLEXIV_ARM_MAX_LINEAR_ACC="${FLEXIV_ARM_MAX_LINEAR_ACC:-0.1}"
+export FLEXIV_ARM_MAX_ANGULAR_ACC="${FLEXIV_ARM_MAX_ANGULAR_ACC:-0.3}"
+export FLEXIV_GRIPPER_MOVE_VELOCITY="${FLEXIV_GRIPPER_MOVE_VELOCITY:-0.03}"
+export FLEXIV_GRIPPER_MOVE_FORCE="${FLEXIV_GRIPPER_MOVE_FORCE:-20}"
 
 # simple sorting 409
 export FLEXIV_INIT_POSE="[-0.0009,-0.1701,-0.0133,2.0214,-0.0058,0.6921,-0.0012]"
@@ -29,8 +31,10 @@ export FLEXIV_INIT_POSE="[-0.0009,-0.1701,-0.0133,2.0214,-0.0058,0.6921,-0.0012]
 echo "====================================================="
 echo " Starting LeRobot v3.0 Flexiv Replay Pipeline"
 echo "====================================================="
-echo "Base joint limits:  vel=${FLEXIV_BASE_MAX_VEL}, acc=${FLEXIV_BASE_MAX_ACC}"
-echo "Wrist joint limits: vel=${FLEXIV_WRIST_MAX_VEL}, acc=${FLEXIV_WRIST_MAX_ACC}, count=${FLEXIV_WRIST_JOINT_COUNT}"
+echo "Direct EEF control: ${FLEXIV_DIRECT_EEF_CONTROL}"
+echo "Cartesian linear vel/acc:  ${FLEXIV_ARM_MAX_LINEAR_VEL} / ${FLEXIV_ARM_MAX_LINEAR_ACC}"
+echo "Cartesian angular vel/acc: ${FLEXIV_ARM_MAX_ANGULAR_VEL} / ${FLEXIV_ARM_MAX_ANGULAR_ACC}"
+echo "Gripper vel/force: ${FLEXIV_GRIPPER_MOVE_VELOCITY} / ${FLEXIV_GRIPPER_MOVE_FORCE}"
 
 python "${SRC_DIR}/lerobot/scripts/lerobot_replay_train.py" \
     --data_root "Data/replay/508_open_bottle_lerobot_health100" \
