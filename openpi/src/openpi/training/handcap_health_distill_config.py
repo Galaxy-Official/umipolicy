@@ -41,6 +41,10 @@ class LeRobotHealthDistillHandcapDataConfig(DataConfigFactory):
     health_repo_ids: Sequence[str] | None = None
     health_labels: Sequence[str] = ("0", "50", "100")
     action_sequence_keys: Sequence[str] = ("action",)
+    use_tactile_mask: bool = False
+    tactile_mask_ratio: float = 0.0
+    batch_mask_ratio: float = 0.5
+    tactile_mask_refer_dir: str = "refer_frames"
 
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
@@ -77,20 +81,27 @@ class LeRobotHealthDistillHandcapDataConfig(DataConfigFactory):
             if "observation.forces.right" not in seq_keys:
                 seq_keys.append("observation.forces.right")
 
-        repack_transform = _transforms.Group(
-            inputs=[
-                _transforms.HandcapRepackTransform(
-                    {
-                        "observation/wrist_image": "wrist_image",
-                        "observation/left_tactile": "left_tactile",
-                        "observation/right_tactile": "right_tactile",
-                        "observation/state": "state",
-                        "actions": "action",
-                        "prompt": "prompt",
-                    }
+        repack_inputs = [
+            _transforms.HandcapRepackTransform(
+                {
+                    "observation/wrist_image": "wrist_image",
+                    "observation/left_tactile": "left_tactile",
+                    "observation/right_tactile": "right_tactile",
+                    "observation/state": "state",
+                    "actions": "action",
+                    "prompt": "prompt",
+                }
+            )
+        ]
+        if self.use_tactile_mask:
+            repack_inputs.append(
+                _transforms.TactileReferenceMask(
+                    refer_dir=self.tactile_mask_refer_dir,
+                    mask_ratio=self.tactile_mask_ratio,
+                    sample_ratio=self.batch_mask_ratio,
                 )
-            ]
-        )
+            )
+        repack_transform = _transforms.Group(inputs=repack_inputs)
         data_transforms = _transforms.Group(
             inputs=[
                 handcap_policy.HandcapInputs(

@@ -1,5 +1,7 @@
 from collections.abc import Callable, Mapping, Sequence
 import dataclasses
+import functools
+import pathlib
 import re
 from typing import Protocol, TypeAlias, TypeVar, runtime_checkable, Any
 
@@ -230,6 +232,140 @@ class ResizeImages(DataTransformFn):
     def __call__(self, data: DataDict) -> DataDict:
         data["image"] = {k: image_tools.resize_with_pad(v, self.height, self.width) for k, v in data["image"].items()}
         return data
+
+
+@functools.lru_cache(maxsize=16)
+def _load_reference_image(path: str, height: int, width: int) -> np.ndarray:
+    from PIL import Image
+
+    image_path = pathlib.Path(path)
+    if not image_path.exists():
+        raise FileNotFoundError(f"Tactile reference frame not found: {image_path}")
+    resampling = getattr(Image, "Resampling", Image).BILINEAR
+    image = Image.open(image_path).convert("RGB")
+    if image.size != (width, height):
+        image = image.resize((width, height), resampling)
+    return np.asarray(image, dtype=np.uint8)
+
+
+@dataclasses.dataclass(frozen=True)
+class TactileReferenceMask(DataTransformFn):
+    """Randomly replace a tactile image region with a reference no-contact frame."""
+
+    refer_dir: str
+    mask_ratio: float = 0.3
+    sample_ratio: float = 1.0
+    left_key: str = "observation/left_tactile"
+    right_key: str = "observation/right_tactile"
+
+    def __post_init__(self):
+        if not 0.0 <= self.mask_ratio <= 1.0:
+            raise ValueError(f"mask_ratio must be in [0, 1], got {self.mask_ratio}")
+        if not 0.0 <= self.sample_ratio <= 1.0:
+            raise ValueError(f"sample_ratio must be in [0, 1], got {self.sample_ratio}")
+
+    def __call__(self, data: DataDict) -> DataDict:
+        if self.mask_ratio <= 0.0 or self.sample_ratio <= 0.0:
+            return data
+        refer_dir = pathlib.Path(self.refer_dir)
+        selection = self._sample_selection(data)
+        if selection is False:
+            return data
+        if self.left_key in data:
+            data[self.left_key] = self._mask_image(data[self.left_key], self._reference_path(refer_dir, "left"), selection)
+        if self.right_key in data:
+            data[self.right_key] = self._mask_image(data[self.right_key], self._reference_path(refer_dir, "right"), selection)
+        return data
+
+    def _sample_selection(self, data: DataDict) -> bool | np.ndarray:
+        for key in (self.left_key, self.right_key):
+            if key not in data:
+                continue
+            array = np.asarray(data[key])
+            if array.ndim == 4:
+                count = array.shape[0]
+                selected_count = int(round(count * self.sample_ratio))
+                if selected_count <= 0:
+                    return False
+                if selected_count >= count:
+                    return np.ones(count, dtype=bool)
+                selected = np.zeros(count, dtype=bool)
+                selected[np.random.choice(count, size=selected_count, replace=False)] = True
+                return selected
+            break
+        return bool(np.random.random() < self.sample_ratio)
+
+    def _reference_path(self, refer_dir: pathlib.Path, side: str) -> pathlib.Path:
+        candidates = {
+            "left": ("lefttactile.png", "left_tactile.png", "left.png"),
+            "right": ("righttactile.png", "right_tactile.png", "right.png"),
+        }[side]
+        for name in candidates:
+            path = refer_dir / name
+            if path.exists():
+                return path
+        return refer_dir / candidates[0]
+
+    def _mask_image(self, image: np.ndarray, reference_path: pathlib.Path, selection: bool | np.ndarray) -> np.ndarray:
+        array = np.asarray(image)
+        if array.ndim == 4:
+            output = np.array(array, copy=True)
+            selected = np.asarray(selection, dtype=bool)
+            if selected.shape != (output.shape[0],):
+                selected = np.full(output.shape[0], bool(np.any(selected)), dtype=bool)
+            for idx in range(output.shape[0]):
+                if not selected[idx]:
+                    continue
+                output[idx] = self._mask_single_image(output[idx], reference_path)
+            return output
+        if selection is not True:
+            return image
+        return self._mask_single_image(array, reference_path)
+
+    def _mask_single_image(self, image: np.ndarray, reference_path: pathlib.Path) -> np.ndarray:
+        output = np.array(image, copy=True)
+        is_chw = output.ndim == 3 and output.shape[0] in (1, 3) and output.shape[-1] not in (1, 3)
+        if is_chw:
+            output_hwc = np.moveaxis(output, 0, -1)
+        else:
+            output_hwc = output
+        if output_hwc.ndim != 3:
+            return output
+
+        height, width, channels = output_hwc.shape
+        ref = _load_reference_image(str(reference_path), height, width)
+        if channels == 1:
+            ref = ref[..., :1]
+        elif channels < ref.shape[-1]:
+            ref = ref[..., :channels]
+        elif channels > ref.shape[-1]:
+            pad = np.repeat(ref[..., -1:], channels - ref.shape[-1], axis=-1)
+            ref = np.concatenate([ref, pad], axis=-1)
+        ref = self._convert_reference_dtype(ref, output_hwc)
+
+        y0, x0, mask_h, mask_w = self._random_region(height, width)
+        output_hwc[y0 : y0 + mask_h, x0 : x0 + mask_w] = ref[y0 : y0 + mask_h, x0 : x0 + mask_w]
+
+        if is_chw:
+            return np.moveaxis(output_hwc, -1, 0)
+        return output_hwc
+
+    def _convert_reference_dtype(self, reference: np.ndarray, target: np.ndarray) -> np.ndarray:
+        if np.issubdtype(target.dtype, np.floating):
+            ref = reference.astype(np.float32)
+            if np.nanmax(target) <= 1.0:
+                ref = ref / 255.0
+            return ref.astype(target.dtype)
+        return reference.astype(target.dtype, copy=False)
+
+    def _random_region(self, height: int, width: int) -> tuple[int, int, int, int]:
+        area = max(1, int(round(height * width * self.mask_ratio)))
+        aspect = float(2 ** np.random.uniform(-1.0, 1.0))
+        mask_h = max(1, min(height, int(round(np.sqrt(area / aspect)))))
+        mask_w = max(1, min(width, int(round(area / mask_h))))
+        y0 = int(np.random.randint(0, height - mask_h + 1))
+        x0 = int(np.random.randint(0, width - mask_w + 1))
+        return y0, x0, mask_h, mask_w
 
 
 @dataclasses.dataclass(frozen=True)
