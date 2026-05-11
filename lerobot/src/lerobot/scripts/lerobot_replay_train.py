@@ -3,7 +3,9 @@ import sys
 import time
 import argparse
 import datetime
+import json
 import numpy as np
+import pandas as pd
 from pathlib import Path
 from loguru import logger
 import signal as signal_module
@@ -12,7 +14,6 @@ import torch
 from lerobot.scripts.umi_realworld.utils.pose_util import *
 from lerobot.scripts.umi_realworld.real_inference_util import *
 from lerobot.scripts.umi_realworld.env import FlexivEnv
-from lerobot.datasets.lerobot_dataset_handcap import LeRobotDatasetHandcap, process_to_relative_rot6d
 
 
 states_data = None
@@ -43,6 +44,86 @@ def to_torch(x, dtype=torch.float, device="cuda:0", requires_grad=False):
     return torch.tensor(x, dtype=dtype, device=device, requires_grad=requires_grad)
 
 
+def _read_parquet_dir(parquet_dir: Path) -> pd.DataFrame:
+    paths = sorted(parquet_dir.glob("*/*.parquet"))
+    if not paths:
+        raise FileNotFoundError(f"No parquet files found under: {parquet_dir}")
+    return pd.concat((pd.read_parquet(path) for path in paths), ignore_index=True)
+
+
+def _as_int(value) -> int:
+    if isinstance(value, torch.Tensor):
+        return int(value.item())
+    if isinstance(value, np.ndarray):
+        return int(value.item())
+    return int(value)
+
+
+def _load_replay_states(data_root: str | Path, episode_index: int) -> np.ndarray:
+    """Load only proprioceptive states for replay; no video decoder is needed."""
+    root = Path(data_root).expanduser()
+    if not root.is_absolute():
+        root = Path.cwd() / root
+    root = root.resolve()
+
+    info_path = root / "meta" / "info.json"
+    if not info_path.exists():
+        raise FileNotFoundError(
+            f"Dataset metadata not found: {info_path}. "
+            f"Current working directory is {Path.cwd()}; check --data_root."
+        )
+
+    with info_path.open("r") as f:
+        info = json.load(f)
+
+    logger.info(f"Reading episode metadata from: {root / 'meta' / 'episodes'}")
+    episodes = _read_parquet_dir(root / "meta" / "episodes")
+    if "episode_index" in episodes.columns:
+        selected = episodes[episodes["episode_index"].map(_as_int) == episode_index]
+        if selected.empty:
+            raise IndexError(f"Episode {episode_index} not found in {root / 'meta' / 'episodes'}")
+        episode = selected.iloc[0]
+    else:
+        if episode_index >= len(episodes):
+            raise IndexError(f"Episode index {episode_index} out of range; dataset has {len(episodes)} episodes.")
+        episode = episodes.iloc[episode_index]
+
+    data_path_template = info.get("data_path", "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet")
+    data_path = root / data_path_template.format(
+        chunk_index=_as_int(episode["data/chunk_index"]),
+        file_index=_as_int(episode["data/file_index"]),
+    )
+    if not data_path.exists():
+        raise FileNotFoundError(f"Episode data parquet not found: {data_path}")
+
+    logger.info(f"Reading replay data parquet: {data_path}")
+    data = pd.read_parquet(data_path)
+    if "episode_index" in data.columns:
+        data = data[data["episode_index"].map(_as_int) == episode_index]
+    if data.empty:
+        raise ValueError(f"No frames for episode {episode_index} in {data_path}")
+    if "index" in data.columns:
+        data = data.sort_values("index")
+    elif "frame_index" in data.columns:
+        data = data.sort_values("frame_index")
+
+    state_key = next(
+        (key for key in ("observation.state", "observation/state", "observation_state") if key in data.columns),
+        None,
+    )
+    if state_key is None:
+        raise KeyError(
+            "Replay requires an observation state column, but none of "
+            "observation.state / observation/state / observation_state exists. "
+            f"Available columns: {list(data.columns)}"
+        )
+
+    states = np.stack([np.asarray(value, dtype=np.float32) for value in data[state_key].to_list()], axis=0)
+    if states.ndim != 2 or states.shape[1] < 7:
+        raise ValueError(f"Unexpected replay state shape {states.shape}; expected [T, >=7].")
+    return states
+
+
 def main(args: argparse.Namespace):
     global states_data, output_dir
 
@@ -56,6 +137,11 @@ def main(args: argparse.Namespace):
 
     logger.info(args)
 
+    logger.info(f"Loading replay states from: {args.data_root}")
+    episode_states = _load_replay_states(args.data_root, args.episode_index)
+    num_frames = len(episode_states)
+    logger.info(f"Episode {args.episode_index} has {num_frames} frames. Starting Initial-Offset Absolute Replay...")
+
     # get init robot pose
     init_qpos = eval(os.environ.get("FLEXIV_INIT_POSE", "[0, -40, 0, 90, 0, 40]"))
     env = FlexivEnv(init_qpos, obs_horizon=args.obs_horizon, use_gripper_width_mapping=False, pose_type="rotvec")
@@ -64,20 +150,9 @@ def main(args: argparse.Namespace):
     robot_dt = 1. / args.ctrl_freq
     action_latency = 0
 
-    logger.info(f"Loading dataset from: {args.data_root}")
-    # Load LeRobot Handcap dataset
-    dataset = LeRobotDatasetHandcap(
-        repo_id="local_replay",
-        root=args.data_root,
-        episodes=[args.episode_index],
-    )
-    
-    num_frames = len(dataset)
-    logger.info(f"Episode {args.episode_index} has {num_frames} frames. Starting Initial-Offset Absolute Replay...")
-
     # --- 核心修复：计算基准偏移 ---
     # 获取数据集的第 0 帧作为基准
-    dataset_init_item = dataset.get_raw_item(0)["observation.state"].numpy()
+    dataset_init_item = episode_states[0]
     dataset_init_mat = certain_pose_type_to_mat(dataset_init_item[:6], pose_type="rotvec")
     
     # 获取机器人当前真实的物理起始位姿作为基准
@@ -88,9 +163,7 @@ def main(args: argparse.Namespace):
         s = time.time()
         
         # 1. 获取下一帧的目标状态
-        next_item = dataset.get_raw_item(frame_idx + 1)
-        action_tensor = next_item["observation.state"].clone().detach().to(torch.float32)
-        target_dataset_pose10d = action_tensor.numpy()
+        target_dataset_pose10d = episode_states[frame_idx + 1]
         
         # 2. 将目标状态转换为 4x4 矩阵
         target_dataset_mat = certain_pose_type_to_mat(target_dataset_pose10d[:6], pose_type="rotvec")

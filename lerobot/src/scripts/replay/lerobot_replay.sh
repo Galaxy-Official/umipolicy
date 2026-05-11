@@ -24,6 +24,6 @@ echo " Starting LeRobot v3.0 Flexiv Replay Pipeline"
 echo "====================================================="
 
 python "${SRC_DIR}/lerobot/scripts/lerobot_replay_train.py" \
-    --data_root "Data/replay/508_open_bottle_lerobot_health100p" \
+    --data_root "Data/replay/508_open_bottle_lerobot_health100" \
     --episode_index 0 \
     --task_name "eval_lerobot_replay"
