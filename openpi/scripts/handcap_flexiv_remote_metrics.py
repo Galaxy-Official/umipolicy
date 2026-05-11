@@ -924,7 +924,7 @@ class FlexivRealEnv:
             self._robot.SendJointPosition(self._init_qpos, [0.0] * dof, [0.1] * dof, [0.1] * dof)
             max_width = self._gripper.params().max_width
             self._gripper.Move(max_width, 0.1, 20)
-            time.sleep(10)
+            time.sleep(20)
 
         LOGGER.info("Switching back to NRT_CARTESIAN_MOTION_FORCE mode.")
         self._robot.SwitchMode(self._mode.NRT_CARTESIAN_MOTION_FORCE)
