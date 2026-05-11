@@ -45,20 +45,25 @@ class LeRobotHealthDistillHandcapDataConfig(DataConfigFactory):
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
         if self.health_data_roots is tyro.MISSING:
-            raise ValueError("health_data_roots must contain the health-conditioned dataset paths.")
-
-        health_data_roots = tuple(self.health_data_roots)
-        if len(health_data_roots) < 2:
-            raise ValueError("At least two health_data_roots are required.")
-        if len(self.health_labels) != len(health_data_roots):
-            raise ValueError("health_labels must have the same length as health_data_roots.")
-
-        if self.health_repo_ids is None:
-            health_repo_ids = tuple(pathlib.Path(root).name for root in health_data_roots)
+            # Policy serving only needs transforms and the asset id; it does not load
+            # health-conditioned datasets. Training scripts still pass these paths.
+            health_data_roots = ()
+            health_repo_ids = ()
+            health_labels = ()
         else:
-            health_repo_ids = tuple(self.health_repo_ids)
-        if len(health_repo_ids) != len(health_data_roots):
-            raise ValueError("health_repo_ids must have the same length as health_data_roots.")
+            health_data_roots = tuple(self.health_data_roots)
+            if len(health_data_roots) < 2:
+                raise ValueError("At least two health_data_roots are required.")
+            if len(self.health_labels) != len(health_data_roots):
+                raise ValueError("health_labels must have the same length as health_data_roots.")
+
+            if self.health_repo_ids is None:
+                health_repo_ids = tuple(pathlib.Path(root).name for root in health_data_roots)
+            else:
+                health_repo_ids = tuple(self.health_repo_ids)
+            if len(health_repo_ids) != len(health_data_roots):
+                raise ValueError("health_repo_ids must have the same length as health_data_roots.")
+            health_labels = tuple(self.health_labels)
 
         action_base_dim = getattr(model_config, "action_base_dim", 10)
         force_dim = getattr(model_config, "force_dim", 2)
@@ -131,7 +136,7 @@ class LeRobotHealthDistillHandcapDataConfig(DataConfigFactory):
             datasets=base.datasets,
             health_repo_ids=health_repo_ids,
             health_data_roots=health_data_roots,
-            health_labels=tuple(self.health_labels),
+            health_labels=health_labels,
         )
 
 
