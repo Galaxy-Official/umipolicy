@@ -7,6 +7,7 @@ import numpy as np
 from pathlib import Path
 from loguru import logger
 import signal as signal_module
+import scipy.spatial.transform as st
 import torch
 
 from lerobot.scripts.umi_realworld.utils.pose_util import *
@@ -41,6 +42,62 @@ def signal_handler(sig, frame):
 
 def to_torch(x, dtype=torch.float, device="cuda:0", requires_grad=False):
     return torch.tensor(x, dtype=dtype, device=device, requires_grad=requires_grad)
+
+
+def _to_numpy(value):
+    if hasattr(value, "numpy"):
+        return value.numpy()
+    return np.asarray(value)
+
+
+def _signed_twist_deg(rot: st.Rotation, axis: np.ndarray) -> float:
+    axis = np.asarray(axis, dtype=np.float64)
+    axis = axis / np.linalg.norm(axis)
+    quat_xyzw = rot.as_quat()
+    vec = quat_xyzw[:3]
+    proj = np.dot(vec, axis)
+    w = quat_xyzw[3]
+    norm = max(np.hypot(proj, w), 1e-12)
+    return float(np.degrees(2.0 * np.arctan2(proj / norm, w / norm)))
+
+
+def log_replay_rotation_summary(dataset, num_frames: int, dataset_init_mat: np.ndarray) -> None:
+    total_angles = []
+    twist_xyz = []
+    inv_dataset_init = np.linalg.inv(dataset_init_mat)
+
+    for idx in range(num_frames):
+        pose = _to_numpy(dataset.get_raw_item(idx)["observation.state"])[:6]
+        target_mat = certain_pose_type_to_mat(pose, pose_type="rotvec")
+        rel_mat = inv_dataset_init @ target_mat
+        rel_rot = st.Rotation.from_matrix(rel_mat[:3, :3])
+        total_angles.append(float(np.degrees(rel_rot.magnitude())))
+        twist_xyz.append(
+            [
+                _signed_twist_deg(rel_rot, np.array([1.0, 0.0, 0.0])),
+                _signed_twist_deg(rel_rot, np.array([0.0, 1.0, 0.0])),
+                _signed_twist_deg(rel_rot, np.array([0.0, 0.0, 1.0])),
+            ]
+        )
+
+    total_angles = np.asarray(total_angles)
+    twist_xyz = np.unwrap(np.radians(np.asarray(twist_xyz)), axis=0)
+    twist_xyz = np.degrees(twist_xyz)
+    max_z_idx = int(np.argmax(np.abs(twist_xyz[:, 2])))
+    max_total_idx = int(np.argmax(total_angles))
+    logger.info(
+        "Replay target rotation summary: final_total={:.2f}deg, "
+        "final_twist_xyz=({:.2f}, {:.2f}, {:.2f})deg, "
+        "max_abs_twist_z={:.2f}deg at frame {}, max_total={:.2f}deg at frame {}",
+        total_angles[-1],
+        twist_xyz[-1, 0],
+        twist_xyz[-1, 1],
+        twist_xyz[-1, 2],
+        twist_xyz[max_z_idx, 2],
+        max_z_idx,
+        total_angles[max_total_idx],
+        max_total_idx,
+    )
 
 
 def main(args: argparse.Namespace):
@@ -88,8 +145,9 @@ def main(args: argparse.Namespace):
 
     # --- 核心修复：计算基准偏移 ---
     # 获取数据集的第 0 帧作为基准
-    dataset_init_item = dataset.get_raw_item(0)["observation.state"].numpy()
+    dataset_init_item = _to_numpy(dataset.get_raw_item(0)["observation.state"])
     dataset_init_mat = certain_pose_type_to_mat(dataset_init_item[:6], pose_type="rotvec")
+    log_replay_rotation_summary(dataset, num_frames, dataset_init_mat)
     
     # 获取机器人当前真实的物理起始位姿作为基准
     robot_init_pose = env.get_ee_pose()
@@ -100,8 +158,7 @@ def main(args: argparse.Namespace):
         
         # 1. 获取下一帧的目标状态
         next_item = dataset.get_raw_item(frame_idx + 1)
-        action_tensor = next_item["observation.state"].clone().detach().to(torch.float32)
-        target_dataset_pose10d = action_tensor.numpy()
+        target_dataset_pose10d = _to_numpy(next_item["observation.state"]).astype(np.float32)
         
         # 2. 将目标状态转换为 4x4 矩阵
         target_dataset_mat = certain_pose_type_to_mat(target_dataset_pose10d[:6], pose_type="rotvec")
