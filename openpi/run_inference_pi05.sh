@@ -13,13 +13,13 @@ cd "$SCRIPT_DIR"
 export RECORDING_INDEX="${RECORDING_INDEX:-0}"
 
 # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
-POLICY_CONFIG="${POLICY_CONFIG:-pi05_505_stiring}"
+POLICY_CONFIG="${POLICY_CONFIG:-pi05_430_towel_hanging}"
 
 # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
-POLICY_DIR="${POLICY_DIR:-ckpt/505_stiring_handcap_pi05_vision_70000}"
+POLICY_DIR="${POLICY_DIR:-ckpt/430_towel_hanging_pi05}"
 
 # 5. 任务 Prompt 提示词（输入给模型的语言指令）
-PROMPT="${PROMPT:-pick up the red stick to stir the granules in a white box.}"
+PROMPT="${PROMPT:-Pick up the towel and hang it on the pink rack.}"
 # ==============================================================================
 
 # 每次启动前清理占用 8000 端口的僵尸进程
