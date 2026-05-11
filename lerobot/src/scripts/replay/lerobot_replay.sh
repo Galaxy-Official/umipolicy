@@ -14,12 +14,12 @@ export FLEXIV_ROBOT_SN="Rizon4-062339"
 export FLEXIV_GRIPPER_NAME="Flexiv-GN01"
 export FLEXIV_LOCAL_IP="192.168.2.102"
 
-# Keep arm translation conservative, but let the wrist joints rotate faster.
-export FLEXIV_BASE_MAX_VEL="${FLEXIV_BASE_MAX_VEL:-0.1}"
-export FLEXIV_BASE_MAX_ACC="${FLEXIV_BASE_MAX_ACC:-0.1}"
-export FLEXIV_WRIST_MAX_VEL="${FLEXIV_WRIST_MAX_VEL:-0.3}"
-export FLEXIV_WRIST_MAX_ACC="${FLEXIV_WRIST_MAX_ACC:-0.3}"
-export FLEXIV_WRIST_JOINT_COUNT="${FLEXIV_WRIST_JOINT_COUNT:-3}"
+# Replay debug: remove the conservative joint limits so orientation tracking can be tested.
+export FLEXIV_BASE_MAX_VEL="${FLEXIV_BASE_MAX_VEL:-0.8}"
+export FLEXIV_BASE_MAX_ACC="${FLEXIV_BASE_MAX_ACC:-0.8}"
+export FLEXIV_WRIST_MAX_VEL="${FLEXIV_WRIST_MAX_VEL:-${FLEXIV_BASE_MAX_VEL}}"
+export FLEXIV_WRIST_MAX_ACC="${FLEXIV_WRIST_MAX_ACC:-${FLEXIV_BASE_MAX_ACC}}"
+export FLEXIV_WRIST_JOINT_COUNT="${FLEXIV_WRIST_JOINT_COUNT:-7}"
 
 # simple sorting 409
 export FLEXIV_INIT_POSE="[-0.0009,-0.1701,-0.0133,2.0214,-0.0058,0.6921,-0.0012]"
