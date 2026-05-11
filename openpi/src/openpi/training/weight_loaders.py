@@ -66,7 +66,7 @@ class CheckpointWeightLoader(WeightLoader):
             logger.info("Automatically copied PaliGemma/img/ weights to PaliGemma/tac/ for the tactile encoder.")
             
         # Add newly introduced adaptation weights that are not present in base checkpoints.
-        return _merge_params(loaded_params, params, missing_regex=".*(lora|PaliGemma/tac|fusion_).*")
+        return _merge_params(loaded_params, params, missing_regex=".*(lora|PaliGemma/tac|fusion_|tacfilm_).*")
 
 
 @dataclasses.dataclass(frozen=True)

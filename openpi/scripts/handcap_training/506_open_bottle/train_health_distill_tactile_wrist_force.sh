@@ -42,6 +42,10 @@ NUM_WORKERS="${NUM_WORKERS:-48}"
 FSDP_DEVICES="${FSDP_DEVICES:-1}"
 RESUME="${RESUME:-0}"
 OVERWRITE="${OVERWRITE:-0}"
+USE_TACTILE_MASK="${USE_TACTILE_MASK:-1}"
+TACTILE_MASK_RATIO="${TACTILE_MASK_RATIO:-0.3}"
+BATCH_MASK_RATIO="${BATCH_MASK_RATIO:-${TACTILE_MASK_SAMPLE_RATIO:-0.5}}"
+TACTILE_MASK_REFER_DIR="${TACTILE_MASK_REFER_DIR:-refer_frames}"
 
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
@@ -67,6 +71,10 @@ echo "Save interval: ${SAVE_INTERVAL}"
 echo "Num workers: ${NUM_WORKERS}"
 echo "DataLoader prefetch factor: ${OPENPI_DATALOADER_PREFETCH_FACTOR}"
 echo "OMP/MKL/OPENBLAS/NUMEXPR threads: ${OMP_NUM_THREADS}/${MKL_NUM_THREADS}/${OPENBLAS_NUM_THREADS}/${NUMEXPR_NUM_THREADS}"
+echo "Use tactile mask: ${USE_TACTILE_MASK}"
+echo "Tactile mask ratio: ${TACTILE_MASK_RATIO}"
+echo "Batch mask ratio: ${BATCH_MASK_RATIO}"
+echo "Tactile mask reference dir: ${TACTILE_MASK_REFER_DIR}"
 echo "Health data roots:"
 for data_root in "${HEALTH_DATA_ROOTS[@]}"; do
   echo "  - ${data_root}"
@@ -114,6 +122,24 @@ elif [[ -d "${CHECKPOINT_DIR}" ]]; then
   exit 1
 fi
 
+TACTILE_MASK_ARGS=()
+case "${USE_TACTILE_MASK}" in
+  1|true|TRUE|True|yes|YES|Yes )
+    if [[ ! -f "${TACTILE_MASK_REFER_DIR}/lefttactile.png" || ! -f "${TACTILE_MASK_REFER_DIR}/righttactile.png" ]]; then
+      echo "ERROR: USE_TACTILE_MASK is enabled, but expected reference frames were not found:"
+      echo "  ${TACTILE_MASK_REFER_DIR}/lefttactile.png"
+      echo "  ${TACTILE_MASK_REFER_DIR}/righttactile.png"
+      exit 1
+    fi
+    TACTILE_MASK_ARGS=(
+      --data.use-tactile-mask
+      --data.tactile-mask-ratio "${TACTILE_MASK_RATIO}"
+      --data.batch-mask-ratio "${BATCH_MASK_RATIO}"
+      --data.tactile-mask-refer-dir "${TACTILE_MASK_REFER_DIR}"
+    )
+    ;;
+esac
+
 python scripts/compute_norm_stats.py \
   --config-name "${CONFIG_NAME}" \
   --health-data-roots "${HEALTH_DATA_ROOTS[@]}" \
@@ -131,4 +157,5 @@ python scripts/train.py \
   --data.health-data-roots "${HEALTH_DATA_ROOTS[@]}" \
   --data.health-repo-ids "${HEALTH_REPO_IDS[@]}" \
   --data.health-labels "${HEALTH_LABELS[@]}" \
+  "${TACTILE_MASK_ARGS[@]}" \
   "${RUN_MODE_FLAGS[@]}"

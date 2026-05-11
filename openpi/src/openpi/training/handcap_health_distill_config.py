@@ -41,24 +41,33 @@ class LeRobotHealthDistillHandcapDataConfig(DataConfigFactory):
     health_repo_ids: Sequence[str] | None = None
     health_labels: Sequence[str] = ("0", "50", "100")
     action_sequence_keys: Sequence[str] = ("action",)
+    use_tactile_mask: bool = False
+    tactile_mask_ratio: float = 0.0
+    batch_mask_ratio: float = 0.5
+    tactile_mask_refer_dir: str = "refer_frames"
 
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
         if self.health_data_roots is tyro.MISSING:
-            raise ValueError("health_data_roots must contain the health-conditioned dataset paths.")
-
-        health_data_roots = tuple(self.health_data_roots)
-        if len(health_data_roots) < 2:
-            raise ValueError("At least two health_data_roots are required.")
-        if len(self.health_labels) != len(health_data_roots):
-            raise ValueError("health_labels must have the same length as health_data_roots.")
-
-        if self.health_repo_ids is None:
-            health_repo_ids = tuple(pathlib.Path(root).name for root in health_data_roots)
+            # Policy serving only needs transforms and the asset id; it does not load
+            # health-conditioned datasets. Training scripts still pass these paths.
+            health_data_roots = ()
+            health_repo_ids = ()
+            health_labels = ()
         else:
-            health_repo_ids = tuple(self.health_repo_ids)
-        if len(health_repo_ids) != len(health_data_roots):
-            raise ValueError("health_repo_ids must have the same length as health_data_roots.")
+            health_data_roots = tuple(self.health_data_roots)
+            if len(health_data_roots) < 2:
+                raise ValueError("At least two health_data_roots are required.")
+            if len(self.health_labels) != len(health_data_roots):
+                raise ValueError("health_labels must have the same length as health_data_roots.")
+
+            if self.health_repo_ids is None:
+                health_repo_ids = tuple(pathlib.Path(root).name for root in health_data_roots)
+            else:
+                health_repo_ids = tuple(self.health_repo_ids)
+            if len(health_repo_ids) != len(health_data_roots):
+                raise ValueError("health_repo_ids must have the same length as health_data_roots.")
+            health_labels = tuple(self.health_labels)
 
         action_base_dim = getattr(model_config, "action_base_dim", 10)
         force_dim = getattr(model_config, "force_dim", 2)
@@ -72,20 +81,27 @@ class LeRobotHealthDistillHandcapDataConfig(DataConfigFactory):
             if "observation.forces.right" not in seq_keys:
                 seq_keys.append("observation.forces.right")
 
-        repack_transform = _transforms.Group(
-            inputs=[
-                _transforms.HandcapRepackTransform(
-                    {
-                        "observation/wrist_image": "wrist_image",
-                        "observation/left_tactile": "left_tactile",
-                        "observation/right_tactile": "right_tactile",
-                        "observation/state": "state",
-                        "actions": "action",
-                        "prompt": "prompt",
-                    }
+        repack_inputs = [
+            _transforms.HandcapRepackTransform(
+                {
+                    "observation/wrist_image": "wrist_image",
+                    "observation/left_tactile": "left_tactile",
+                    "observation/right_tactile": "right_tactile",
+                    "observation/state": "state",
+                    "actions": "action",
+                    "prompt": "prompt",
+                }
+            )
+        ]
+        if self.use_tactile_mask:
+            repack_inputs.append(
+                _transforms.TactileReferenceMask(
+                    refer_dir=self.tactile_mask_refer_dir,
+                    mask_ratio=self.tactile_mask_ratio,
+                    sample_ratio=self.batch_mask_ratio,
                 )
-            ]
-        )
+            )
+        repack_transform = _transforms.Group(inputs=repack_inputs)
         data_transforms = _transforms.Group(
             inputs=[
                 handcap_policy.HandcapInputs(
@@ -131,7 +147,7 @@ class LeRobotHealthDistillHandcapDataConfig(DataConfigFactory):
             datasets=base.datasets,
             health_repo_ids=health_repo_ids,
             health_data_roots=health_data_roots,
-            health_labels=tuple(self.health_labels),
+            health_labels=health_labels,
         )
 
 
