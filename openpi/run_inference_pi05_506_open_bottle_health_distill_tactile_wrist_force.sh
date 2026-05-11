@@ -115,6 +115,10 @@ export FLEXIV_LOCAL_IP="192.168.2.102"
 export FLEXIV_ROBOT_SN="${FLEXIV_ROBOT_SN:-Rizon4-062339}"
 export FLEXIV_GRIPPER_NAME="${FLEXIV_GRIPPER_NAME:-Flexiv-GN01}"
 export FLEXIV_INIT_POSE="${FLEXIV_INIT_POSE:-[-0.0009,-0.2370,-0.0133,1.9935,-0.0058,0.6496,-0.0012]}"
+# The dataset/model action pose is expressed in the robot flange frame. Flexiv's
+# Cartesian API still accepts target TCP poses, so the runtime converts
+# target_flange -> target_tcp before SendCartesianMotionForce().
+export FLEXIV_ACTION_FRAME="${FLEXIV_ACTION_FRAME:-flange}"
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 export XLA_PYTHON_CLIENT_PREALLOCATE="${XLA_PYTHON_CLIENT_PREALLOCATE:-false}"
 export XLA_PYTHON_CLIENT_ALLOCATOR="${XLA_PYTHON_CLIENT_ALLOCATOR:-platform}"

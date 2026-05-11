@@ -72,6 +72,27 @@ def _env_float(name: str, default: float) -> float:
         return float(default)
 
 
+def _pose7_to_mat(pose7: Any) -> np.ndarray:
+    pose = np.asarray(pose7, dtype=np.float64)
+    pos = pose[:3]
+    qw, qx, qy, qz = pose[3:]
+    return pos_rot_to_mat(pos, st.Rotation.from_quat([qx, qy, qz, qw]))
+
+
+def _mat_to_tcp_pose7(mat: np.ndarray) -> list[float]:
+    pos = np.asarray(mat[:3, 3], dtype=np.float64)
+    quat_xyzw = st.Rotation.from_matrix(mat[:3, :3]).as_quat(scalar_first=False)
+    return [
+        float(pos[0]),
+        float(pos[1]),
+        float(pos[2]),
+        float(quat_xyzw[3]),
+        float(quat_xyzw[0]),
+        float(quat_xyzw[1]),
+        float(quat_xyzw[2]),
+    ]
+
+
 from scipy.spatial.transform import Rotation
 
 def encode_state_to_handcap_state(eepose_rotvec: np.ndarray, gripper_width: float) -> np.ndarray:
@@ -489,6 +510,10 @@ class FlexivRealEnv:
             "true",
             "yes",
         }
+        self._action_frame = os.environ.get("FLEXIV_ACTION_FRAME", "tcp").lower()
+        if self._action_frame not in {"tcp", "flange"}:
+            LOGGER.warning("Invalid FLEXIV_ACTION_FRAME=%r; using 'tcp'.", self._action_frame)
+            self._action_frame = "tcp"
 
         robot_sn = os.environ.get("FLEXIV_ROBOT_SN", "Rizon4-062339")
         gripper_name = os.environ.get("FLEXIV_GRIPPER_NAME", "Flexiv-GN01")
@@ -507,8 +532,9 @@ class FlexivRealEnv:
             actual_local_ip,
         )
         LOGGER.info(
-            "Flexiv Cartesian EEF limits: linear_vel=%.3f angular_vel=%.3f "
+            "Flexiv Cartesian EEF limits: action_frame=%s linear_vel=%.3f angular_vel=%.3f "
             "linear_acc=%.3f angular_acc=%.3f gripper_vel=%.3f gripper_force=%.3f safety_clip=%s",
+            self._action_frame,
             self._arm_max_linear_vel,
             self._arm_max_angular_vel,
             self._arm_max_linear_acc,
@@ -566,9 +592,10 @@ class FlexivRealEnv:
         self._robot.SetForceControlAxis([False, False, False, False, False, False])
 
     def get_ee_pose(self) -> np.ndarray:
-        flange_pose_raw = self._robot.states().tcp_pose.copy()
-        pos = flange_pose_raw[:3]
-        qw, qx, qy, qz = flange_pose_raw[3:]
+        states = self._robot.states()
+        pose_raw = states.flange_pose.copy() if self._action_frame == "flange" else states.tcp_pose.copy()
+        pos = pose_raw[:3]
+        qw, qx, qy, qz = pose_raw[3:]
         rot = st.Rotation.from_quat([qx, qy, qz, qw])
         return mat_to_certain_pose_type(pos_rot_to_mat(np.array(pos, dtype=np.float64), rot), "rotvec")
 
@@ -588,6 +615,18 @@ class FlexivRealEnv:
         except Exception:
             return np.zeros((2,), dtype=np.float32)
 
+    def _action_pose_to_target_tcp(self, target_pose: np.ndarray) -> list[float]:
+        target_pose_mat = pose_to_mat(target_pose)
+        if self._action_frame == "tcp":
+            return _mat_to_tcp_pose7(target_pose_mat)
+
+        states = self._robot.states()
+        current_flange_mat = _pose7_to_mat(states.flange_pose)
+        current_tcp_mat = _pose7_to_mat(states.tcp_pose)
+        flange_to_tcp_mat = np.linalg.inv(current_flange_mat) @ current_tcp_mat
+        target_tcp_mat = target_pose_mat @ flange_to_tcp_mat
+        return _mat_to_tcp_pose7(target_tcp_mat)
+
     def exec_actions(self, actions: np.ndarray, timestamps: np.ndarray, target_force: float | None = None) -> None:
         receive_time = time.time()
         is_new = timestamps > receive_time
@@ -598,17 +637,7 @@ class FlexivRealEnv:
             target_pose = new_actions[i, :6]
             target_width = float(new_actions[i, 6])
 
-            pos, rot = pose_to_pos_rot(target_pose)
-            quat_xyzw = rot.as_quat(scalar_first=False)
-            target_tcp = [
-                float(pos[0]),
-                float(pos[1]),
-                float(pos[2]),
-                float(quat_xyzw[3]),
-                float(quat_xyzw[0]),
-                float(quat_xyzw[1]),
-                float(quat_xyzw[2]),
-            ]
+            target_tcp = self._action_pose_to_target_tcp(target_pose)
             if self._enable_safety_clip:
                 from lerobot.common.robot_devices.robots.flexiv_safety import clip_target_pose_7d
 

@@ -5,7 +5,28 @@ import numpy as np
 import flexivrdk
 import scipy.spatial.transform as st
 from loguru import logger
-from lerobot.datasets.pose_utils import pos_rot_to_pose, pose_to_pos_rot
+from lerobot.datasets.pose_utils import pose_to_mat, pose_to_pos_rot, pos_rot_to_mat, pos_rot_to_pose
+
+
+def pose7_to_mat(pose7):
+    pose = np.asarray(pose7, dtype=np.float64)
+    pos = pose[:3]
+    qw, qx, qy, qz = pose[3:]
+    return pos_rot_to_mat(pos, st.Rotation.from_quat([qx, qy, qz, qw]))
+
+
+def mat_to_tcp_pose7(mat):
+    pos = np.asarray(mat[:3, 3], dtype=np.float64)
+    quat = st.Rotation.from_matrix(mat[:3, :3]).as_quat(scalar_first=False)
+    return [
+        float(pos[0]),
+        float(pos[1]),
+        float(pos[2]),
+        float(quat[3]),
+        float(quat[0]),
+        float(quat[1]),
+        float(quat[2]),
+    ]
 
 class FlexivEnv:
     def __init__(
@@ -40,6 +61,10 @@ class FlexivEnv:
         self.arm_max_angular_acc = float(os.environ.get("FLEXIV_ARM_MAX_ANGULAR_ACC", arm_max_angular_acc))
         self.gripper_move_velocity = float(os.environ.get("FLEXIV_GRIPPER_MOVE_VELOCITY", gripper_move_velocity))
         self.gripper_move_force = float(os.environ.get("FLEXIV_GRIPPER_MOVE_FORCE", gripper_move_force))
+        self.action_frame = os.environ.get("FLEXIV_ACTION_FRAME", "tcp").lower()
+        if self.action_frame not in ("tcp", "flange"):
+            logger.warning("Invalid FLEXIV_ACTION_FRAME={}, using tcp", self.action_frame)
+            self.action_frame = "tcp"
         base_max_vel = float(os.environ.get("FLEXIV_BASE_MAX_VEL", "0.1"))
         base_max_acc = float(os.environ.get("FLEXIV_BASE_MAX_ACC", "0.1"))
         wrist_max_vel = float(os.environ.get("FLEXIV_WRIST_MAX_VEL", str(base_max_vel)))
@@ -102,9 +127,10 @@ class FlexivEnv:
         logger.info(f"Execution max acceleration limits: {self.exec_max_acc}")
         logger.info(f"IK free orientation: {self.ik_free_orientation}")
         logger.info(
-            "Direct EEF control: {} | Cartesian limits: linear_vel={} angular_vel={} "
+            "Direct EEF control: {} | action_frame={} | Cartesian limits: linear_vel={} angular_vel={} "
             "linear_acc={} angular_acc={} gripper_vel={} gripper_force={}",
             self.direct_eef_control,
+            self.action_frame,
             self.arm_max_linear_vel,
             self.arm_max_angular_vel,
             self.arm_max_linear_acc,
@@ -118,13 +144,26 @@ class FlexivEnv:
         time.sleep(1)
 
     def get_ee_pose(self):
-        pose = self.robot.states().tcp_pose
+        states = self.robot.states()
+        pose = states.flange_pose if self.action_frame == "flange" else states.tcp_pose
         qw, qx, qy, qz = pose[3], pose[4], pose[5], pose[6]
         rot = st.Rotation.from_quat([qx, qy, qz, qw], scalar_first=False)
         return pos_rot_to_pose(np.array(pose[:3]), rot)
 
     def get_gripper_width(self):
         return self.gripper.states().width
+
+    def action_pose_to_target_tcp(self, target_pose):
+        target_pose_mat = pose_to_mat(target_pose)
+        if self.action_frame == "tcp":
+            return mat_to_tcp_pose7(target_pose_mat)
+
+        states = self.robot.states()
+        current_flange_mat = pose7_to_mat(states.flange_pose)
+        current_tcp_mat = pose7_to_mat(states.tcp_pose)
+        flange_to_tcp_mat = np.linalg.inv(current_flange_mat) @ current_tcp_mat
+        target_tcp_mat = target_pose_mat @ flange_to_tcp_mat
+        return mat_to_tcp_pose7(target_tcp_mat)
 
     def reset(self):
         if self.direct_eef_control:
@@ -150,18 +189,7 @@ class FlexivEnv:
             tip_pose = new_actions[i, 0:6]
             target_width = new_actions[i, 6]
             
-            # Format target TCP pose to [x, y, z, qw, qx, qy, qz]
-            pos, rot = pose_to_pos_rot(tip_pose)
-            quat = rot.as_quat(scalar_first=False) # x,y,z,w
-            target_tcp = [
-                float(pos[0]),
-                float(pos[1]),
-                float(pos[2]),
-                float(quat[3]),
-                float(quat[0]),
-                float(quat[1]),
-                float(quat[2]),
-            ]
+            target_tcp = self.action_pose_to_target_tcp(tip_pose)
             
             # --- Safety Boundary Clip ---
             from lerobot.common.robot_devices.robots.flexiv_safety import clip_target_pose_7d
