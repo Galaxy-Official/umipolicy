@@ -12,6 +12,18 @@ class FlexivEnv:
         self.obs_horizon = obs_horizon
         self.pose_type = pose_type
         self.init_qpos = init_qpos
+        base_max_vel = float(os.environ.get("FLEXIV_BASE_MAX_VEL", "0.1"))
+        base_max_acc = float(os.environ.get("FLEXIV_BASE_MAX_ACC", "0.1"))
+        wrist_max_vel = float(os.environ.get("FLEXIV_WRIST_MAX_VEL", str(base_max_vel)))
+        wrist_max_acc = float(os.environ.get("FLEXIV_WRIST_MAX_ACC", str(base_max_acc)))
+        wrist_joint_count = int(os.environ.get("FLEXIV_WRIST_JOINT_COUNT", "3"))
+        wrist_joint_count = max(0, min(7, wrist_joint_count))
+        self.exec_max_vel = [base_max_vel] * 7
+        self.exec_max_acc = [base_max_acc] * 7
+        if wrist_joint_count:
+            for joint_idx in range(7 - wrist_joint_count, 7):
+                self.exec_max_vel[joint_idx] = wrist_max_vel
+                self.exec_max_acc[joint_idx] = wrist_max_acc
         
         # New RDK 1.0+ Native Setup
         robot_sn = os.environ.get("FLEXIV_ROBOT_SN", "Rizon4-062339")
@@ -48,6 +60,8 @@ class FlexivEnv:
             
         logger.info("Switching to NRT_JOINT_POSITION mode...")
         self.robot.SwitchMode(flexivrdk.Mode.NRT_JOINT_POSITION)
+        logger.info(f"Execution max velocity limits: {self.exec_max_vel}")
+        logger.info(f"Execution max acceleration limits: {self.exec_max_acc}")
         
         max_width = self.gripper.params().max_width
         self.gripper.Move(max_width, 0.1, 20)
@@ -91,7 +105,7 @@ class FlexivEnv:
             # Native IK calculation using RDK Model API
             result = self.model.reachable(target_tcp, self.robot.states().q, True)
             if result[0]:
-                self.robot.SendJointPosition(result[1], [0]*7, [0.1]*7, [0.1]*7)
+                self.robot.SendJointPosition(result[1], [0]*7, self.exec_max_vel, self.exec_max_acc)
             else:
                 logger.warning(f"Pose {target_tcp} is not reachable!")
             
