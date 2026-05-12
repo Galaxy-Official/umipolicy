@@ -129,8 +129,7 @@ fi
 "${PYTHON_BIN}" scripts/compute_norm_stats.py \
   --config-name "${CONFIG_NAME}" \
   --health-data-roots "${HEALTH_DATA_ROOTS[@]}" \
-  --health-repo-ids "${HEALTH_REPO_IDS[@]}" \
-  --health-labels "${HEALTH_LABELS[@]}"
+  --health-repo-ids "${HEALTH_REPO_IDS[@]}"
 
 "${PYTHON_BIN}" scripts/train.py \
   "${CONFIG_NAME}" \
