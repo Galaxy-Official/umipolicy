@@ -11,19 +11,19 @@ exec > >(tee -a "logs/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
-CONFIG_NAME="${CONFIG_NAME:-pi05_505_stiring_tactile_tacfilm}"
-EXP_NAME="${EXP_NAME:-505_stiring_handcap_pi05_4gpu_tacfilm}"
-DATA_ROOT="${DATA_ROOT:-Data/505_stiring_lerobot}"
+CONFIG_NAME="${CONFIG_NAME:-pi05_512_stiring_tactile_tacfilm}"
+EXP_NAME="${EXP_NAME:-512_stiring_handcap_pi05_4gpu_tacfilm}"
+DATA_ROOT="${DATA_ROOT:-Data/512_stiring_lerobot}"
 
 # ==============================================================================
 # Same data and throughput defaults as train_vision_tactile.sh.
 # This script uses a separate config/experiment name so it will not touch prior
 # vision-only, vision+tactile, force-predict, T3, or health-distill checkpoints.
 # ==============================================================================
-BATCH_SIZE="${BATCH_SIZE:-64}"
+BATCH_SIZE="${BATCH_SIZE:-=128}"
 NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-100000}"
 SAVE_INTERVAL="${SAVE_INTERVAL:-10000}"
-NUM_WORKERS="${NUM_WORKERS:-32}"
+NUM_WORKERS="${NUM_WORKERS:-64}"
 FSDP_DEVICES="${FSDP_DEVICES:-1}"
 RESUME="${RESUME:-0}"
 OVERWRITE="${OVERWRITE:-0}"

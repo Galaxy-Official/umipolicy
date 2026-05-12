@@ -799,6 +799,11 @@ def get_handcap_configs():
             data_root="Data/505_stiring_lerobot",
         ),
         *make_pi05_505_configs(
+            task_name="512_stiring",
+            repo_id="lihongcs/512_stiring_lerobot",
+            data_root="Data/512_stiring_lerobot",
+        ),
+        *make_pi05_505_configs(
             task_name="506_open_bottle",
             repo_id="lihongcs/506_open_bottle_lerobot",
             data_root="Data/506_open_bottle_lerobot",
