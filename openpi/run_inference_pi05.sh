@@ -13,14 +13,14 @@ cd "$SCRIPT_DIR"
 export RECORDING_INDEX="${RECORDING_INDEX:-0}"
 
 # towel hanging
-# 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
-# POLICY_CONFIG="${POLICY_CONFIG:-pi05_430_towel_hanging}"
+3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
+POLICY_CONFIG="${POLICY_CONFIG:-pi05_430_towel_hanging}"
 
-# # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
-# POLICY_DIR="${POLICY_DIR:-ckpt/430_towel_hanging_pi05}"
+# 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
+POLICY_DIR="${POLICY_DIR:-ckpt/430_towel_hanging_pi05}"
 
-# # 5. 任务 Prompt 提示词（输入给模型的语言指令）
-# PROMPT="${PROMPT:-Pick up the towel and hang it on the pink rack.}"
+# 5. 任务 Prompt 提示词（输入给模型的语言指令）
+PROMPT="${PROMPT:-Pick up the towel and hang it on the pink rack.}"
 
 #  erase board
 # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
@@ -44,14 +44,14 @@ export RECORDING_INDEX="${RECORDING_INDEX:-0}"
 
 #  bread moving
 # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
-POLICY_CONFIG="${POLICY_CONFIG:-pi05_bread_moving}"
+# POLICY_CONFIG="${POLICY_CONFIG:-pi05_bread_moving}"
 
-# 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
-POLICY_DIR="${POLICY_DIR:-ckpt/501_bread_moving_pi05_30000}"
+# # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
+# POLICY_DIR="${POLICY_DIR:-ckpt/501_bread_moving_pi05_30000}"
 
-# 5. 任务 Prompt 提示词（输入给模型的语言指令）
-PROMPT="${PROMPT:-Pick up the bread in the basket and put it in the blue bowl.}"
-# ==============================================================================
+# # 5. 任务 Prompt 提示词（输入给模型的语言指令）
+# PROMPT="${PROMPT:-Pick up the bread in the basket and put it in the blue bowl.}"
+# # ==============================================================================
 
 # 每次启动前清理占用 8000 端口的僵尸进程
 echo "Cleaning up port 8000..."
