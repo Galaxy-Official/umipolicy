@@ -166,6 +166,7 @@ def get_health_distill_handcap_configs():
         "505_screw",
         "505_stiring",
         "512_stiring",
+        "512_close_bottle",
         "506_open_bottle",
         "506_peg_flowers",
         "430_clamp_seal",
