@@ -30,6 +30,9 @@ pick up the red socket wrench to loose the screw on the board.
 506_open_bottle
 turn to loose the cap of the bottle.
 
+512_close_bottle
+Pick up the bottle cap and cover it with the lid.
+
 506_peg_flowers
 pick up the flower and insert it into the red vase.
 

@@ -11,26 +11,34 @@ exec > >(tee -a "logs/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
-CONFIG_NAME="${CONFIG_NAME:-pi05_506_peg_flowers_tactile_tacfilm}"
-EXP_NAME="${EXP_NAME:-506_peg_flowers_handcap_pi05_4gpu_tacfilm}"
-DATA_ROOT="${DATA_ROOT:-Data/506_peg_flowers_lerobot}"
+CONFIG_NAME="${CONFIG_NAME:-pi05_512_close_bottle_tactile_concat_t3}"
+EXP_NAME="${EXP_NAME:-512_close_bottle_handcap_pi05_4gpu_tactile_concat_t3}"
+DATA_ROOT="${DATA_ROOT:-Data/512_close_bottle_lerobot}"
+T3_ROOT="${T3_ROOT:-ckpt/t3_tiny}"
 
 # ==============================================================================
 # Same data and throughput defaults as train_vision_tactile.sh.
 # This script uses a separate config/experiment name so it will not touch prior
-# vision-only, vision+tactile, force-predict, T3, or health-distill checkpoints.
+# vision-only, vision+tactile, force-predict, or health-distill checkpoints.
 # ==============================================================================
 BATCH_SIZE="${BATCH_SIZE:-128}"
 NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-100000}"
 SAVE_INTERVAL="${SAVE_INTERVAL:-10000}"
 NUM_WORKERS="${NUM_WORKERS:-64}"
 FSDP_DEVICES="${FSDP_DEVICES:-1}"
-CHECKPOINT_BASE_DIR="${CHECKPOINT_BASE_DIR:-checkpoints}"
-# Keep only the latest checkpoint by default. A very large keep_period avoids
-# accumulating periodic checkpoints such as 20000/40000/60000 on quota-limited disks.
-KEEP_PERIOD="${KEEP_PERIOD:-1000000000}"
 RESUME="${RESUME:-0}"
 OVERWRITE="${OVERWRITE:-0}"
+PYTHON_BIN="${PYTHON_BIN:-}"
+if [[ -z "${PYTHON_BIN}" ]]; then
+  if command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+  elif command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+  else
+    echo "ERROR: Neither python nor python3 was found. Activate the openpi env or set PYTHON_BIN=/path/to/python."
+    exit 1
+  fi
+fi
 
 export XLA_PYTHON_CLIENT_PREALLOCATE="true"
 export XLA_PYTHON_CLIENT_MEM_FRACTION="0.95"
@@ -39,18 +47,18 @@ export XLA_FLAGS="--xla_gpu_force_compilation_parallelism=16"
 # ==============================================================================
 
 echo "=========================================="
-echo "Starting OpenPI PI05 TacFiLM training"
+echo "Starting OpenPI PI05 TactileConcat + T3 training"
 echo "Config: ${CONFIG_NAME}"
 echo "Dataset: ${DATA_ROOT}"
 echo "Experiment: ${EXP_NAME}"
+echo "T3 root: ${T3_ROOT}"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
 echo "FSDP devices: ${FSDP_DEVICES}"
 echo "Batch size: ${BATCH_SIZE}"
 echo "Train steps: ${NUM_TRAIN_STEPS}"
 echo "Save interval: ${SAVE_INTERVAL}"
-echo "Checkpoint base dir: ${CHECKPOINT_BASE_DIR}"
-echo "Keep period: ${KEEP_PERIOD}"
 echo "Num Workers: ${NUM_WORKERS}"
+echo "Python: ${PYTHON_BIN}"
 echo "Resume: ${RESUME}"
 echo "Overwrite: ${OVERWRITE}"
 echo "=========================================="
@@ -60,7 +68,15 @@ if [[ ! -d "${DATA_ROOT}/data" || ! -d "${DATA_ROOT}/meta" || ! -d "${DATA_ROOT}
   exit 1
 fi
 
-CHECKPOINT_DIR="${CHECKPOINT_BASE_DIR}/${CONFIG_NAME}/${EXP_NAME}"
+if [[ ! -f "${T3_ROOT}/trunk.pth" || ! -f "${T3_ROOT}/encoders/mini.pth" ]]; then
+  echo "ERROR: Expected T3 tiny checkpoints:"
+  echo "  ${T3_ROOT}/trunk.pth"
+  echo "  ${T3_ROOT}/encoders/mini.pth"
+  echo "Download them first from alanz-mit/FoundationTactile, or set T3_ROOT to the local ckpt/t3_tiny directory."
+  exit 1
+fi
+
+CHECKPOINT_DIR="checkpoints/${CONFIG_NAME}/${EXP_NAME}"
 LATEST_CKPT="$(
   find "${CHECKPOINT_DIR}" -maxdepth 1 -mindepth 1 -type d -name '[0-9]*' 2>/dev/null \
     | awk -F/ '{print $NF}' \
@@ -92,16 +108,14 @@ elif [[ -d "${CHECKPOINT_DIR}" ]]; then
   exit 1
 fi
 
-python scripts/compute_norm_stats.py --config-name "${CONFIG_NAME}"
+"${PYTHON_BIN}" scripts/compute_norm_stats.py --config-name "${CONFIG_NAME}"
 
-python scripts/train.py \
+"${PYTHON_BIN}" scripts/train.py \
   "${CONFIG_NAME}" \
   --exp-name "${EXP_NAME}" \
   --batch-size "${BATCH_SIZE}" \
   --num-train-steps "${NUM_TRAIN_STEPS}" \
   --save-interval "${SAVE_INTERVAL}" \
-  --checkpoint-base-dir "${CHECKPOINT_BASE_DIR}" \
-  --keep-period "${KEEP_PERIOD}" \
   --num-workers "${NUM_WORKERS}" \
   --no-wandb-enabled \
   --fsdp-devices "${FSDP_DEVICES}" \
