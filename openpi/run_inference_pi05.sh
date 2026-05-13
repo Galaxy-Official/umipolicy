@@ -12,6 +12,16 @@ cd "$SCRIPT_DIR"
 # 填入 /dev/video 编号（如 4）。若不录像则留空。
 export RECORDING_INDEX="${RECORDING_INDEX:-0}"
 
+# screw
+# 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
+POLICY_CONFIG="${POLICY_CONFIG:-pi05_513_screw}"
+
+# 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
+POLICY_DIR="${POLICY_DIR:-ckpt/lihong/512_stiring_vision_only_50000}"
+
+# 5. 任务 Prompt 提示词（输入给模型的语言指令）
+PROMPT="${PROMPT:-pick up the red socket wrench to loose the screw on the board.}"
+
 # towel hanging
 # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
 # POLICY_CONFIG="${POLICY_CONFIG:-pi05_430_towel_hanging}"
@@ -24,13 +34,13 @@ export RECORDING_INDEX="${RECORDING_INDEX:-0}"
 
 #  erase board
 # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
-POLICY_CONFIG="${POLICY_CONFIG:-pi05_erase_board_wrist}"
+# POLICY_CONFIG="${POLICY_CONFIG:-pi05_erase_board_wrist}"
 
-# 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
-POLICY_DIR="${POLICY_DIR:-ckpt/lihong/pi05_erase_board_wrist_110000}"
+# # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
+# POLICY_DIR="${POLICY_DIR:-ckpt/lihong/pi05_erase_board_wrist_110000}"
 
-# 5. 任务 Prompt 提示词（输入给模型的语言指令）
-PROMPT="${PROMPT:-Pick up the blackboard eraser and wipe off the blackboard}"
+# # 5. 任务 Prompt 提示词（输入给模型的语言指令）
+# PROMPT="${PROMPT:-Pick up the blackboard eraser and wipe off the blackboard}"
 
 # #  clamp seal
 # # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
