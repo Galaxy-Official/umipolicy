@@ -10,6 +10,10 @@ exec > >(tee -a "logs/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
+export WANDB_MODE="${WANDB_MODE:-offline}"
+export WANDB_DIR="${WANDB_DIR:-wandb}"
+mkdir -p "${WANDB_DIR}"
+
 CONFIG_NAME="${CONFIG_NAME:-pi05_erase_board_wrist_wrist_health_distill_tactile_wrist_force}"
 EXP_NAME="${EXP_NAME:-erase_board_multihealth_pi05_health_distill_tactile_wrist_force}"
 
@@ -126,7 +130,6 @@ python scripts/train.py \
   --num-train-steps "${NUM_TRAIN_STEPS}" \
   --save-interval "${SAVE_INTERVAL}" \
   --num-workers "${NUM_WORKERS}" \
-  --no-wandb-enabled \
   --fsdp-devices "${FSDP_DEVICES}" \
   --data.health-data-roots "${HEALTH_DATA_ROOTS[@]}" \
   --data.health-repo-ids "${HEALTH_REPO_IDS[@]}" \

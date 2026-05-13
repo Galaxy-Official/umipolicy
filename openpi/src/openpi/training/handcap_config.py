@@ -794,9 +794,19 @@ def get_handcap_configs():
             data_root="Data/513_screw_lerobot",
         ),
         *make_pi05_505_configs(
+            task_name="513_screw_350",
+            repo_id="lihongcs/513_screw_lerobot_350",
+            data_root="Data/513_screw_lerobot_350",
+        ),
+        *make_pi05_505_configs(
             task_name="505_stiring",
             repo_id="lihongcs/505_stiring_lerobot",
             data_root="Data/505_stiring_lerobot",
+        ),
+        *make_pi05_505_configs(
+            task_name="514_stiring_350",
+            repo_id="lihongcs/514_stiring_lerobot_350",
+            data_root="Data/514_stiring_lerobot_350",
         ),
         *make_pi05_505_configs(
             task_name="512_stiring",
@@ -807,6 +817,11 @@ def get_handcap_configs():
             task_name="512_close_bottle",
             repo_id="lihongcs/512_close_bottle_lerobot",
             data_root="Data/512_close_bottle_lerobot",
+        ),
+        *make_pi05_505_configs(
+            task_name="512_close_bottle_350",
+            repo_id="lihongcs/512_close_bottle_lerobot_350",
+            data_root="Data/512_close_bottle_lerobot_350",
         ),
         *make_pi05_505_configs(
             task_name="506_open_bottle",
