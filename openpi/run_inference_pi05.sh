@@ -13,24 +13,24 @@ cd "$SCRIPT_DIR"
 export RECORDING_INDEX="${RECORDING_INDEX:-0}"
 
 # towel hanging
-3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
-POLICY_CONFIG="${POLICY_CONFIG:-pi05_430_towel_hanging}"
+# 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
+# POLICY_CONFIG="${POLICY_CONFIG:-pi05_430_towel_hanging}"
 
-# 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
-POLICY_DIR="${POLICY_DIR:-ckpt/430_towel_hanging_pi05}"
+# # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
+# POLICY_DIR="${POLICY_DIR:-ckpt/430_towel_hanging_pi05}"
 
-# 5. 任务 Prompt 提示词（输入给模型的语言指令）
-PROMPT="${PROMPT:-Pick up the towel and hang it on the pink rack.}"
+# # 5. 任务 Prompt 提示词（输入给模型的语言指令）
+# PROMPT="${PROMPT:-Pick up the towel and hang it on the pink rack.}"
 
 #  erase board
 # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
-# POLICY_CONFIG="${POLICY_CONFIG:-pi05_erase_board_wrist}"
+POLICY_CONFIG="${POLICY_CONFIG:-pi05_erase_board_wrist}"
 
-# # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
-# POLICY_DIR="${POLICY_DIR:-ckpt/erase_board_wrist_0429_60000}"
+# 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
+POLICY_DIR="${POLICY_DIR:-ckpt/lihong/pi05_erase_board_wrist_110000}"
 
-# # 5. 任务 Prompt 提示词（输入给模型的语言指令）
-# PROMPT="${PROMPT:-Pick up the blackboard eraser and wipe off the blackboard}"
+# 5. 任务 Prompt 提示词（输入给模型的语言指令）
+PROMPT="${PROMPT:-Pick up the blackboard eraser and wipe off the blackboard}"
 
 # #  clamp seal
 # # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
@@ -47,11 +47,11 @@ PROMPT="${PROMPT:-Pick up the towel and hang it on the pink rack.}"
 # POLICY_CONFIG="${POLICY_CONFIG:-pi05_bread_moving}"
 
 # # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
-# POLICY_DIR="${POLICY_DIR:-ckpt/501_bread_moving_pi05_30000}"
+# POLICY_DIR="${POLICY_DIR:-ckpt/501_bread_moving_pi05_199999}"
 
 # # 5. 任务 Prompt 提示词（输入给模型的语言指令）
 # PROMPT="${PROMPT:-Pick up the bread in the basket and put it in the blue bowl.}"
-# # ==============================================================================
+# ==============================================================================
 
 # 每次启动前清理占用 8000 端口的僵尸进程
 echo "Cleaning up port 8000..."
@@ -123,7 +123,7 @@ export FLEXIV_ROBOT_IP="192.168.2.100"
 export FLEXIV_LOCAL_IP="192.168.2.102"
 export FLEXIV_ROBOT_SN="${FLEXIV_ROBOT_SN:-Rizon4-062339}"
 export FLEXIV_GRIPPER_NAME="${FLEXIV_GRIPPER_NAME:-Flexiv-GN01}"
-export FLEXIV_INIT_POSE="${FLEXIV_INIT_POSE:-[-0.0009,-0.4287,-0.0133,1.7722,-0.0058,0.6445,-0.0012]}"
+export FLEXIV_INIT_POSE="${FLEXIV_INIT_POSE:-[-0.0083,-0.1166,-0.0274,2.0942,-0.0049,0.7096,0.0272]}"
 export FLEXIV_ACTION_FRAME="${FLEXIV_ACTION_FRAME:-flange}"
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 export XLA_PYTHON_CLIENT_PREALLOCATE="${XLA_PYTHON_CLIENT_PREALLOCATE:-false}"
