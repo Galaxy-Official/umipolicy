@@ -2,6 +2,8 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/../../.."
+REPO_ROOT="$(pwd)"
+export PYTHONPATH="${REPO_ROOT}/src:${REPO_ROOT}/packages/openpi-client/src:${PYTHONPATH:-}"
 
 mkdir -p logs
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
