@@ -11,8 +11,8 @@ exec > >(tee -a "logs/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
-CONFIG_NAME="${CONFIG_NAME:-pi05_505_screw_tactile}"
-EXP_NAME="${EXP_NAME:-505_screw_handcap_pi05_4gpu_tactile}"
+CONFIG_NAME="${CONFIG_NAME:-pi05_513_screw}"
+EXP_NAME="${EXP_NAME:-513_screw_handcap_pi05_4gpu_vision_only_test}"
 
 # ==============================================================================
 # H200 (141GB) x4 & 80-Core 900GB RAM 极致资源榨干配置
@@ -35,9 +35,9 @@ export XLA_FLAGS="--xla_gpu_force_compilation_parallelism=16"
 # ==============================================================================
 
 echo "=========================================="
-echo "Starting OpenPI PI05 Vision + Tactile training"
+echo "Starting OpenPI PI05 Vision Only training"
 echo "Config: ${CONFIG_NAME}"
-echo "Dataset: Data/505_screw_lerobot"
+echo "Dataset: Data/513_screw_lerobot"
 echo "Experiment: ${EXP_NAME}"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
 echo "FSDP devices: ${FSDP_DEVICES}"

@@ -789,9 +789,9 @@ def get_handcap_configs():
             keep_period=20_000,
         ),
         *make_pi05_505_configs(
-            task_name="505_screw",
-            repo_id="lihongcs/505_screw_lerobot",
-            data_root="Data/505_screw_lerobot",
+            task_name="513_screw",
+            repo_id="lihongcs/513_screw_lerobot",
+            data_root="Data/513_screw_lerobot",
         ),
         *make_pi05_505_configs(
             task_name="505_stiring",

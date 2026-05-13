@@ -163,7 +163,7 @@ def get_health_distill_handcap_configs():
     )
 
     tasks = [
-        "505_screw",
+        "513_screw",
         "505_stiring",
         "512_stiring",
         "512_close_bottle",
