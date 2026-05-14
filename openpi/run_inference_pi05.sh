@@ -29,8 +29,8 @@ export RECORDING_INDEX="${RECORDING_INDEX:-}"
 POLICY_CONFIG="${POLICY_CONFIG:-pi05_513_screw_350}"
 
 # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
-# POLICY_DIR="${POLICY_DIR:-ckpt/lihong/513_screw_vision_90000}"
-POLICY_DIR="${POLICY_DIR:-ckpt/lihong/513_screw_350_vision_30000}"
+POLICY_DIR="${POLICY_DIR:-ckpt/lihong/513_screw_vision_90000}"
+# POLICY_DIR="${POLICY_DIR:-ckpt/lihong/513_screw_350_vision_30000}"
 
 # # 5. 任务 Prompt 提示词（输入给模型的语言指令）
 PROMPT="${PROMPT:-pick up the red socket wrench to loose the screw on the board.}"
