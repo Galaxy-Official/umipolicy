@@ -26,11 +26,11 @@ export RECORDING_INDEX="${RECORDING_INDEX:-}"
 
 # screw
 # # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
-POLICY_CONFIG="${POLICY_CONFIG:-pi05_513_screw}"
+POLICY_CONFIG="${POLICY_CONFIG:-pi05_513_screw_350}"
 
 # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
-POLICY_DIR="${POLICY_DIR:-ckpt/lihong/513_screw_vision_90000}"
-# POLICY_DIR="${POLICY_DIR:-ckpt/lihong/513_screw_350_vision_30000}"
+# POLICY_DIR="${POLICY_DIR:-ckpt/lihong/513_screw_vision_90000}"
+POLICY_DIR="${POLICY_DIR:-ckpt/lihong/513_screw_350_vision_30000}"
 
 # # 5. 任务 Prompt 提示词（输入给模型的语言指令）
 PROMPT="${PROMPT:-pick up the red socket wrench to loose the screw on the board.}"
@@ -154,8 +154,8 @@ export FLEXIV_ROBOT_IP="192.168.2.100"
 export FLEXIV_LOCAL_IP="192.168.2.102"
 export FLEXIV_ROBOT_SN="${FLEXIV_ROBOT_SN:-Rizon4-062339}"
 export FLEXIV_GRIPPER_NAME="${FLEXIV_GRIPPER_NAME:-Flexiv-GN01}"
-export FLEXIV_INIT_POSE="${FLEXIV_INIT_POSE:-[0.2082,-0.1915,0.1613,1.7303,-0.0706,0.4346,0.4882]}"
-# export FLEXIV_INIT_POSE="${FLEXIV_INIT_POSE:-[0.0152,-0.2409,-0.0362,1.7667,-0.0382,0.4920,0.0718]}"
+# export FLEXIV_INIT_POSE="${FLEXIV_INIT_POSE:-[0.2082,-0.1915,0.1613,1.7303,-0.0706,0.4346,0.4882]}"
+export FLEXIV_INIT_POSE="${FLEXIV_INIT_POSE:-[0.0152,-0.2409,-0.0362,1.7667,-0.0382,0.4920,0.0718]}"
 export FLEXIV_ACTION_FRAME="${FLEXIV_ACTION_FRAME:-flange}"
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 export JAX_PLATFORMS="${JAX_PLATFORMS:-cuda}"
