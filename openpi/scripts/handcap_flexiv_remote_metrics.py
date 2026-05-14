@@ -678,12 +678,12 @@ class Recorder:
         self.metric_config: TrajectoryCostConfig | None = None
 
         output_dir.mkdir(parents=True, exist_ok=True)
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        fourcc = cv2.VideoWriter_fourcc(*"MJPG")
         self.wrist_shape = wrist_shape
         self.realsense_shape = realsense_shape
         self.left_shape = left_shape
         self.right_shape = right_shape
-        wrist_video_name = "view1_realsense_wrist.mp4" if realsense_shape is not None else "view1_wrist.mp4"
+        wrist_video_name = "view1_realsense_wrist.avi" if realsense_shape is not None else "view1_wrist.avi"
         wrist_video_shape = (wrist_shape[0] * 2, wrist_shape[1]) if realsense_shape is not None else wrist_shape
         self.wrist_video = cv2.VideoWriter(str(output_dir / wrist_video_name), fourcc, ctrl_freq, wrist_video_shape)
         if not self.wrist_video.isOpened():
@@ -693,14 +693,14 @@ class Recorder:
         self.tactile_right_video = None
         if left_shape is not None:
             self.tactile_left_video = cv2.VideoWriter(
-                str(output_dir / "view2_tactile_left.mp4"), fourcc, ctrl_freq, left_shape
+                str(output_dir / "view2_tactile_left.avi"), fourcc, ctrl_freq, left_shape
             )
             if not self.tactile_left_video.isOpened():
                 LOGGER.warning("Failed to open left tactile video writer.")
                 self.tactile_left_video = None
         if right_shape is not None:
             self.tactile_right_video = cv2.VideoWriter(
-                str(output_dir / "view3_tactile_right.mp4"), fourcc, ctrl_freq, right_shape
+                str(output_dir / "view3_tactile_right.avi"), fourcc, ctrl_freq, right_shape
             )
             if not self.tactile_right_video.isOpened():
                 LOGGER.warning("Failed to open right tactile video writer.")
@@ -817,7 +817,9 @@ class Recorder:
             return
         self._closed = True
         self._writer_running = False
-        self._writer_thread.join(timeout=2.0)
+        self._writer_thread.join(timeout=10.0)
+        if self._writer_thread.is_alive():
+            LOGGER.warning("Video writer thread did not finish before timeout; releasing writers anyway.")
 
         if self.wrist_video is not None:
             self.wrist_video.release()
