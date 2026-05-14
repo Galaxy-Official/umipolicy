@@ -26,7 +26,7 @@ export RECORDING_INDEX="${RECORDING_INDEX:-}"
 
 # screw
 # # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
-POLICY_CONFIG="${POLICY_CONFIG:-pi05_513_screw_350}"
+POLICY_CONFIG="${POLICY_CONFIG:-pi05_513_screw}"
 
 # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
 POLICY_DIR="${POLICY_DIR:-ckpt/lihong/513_screw_vision_90000}"
@@ -76,7 +76,15 @@ PROMPT="${PROMPT:-pick up the red socket wrench to loose the screw on the board.
 # PROMPT="${PROMPT:-Pick up the bread in the basket and put it in the blue bowl.}"
 # ==============================================================================
 
-# 每次启动前清理占用 8000 端口的僵尸进程
+# 每次启动前清理旧的 server/client。只清理端口不够：
+# 上一次 serve_policy.py 如果还在加载模型但尚未监听 8000，就不会被 lsof 找到。
+echo "Cleaning up stale OpenPI inference processes..."
+pkill -TERM -f "scripts/handcap_flexiv_remote_metrics.py" 2>/dev/null || true
+pkill -TERM -f "scripts/serve_policy.py --port=8000" 2>/dev/null || true
+sleep 1
+pkill -KILL -f "scripts/handcap_flexiv_remote_metrics.py" 2>/dev/null || true
+pkill -KILL -f "scripts/serve_policy.py --port=8000" 2>/dev/null || true
+
 echo "Cleaning up port 8000..."
 lsof -ti:8000 | xargs -r kill -9 || true
 
@@ -150,6 +158,7 @@ export FLEXIV_INIT_POSE="${FLEXIV_INIT_POSE:-[0.2082,-0.1915,0.1613,1.7303,-0.07
 # export FLEXIV_INIT_POSE="${FLEXIV_INIT_POSE:-[0.0152,-0.2409,-0.0362,1.7667,-0.0382,0.4920,0.0718]}"
 export FLEXIV_ACTION_FRAME="${FLEXIV_ACTION_FRAME:-flange}"
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
+export JAX_PLATFORMS="${JAX_PLATFORMS:-cuda}"
 export XLA_PYTHON_CLIENT_PREALLOCATE="${XLA_PYTHON_CLIENT_PREALLOCATE:-false}"
 export XLA_PYTHON_CLIENT_ALLOCATOR="${XLA_PYTHON_CLIENT_ALLOCATOR:-platform}"
 export TF_FORCE_GPU_ALLOW_GROWTH="${TF_FORCE_GPU_ALLOW_GROWTH:-true}"
