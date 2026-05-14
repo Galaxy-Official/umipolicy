@@ -700,6 +700,7 @@ class Recorder:
         self.right_shape = right_shape
         self._video_paths: dict[str, Path] = {}
         self._video_frame_counts: dict[str, int] = {"wrist": 0, "left_tactile": 0, "right_tactile": 0}
+        self.video_fps = float(video_fps)
         self._wrist_preview_path = output_dir / "view1_realsense_wrist_preview.jpg"
         self._wrist_preview_written = False
         wrist_video_name = "view1_realsense_wrist.avi" if realsense_shape is not None else "view1_wrist.avi"
@@ -813,6 +814,29 @@ class Recorder:
                 self.tactile_right_video.write(right_frame)
                 self._video_frame_counts["right_tactile"] += 1
 
+    def _run_ffmpeg_transcode(self, source_path: Path, mp4_path: Path, codec_args: list[str]) -> subprocess.CompletedProcess:
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-fflags",
+            "+genpts",
+            "-r",
+            f"{self.video_fps:g}",
+            "-i",
+            str(source_path),
+            "-an",
+            *codec_args,
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            str(mp4_path),
+        ]
+        return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+
     def _transcode_playable_mp4(self, source_path: Path) -> None:
         if not source_path.exists() or source_path.stat().st_size == 0:
             return
@@ -821,32 +845,25 @@ class Recorder:
             return
 
         mp4_path = source_path.with_suffix(".mp4")
-        cmd = [
-            "ffmpeg",
-            "-y",
-            "-hide_banner",
-            "-loglevel",
-            "warning",
-            "-i",
-            str(source_path),
-            "-an",
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            "-crf",
-            "18",
-            "-preset",
-            "veryfast",
-            "-movflags",
-            "+faststart",
-            str(mp4_path),
-        ]
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+        result = self._run_ffmpeg_transcode(
+            source_path,
+            mp4_path,
+            ["-c:v", "libx264", "-crf", "18", "-preset", "veryfast"],
+        )
+        if result.returncode != 0:
+            LOGGER.warning("libx264 MP4 transcode failed for %s; retrying with MPEG-4. Error: %s", source_path, result.stderr.strip())
+            result = self._run_ffmpeg_transcode(
+                source_path,
+                mp4_path,
+                ["-c:v", "mpeg4", "-q:v", "3"],
+            )
         if result.returncode != 0:
             LOGGER.warning("Failed to transcode %s to MP4: %s", source_path, result.stderr.strip())
             return
-        LOGGER.info("Playable MP4 saved: %.1fKB path=%s", mp4_path.stat().st_size / 1024.0, mp4_path)
+        if not mp4_path.exists() or mp4_path.stat().st_size == 0:
+            LOGGER.warning("MP4 transcode produced no file for %s", source_path)
+            return
+        LOGGER.info("Playable MP4 saved on server: %.1fKB path=%s", mp4_path.stat().st_size / 1024.0, mp4_path)
 
     def append_state(
         self,
