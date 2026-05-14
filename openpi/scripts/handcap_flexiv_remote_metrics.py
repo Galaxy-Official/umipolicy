@@ -5,8 +5,10 @@ import logging
 import os
 from pathlib import Path
 import queue
+import shutil
 import signal as signal_module
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -811,6 +813,41 @@ class Recorder:
                 self.tactile_right_video.write(right_frame)
                 self._video_frame_counts["right_tactile"] += 1
 
+    def _transcode_playable_mp4(self, source_path: Path) -> None:
+        if not source_path.exists() or source_path.stat().st_size == 0:
+            return
+        if shutil.which("ffmpeg") is None:
+            LOGGER.warning("ffmpeg is not available; skipping MP4 transcode for %s", source_path)
+            return
+
+        mp4_path = source_path.with_suffix(".mp4")
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-i",
+            str(source_path),
+            "-an",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-crf",
+            "18",
+            "-preset",
+            "veryfast",
+            "-movflags",
+            "+faststart",
+            str(mp4_path),
+        ]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+        if result.returncode != 0:
+            LOGGER.warning("Failed to transcode %s to MP4: %s", source_path, result.stderr.strip())
+            return
+        LOGGER.info("Playable MP4 saved: %.1fKB path=%s", mp4_path.stat().st_size / 1024.0, mp4_path)
+
     def append_state(
         self,
         *,
@@ -873,6 +910,7 @@ class Recorder:
                     path.stat().st_size / 1024.0,
                     path,
                 )
+                self._transcode_playable_mp4(path)
             else:
                 LOGGER.warning("Recording file was not created: %s path=%s", key, path)
         if self._wrist_preview_path.exists():
