@@ -160,6 +160,7 @@ export FLEXIV_ARM_MAX_ANGULAR_ACC="${FLEXIV_ARM_MAX_ANGULAR_ACC:-0.3}"
 export FLEXIV_GRIPPER_MOVE_VELOCITY="${FLEXIV_GRIPPER_MOVE_VELOCITY:-0.03}"
 export FLEXIV_GRIPPER_MOVE_FORCE="${FLEXIV_GRIPPER_MOVE_FORCE:-20}"
 export FLEXIV_ENABLE_SAFETY_CLIP="${FLEXIV_ENABLE_SAFETY_CLIP:-1}"
+RECORD_HZ="${RECORD_HZ:-20}"
 
 echo "Flexiv Cartesian EEF control:"
 echo "  action frame: ${FLEXIV_ACTION_FRAME}"
@@ -168,6 +169,7 @@ echo "  angular vel/acc: ${FLEXIV_ARM_MAX_ANGULAR_VEL} / ${FLEXIV_ARM_MAX_ANGULA
 echo "  gripper vel/force: ${FLEXIV_GRIPPER_MOVE_VELOCITY} / ${FLEXIV_GRIPPER_MOVE_FORCE}"
 echo "  safety clip: ${FLEXIV_ENABLE_SAFETY_CLIP}"
 echo "  camera config: ${CAMERA_CONFIG_PATH}"
+echo "  record hz: ${RECORD_HZ}"
 
 CTRL_FREQ="5"
 STEPS_PER_INFERENCE="20"
@@ -185,6 +187,7 @@ bash start_handcap_remote_inference_metrics.sh \
   --prompt "${PROMPT}" \
   --task-name "${TASK_NAME}" \
   --ctrl-freq "${CTRL_FREQ}" \
+  --record-hz "${RECORD_HZ}" \
   --steps-per-inference "${STEPS_PER_INFERENCE}" \
   --obs-horizon "${OBS_HORIZON}" \
   --camera-config-path "${CAMERA_CONFIG_PATH}" \

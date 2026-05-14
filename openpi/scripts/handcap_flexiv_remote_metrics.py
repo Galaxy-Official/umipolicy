@@ -238,6 +238,8 @@ def _concat_realsense_wrist_frame(
     realsense_img: np.ndarray | None,
     wrist_img: np.ndarray | None,
     frame_shape: tuple[int, int],
+    *,
+    highlight_wrist: bool = False,
 ) -> np.ndarray | None:
     realsense_frame = _prepare_video_frame(realsense_img, frame_shape)
     wrist_frame = _prepare_video_frame(wrist_img, frame_shape)
@@ -249,7 +251,17 @@ def _concat_realsense_wrist_frame(
     if wrist_frame is None:
         wrist_frame = np.zeros_like(realsense_frame)
 
-    return np.ascontiguousarray(np.concatenate([realsense_frame, wrist_frame], axis=1))
+    combined = np.ascontiguousarray(np.concatenate([realsense_frame, wrist_frame], axis=1))
+    if highlight_wrist:
+        x0 = frame_shape[0]
+        cv2.rectangle(combined, (x0, 0), (combined.shape[1] - 1, combined.shape[0] - 1), (0, 0, 255), 8)
+    return combined
+
+
+def _highlight_video_frame(frame: np.ndarray) -> np.ndarray:
+    highlighted = np.ascontiguousarray(frame.copy())
+    cv2.rectangle(highlighted, (0, 0), (highlighted.shape[1] - 1, highlighted.shape[0] - 1), (0, 0, 255), 8)
+    return highlighted
 
 
 def _make_policy_observation(latest_frame: dict[str, Any], prompt: str, use_tactile: bool) -> dict[str, Any]:
@@ -609,6 +621,7 @@ class Args:
     infer_force_control: bool = False
     dry_run: bool = False
     save_states_json: bool = True
+    record_hz: float = 20.0
     metric_monitor_hz: float = 50.0
     metric_t_ref: float = 10.0
     metric_d_min: float = 0.02
@@ -658,7 +671,7 @@ class Recorder:
     def __init__(
         self,
         output_dir: Path,
-        ctrl_freq: int,
+        video_fps: float,
         wrist_shape: tuple[int, int],
         realsense_shape: tuple[int, int] | None,
         left_shape: tuple[int, int] | None,
@@ -690,7 +703,7 @@ class Recorder:
         wrist_video_name = "view1_realsense_wrist.avi" if realsense_shape is not None else "view1_wrist.avi"
         wrist_video_shape = (wrist_shape[0] * 2, wrist_shape[1]) if realsense_shape is not None else wrist_shape
         self._video_paths["wrist"] = output_dir / wrist_video_name
-        self.wrist_video = cv2.VideoWriter(str(self._video_paths["wrist"]), fourcc, ctrl_freq, wrist_video_shape)
+        self.wrist_video = cv2.VideoWriter(str(self._video_paths["wrist"]), fourcc, video_fps, wrist_video_shape)
         if not self.wrist_video.isOpened():
             LOGGER.warning("Failed to open wrist video writer at %s; only state logs will be saved.", self._video_paths["wrist"])
             self.wrist_video = None
@@ -701,7 +714,7 @@ class Recorder:
         if left_shape is not None:
             self._video_paths["left_tactile"] = output_dir / "view2_tactile_left.avi"
             self.tactile_left_video = cv2.VideoWriter(
-                str(self._video_paths["left_tactile"]), fourcc, ctrl_freq, left_shape
+                str(self._video_paths["left_tactile"]), fourcc, video_fps, left_shape
             )
             if not self.tactile_left_video.isOpened():
                 LOGGER.warning("Failed to open left tactile video writer at %s.", self._video_paths["left_tactile"])
@@ -711,7 +724,7 @@ class Recorder:
         if right_shape is not None:
             self._video_paths["right_tactile"] = output_dir / "view3_tactile_right.avi"
             self.tactile_right_video = cv2.VideoWriter(
-                str(self._video_paths["right_tactile"]), fourcc, ctrl_freq, right_shape
+                str(self._video_paths["right_tactile"]), fourcc, video_fps, right_shape
             )
             if not self.tactile_right_video.isOpened():
                 LOGGER.warning("Failed to open right tactile video writer at %s.", self._video_paths["right_tactile"])
@@ -729,7 +742,7 @@ class Recorder:
         self.metric_monitor = metric_monitor
         self.metric_config = metric_config
 
-    def record_frame(self, latest_frame: dict[str, Any]) -> None:
+    def record_frame(self, latest_frame: dict[str, Any], *, model_input: bool = False) -> None:
         if self._closed:
             return
 
@@ -740,6 +753,7 @@ class Recorder:
             else None,
             "left_tactile_img": latest_frame.get("left_tactile_img"),
             "right_tactile_img": latest_frame.get("right_tactile_img"),
+            "model_input": model_input,
         }
         try:
             self._frame_queue.put_nowait(packet)
@@ -774,9 +788,12 @@ class Recorder:
                     latest_frame.get("realsense_img"),
                     latest_frame["wrist_img"],
                     self.wrist_shape,
+                    highlight_wrist=bool(latest_frame.get("model_input")),
                 )
             else:
                 wrist_frame = _prepare_video_frame(latest_frame["wrist_img"], self.wrist_shape)
+                if wrist_frame is not None and latest_frame.get("model_input"):
+                    wrist_frame = _highlight_video_frame(wrist_frame)
             if wrist_frame is not None:
                 self.wrist_video.write(wrist_frame)
                 self._video_frame_counts["wrist"] += 1
@@ -971,6 +988,7 @@ class ObservationThread(threading.Thread):
         self.running = True
         self.lock = threading.Lock()
         self.queue: list[dict[str, Any]] = []
+        self._obs_id = 0
         self.error: Exception | None = None
 
     def run(self) -> None:
@@ -992,8 +1010,11 @@ class ObservationThread(threading.Thread):
                     wrist_img = resize_with_black_padding(wrist_img, target_h=480, target_w=640)
 
                 with self.lock:
+                    obs_id = self._obs_id
+                    self._obs_id += 1
                     self.queue.append(
                         {
+                            "obs_id": obs_id,
                             "wrist_img": wrist_img.copy() if wrist_img is not None else None,
                             "left_tactile_img": left_tactile_img.copy() if left_tactile_img is not None else None,
                             "right_tactile_img": right_tactile_img.copy() if right_tactile_img is not None else None,
@@ -1015,6 +1036,45 @@ class ObservationThread(threading.Thread):
             if len(self.queue) < n:
                 return None
             return list(self.queue[-n:])
+
+    def stop(self) -> None:
+        self.running = False
+
+    def get_latest(self) -> dict[str, Any] | None:
+        if self.error is not None:
+            raise RuntimeError("Observation thread failed") from self.error
+        with self.lock:
+            if not self.queue:
+                return None
+            return dict(self.queue[-1])
+
+
+class ObservationRecordingThread(threading.Thread):
+    def __init__(self, obs_thread: ObservationThread, recorder: Recorder, record_hz: float):
+        super().__init__(daemon=True, name="handcap-observation-recorder")
+        self.obs_thread = obs_thread
+        self.recorder = recorder
+        self.record_hz = float(record_hz)
+        self.running = True
+        self._last_obs_id: int | None = None
+
+    def run(self) -> None:
+        period = 1.0 / max(self.record_hz, 1e-6)
+        while self.running:
+            start = time.time()
+            try:
+                latest_frame = self.obs_thread.get_latest()
+                if latest_frame is not None:
+                    obs_id = latest_frame.get("obs_id")
+                    if obs_id != self._last_obs_id:
+                        self.recorder.record_frame(latest_frame)
+                        self._last_obs_id = obs_id
+            except Exception as exc:  # pragma: no cover - recording should not affect inference
+                LOGGER.warning("Observation recording thread skipped a frame: %s", exc)
+            elapsed = time.time() - start
+            sleep_time = period - elapsed
+            if sleep_time > 0:
+                time.sleep(sleep_time)
 
     def stop(self) -> None:
         self.running = False
@@ -1321,7 +1381,7 @@ def _init_cameras(camera_config_path: Path, use_tactile: bool) -> tuple[Any, Any
 
 def _init_recorder(
     output_dir: Path,
-    ctrl_freq: int,
+    record_hz: float,
     cam_wrist,
     realsense_source,
     cam_tactile_left,
@@ -1351,7 +1411,7 @@ def _init_recorder(
 
     return Recorder(
         output_dir=output_dir,
-        ctrl_freq=ctrl_freq,
+        video_fps=record_hz,
         wrist_shape=WRIST_RECORD_SHAPE,
         realsense_shape=realsense_shape,
         left_shape=left_shape,
@@ -1368,9 +1428,10 @@ def main(args: Args) -> None:
     prompt = args.prompt or args.task_name
     robot_dt = 1.0 / args.ctrl_freq
     LOGGER.info(
-        "Control config: ctrl_freq=%.3fHz, robot_dt=%.4fs, steps_per_inference=%d, action_latency=%.4fs, "
+        "Control config: ctrl_freq=%.3fHz, record_hz=%.3fHz, robot_dt=%.4fs, steps_per_inference=%d, action_latency=%.4fs, "
         "force_predict=%s, force_guide=%s, infer_force_control=%s",
         args.ctrl_freq,
+        args.record_hz,
         robot_dt,
         args.steps_per_inference,
         args.action_latency,
@@ -1405,7 +1466,7 @@ def main(args: Args) -> None:
     LOGGER.info("Initializing recorder in %s", output_dir)
     recorder = _init_recorder(
         output_dir,
-        args.ctrl_freq,
+        args.record_hz,
         cam_wrist,
         realsense_thread,
         cam_tactile_left,
@@ -1435,6 +1496,9 @@ def main(args: Args) -> None:
         maxlen=args.obs_horizon,
     )
     obs_thread.start()
+    observation_recorder = ObservationRecordingThread(obs_thread, recorder, args.record_hz)
+    observation_recorder.start()
+    LOGGER.info("Continuous observation recording started at %.3fHz.", args.record_hz)
 
     LOGGER.info("Waiting for observation queue to fill (obs_horizon=%d)", args.obs_horizon)
     while obs_thread.get_obs(args.obs_horizon) is None:
@@ -1455,7 +1519,7 @@ def main(args: Args) -> None:
                 continue
 
             latest_frame = frames[-1]
-            recorder.record_frame(latest_frame)
+            recorder.record_frame(latest_frame, model_input=True)
             observation = _make_policy_observation(latest_frame, prompt, args.use_tactile)
             action_result = policy.infer(observation)
             action_chunk = np.asarray(action_result["actions"], dtype=np.float64)
@@ -1544,6 +1608,8 @@ def main(args: Args) -> None:
             metric_monitor.join(timeout=2.0)
         if metric_monitor.error is not None:
             LOGGER.warning("Trajectory metric monitor stopped after sampling error: %s", metric_monitor.error)
+        observation_recorder.stop()
+        observation_recorder.join(timeout=2.0)
         obs_thread.stop()
         if realsense_thread is not None:
             realsense_thread.stop()

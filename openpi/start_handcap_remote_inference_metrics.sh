@@ -17,6 +17,7 @@ Usage:
     [--server-port 8000] \
     [--task-name handcap_flexiv_mvs_metrics] \
     [--ctrl-freq 20] \
+    [--record-hz 20] \
     [--steps-per-inference 4] \
     [--obs-horizon 2] \
     [--camera-config-path <path>] \
@@ -155,6 +156,7 @@ PROMPT="simple sorting task"
 SERVER_PORT="8000"
 TASK_NAME="handcap_flexiv_mvs_metrics"
 CTRL_FREQ="20"
+RECORD_HZ="20"
 STEPS_PER_INFERENCE="4"
 OBS_HORIZON="2"
 CAMERA_CONFIG_PATH=""
@@ -216,6 +218,11 @@ while [[ $# -gt 0 ]]; do
     --ctrl-freq)
       require_value "$1" "${2-}"
       CTRL_FREQ="$2"
+      shift 2
+      ;;
+    --record-hz)
+      require_value "$1" "${2-}"
+      RECORD_HZ="$2"
       shift 2
       ;;
     --steps-per-inference)
@@ -468,6 +475,7 @@ CLIENT_CMD=(
   --prompt "$PROMPT"
   --task-name "$TASK_NAME"
   --ctrl-freq "$CTRL_FREQ"
+  --record-hz "$RECORD_HZ"
   --steps-per-inference "$STEPS_PER_INFERENCE"
   --obs-horizon "$OBS_HORIZON"
   --action-latency "$ACTION_LATENCY"
@@ -546,7 +554,18 @@ cleanup() {
   fi
 
   if [[ -n "${CLIENT_PID:-}" ]] && kill -0 "$CLIENT_PID" >/dev/null 2>&1; then
-    kill "$CLIENT_PID" >/dev/null 2>&1 || true
+    echo "Stopping client process $CLIENT_PID and waiting for recorder flush..."
+    kill -INT "$CLIENT_PID" >/dev/null 2>&1 || true
+    for _ in {1..30}; do
+      if ! is_process_running "$CLIENT_PID"; then
+        break
+      fi
+      sleep 0.5
+    done
+    if is_process_running "$CLIENT_PID"; then
+      echo "Client did not exit after flush wait; sending TERM."
+      kill -TERM "$CLIENT_PID" >/dev/null 2>&1 || true
+    fi
     wait "$CLIENT_PID" 2>/dev/null || true
   fi
 
