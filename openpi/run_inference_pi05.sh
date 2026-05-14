@@ -23,7 +23,7 @@ export RECORDING_INDEX="${RECORDING_INDEX:-0}"
 # PROMPT="${PROMPT:-pick up the red stick to stir the granules in a white box.}"
 
 # screw
-3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
+# 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
 POLICY_CONFIG="${POLICY_CONFIG:-pi05_513_screw_350}"
 
 # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
