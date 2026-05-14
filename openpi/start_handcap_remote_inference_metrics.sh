@@ -412,7 +412,7 @@ import json
 import sys
 import os
 
-default_path = os.path.abspath('../lerobot/src/perception/configs/camera/handcap_camera.json')
+default_path = os.path.abspath('src/perception/configs/camera/handcap_camera.json')
 if not os.path.exists(default_path):
     print(f'Warning: Could not find default camera config at {default_path}')
     sys.exit(0)

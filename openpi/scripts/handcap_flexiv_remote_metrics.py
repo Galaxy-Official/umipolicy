@@ -1,8 +1,10 @@
 import dataclasses
+import importlib.util
 import json
 import logging
 import os
 from pathlib import Path
+import queue
 import signal as signal_module
 import socket
 import sys
@@ -17,15 +19,28 @@ import scipy.spatial.transform as st
 from openpi_client import image_tools
 
 
-_EXTERNAL_LEROBOT_SRC = Path(__file__).resolve().parents[2] / "lerobot" / "src"
-if str(_EXTERNAL_LEROBOT_SRC) not in sys.path:
-    sys.path.insert(0, str(_EXTERNAL_LEROBOT_SRC))
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_LOCAL_LEROBOT_SRC = _REPO_ROOT / "src" / "openpi"
+if str(_LOCAL_LEROBOT_SRC) not in sys.path:
+    sys.path.insert(0, str(_LOCAL_LEROBOT_SRC))
 
-from lerobot.datasets.pose_utils import mat_to_certain_pose_type
-from lerobot.datasets.pose_utils import mat_to_pose
-from lerobot.datasets.pose_utils import pose_to_mat
-from lerobot.datasets.pose_utils import pose_to_pos_rot
-from lerobot.datasets.pose_utils import pos_rot_to_mat
+
+def _load_local_pose_utils() -> Any:
+    pose_utils_path = _LOCAL_LEROBOT_SRC / "lerobot" / "datasets" / "pose_utils.py"
+    spec = importlib.util.spec_from_file_location("_openpi_local_pose_utils", pose_utils_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load pose_utils from {pose_utils_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_POSE_UTILS = _load_local_pose_utils()
+mat_to_certain_pose_type = _POSE_UTILS.mat_to_certain_pose_type
+mat_to_pose = _POSE_UTILS.mat_to_pose
+pose_to_mat = _POSE_UTILS.pose_to_mat
+pose_to_pos_rot = _POSE_UTILS.pose_to_pos_rot
+pos_rot_to_mat = _POSE_UTILS.pos_rot_to_mat
 
 
 LOGGER = logging.getLogger(__name__)
@@ -34,30 +49,15 @@ WRIST_RECORD_SHAPE = (640, 480)
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[1]
-
-
-def _workspace_root() -> Path:
-    return Path(__file__).resolve().parents[2]
+    return _REPO_ROOT
 
 
 def _default_camera_config_path() -> Path:
-    return _workspace_root() / "lerobot" / "src" / "perception" / "configs" / "camera" / "handcap_camera.json"
-
-
-def _bootstrap_lerobot_src() -> Path:
-    if str(_EXTERNAL_LEROBOT_SRC) not in sys.path:
-        sys.path.insert(0, str(_EXTERNAL_LEROBOT_SRC))
-    return _EXTERNAL_LEROBOT_SRC
+    return _repo_root() / "src" / "perception" / "configs" / "camera" / "handcap_camera.json"
 
 
 def _load_base_camera() -> Any:
-    try:
-        from perception.cameras.base_camera import BaseCamera
-    except ImportError:
-        _bootstrap_lerobot_src()
-        from perception.cameras.base_camera import BaseCamera
-
+    from perception.cameras.base_camera import BaseCamera
     return BaseCamera
 
 
@@ -232,6 +232,24 @@ def _prepare_video_frame(image: np.ndarray | None, frame_shape: tuple[int, int])
         frame = cv2.resize(frame, frame_shape, interpolation=cv2.INTER_AREA)
 
     return np.ascontiguousarray(frame)
+
+
+def _concat_realsense_wrist_frame(
+    realsense_img: np.ndarray | None,
+    wrist_img: np.ndarray | None,
+    frame_shape: tuple[int, int],
+) -> np.ndarray | None:
+    realsense_frame = _prepare_video_frame(realsense_img, frame_shape)
+    wrist_frame = _prepare_video_frame(wrist_img, frame_shape)
+
+    if realsense_frame is None and wrist_frame is None:
+        return None
+    if realsense_frame is None:
+        realsense_frame = np.zeros_like(wrist_frame)
+    if wrist_frame is None:
+        wrist_frame = np.zeros_like(realsense_frame)
+
+    return np.ascontiguousarray(np.concatenate([realsense_frame, wrist_frame], axis=1))
 
 
 def _make_policy_observation(latest_frame: dict[str, Any], prompt: str, use_tactile: bool) -> dict[str, Any]:
@@ -642,24 +660,32 @@ class Recorder:
         output_dir: Path,
         ctrl_freq: int,
         wrist_shape: tuple[int, int],
+        realsense_shape: tuple[int, int] | None,
         left_shape: tuple[int, int] | None,
         right_shape: tuple[int, int] | None,
         *,
+        realsense_source: Any | None,
         save_states_json: bool,
     ) -> None:
         self.output_dir = output_dir
+        self.realsense_source = realsense_source
         self.save_states_json = save_states_json
         self.states_data: list[dict[str, Any]] = []
         self._closed = False
+        self._writer_running = True
+        self._frame_queue: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=2)
         self.metric_monitor: TrajectoryMetricMonitor | None = None
         self.metric_config: TrajectoryCostConfig | None = None
 
         output_dir.mkdir(parents=True, exist_ok=True)
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         self.wrist_shape = wrist_shape
+        self.realsense_shape = realsense_shape
         self.left_shape = left_shape
         self.right_shape = right_shape
-        self.wrist_video = cv2.VideoWriter(str(output_dir / "view1_wrist.mp4"), fourcc, ctrl_freq, wrist_shape)
+        wrist_video_name = "view1_realsense_wrist.mp4" if realsense_shape is not None else "view1_wrist.mp4"
+        wrist_video_shape = (wrist_shape[0] * 2, wrist_shape[1]) if realsense_shape is not None else wrist_shape
+        self.wrist_video = cv2.VideoWriter(str(output_dir / wrist_video_name), fourcc, ctrl_freq, wrist_video_shape)
         if not self.wrist_video.isOpened():
             LOGGER.warning("Failed to open wrist video writer; only state logs will be saved.")
             self.wrist_video = None
@@ -679,6 +705,8 @@ class Recorder:
             if not self.tactile_right_video.isOpened():
                 LOGGER.warning("Failed to open right tactile video writer.")
                 self.tactile_right_video = None
+        self._writer_thread = threading.Thread(target=self._writer_loop, daemon=True, name="handcap-video-writer")
+        self._writer_thread.start()
 
     def attach_metric_monitor(
         self,
@@ -689,8 +717,53 @@ class Recorder:
         self.metric_config = metric_config
 
     def record_frame(self, latest_frame: dict[str, Any]) -> None:
+        if self._closed:
+            return
+
+        packet = {
+            "wrist_img": latest_frame.get("wrist_img"),
+            "realsense_img": self.realsense_source.get_frame(copy_frame=False)
+            if self.realsense_source is not None
+            else None,
+            "left_tactile_img": latest_frame.get("left_tactile_img"),
+            "right_tactile_img": latest_frame.get("right_tactile_img"),
+        }
+        try:
+            self._frame_queue.put_nowait(packet)
+        except queue.Full:
+            try:
+                self._frame_queue.get_nowait()
+                self._frame_queue.task_done()
+            except queue.Empty:
+                pass
+            try:
+                self._frame_queue.put_nowait(packet)
+            except queue.Full:
+                pass
+
+    def _writer_loop(self) -> None:
+        while self._writer_running or not self._frame_queue.empty():
+            try:
+                latest_frame = self._frame_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            try:
+                self._write_frame(latest_frame)
+            except Exception as exc:  # pragma: no cover - recording should never stop control
+                LOGGER.warning("Failed to write recording frame: %s", exc)
+            finally:
+                self._frame_queue.task_done()
+
+    def _write_frame(self, latest_frame: dict[str, Any]) -> None:
         if self.wrist_video is not None:
-            wrist_frame = _prepare_video_frame(latest_frame["wrist_img"], self.wrist_shape)
+            if self.realsense_shape is not None:
+                wrist_frame = _concat_realsense_wrist_frame(
+                    latest_frame.get("realsense_img"),
+                    latest_frame["wrist_img"],
+                    self.wrist_shape,
+                )
+            else:
+                wrist_frame = _prepare_video_frame(latest_frame["wrist_img"], self.wrist_shape)
             if wrist_frame is not None:
                 self.wrist_video.write(wrist_frame)
         if self.tactile_left_video is not None and latest_frame["left_tactile_img"] is not None:
@@ -743,6 +816,8 @@ class Recorder:
         if self._closed:
             return
         self._closed = True
+        self._writer_running = False
+        self._writer_thread.join(timeout=2.0)
 
         if self.wrist_video is not None:
             self.wrist_video.release()
@@ -813,6 +888,41 @@ def _signal_handler(sig, frame) -> None:
     if _ACTIVE_RECORDER is not None:
         _ACTIVE_RECORDER.flush()
     raise SystemExit(0)
+
+
+class LatestCameraThread(threading.Thread):
+    def __init__(self, camera, name: str):
+        super().__init__(daemon=True, name=f"handcap-{name}-capture")
+        self.camera = camera
+        self.name_for_log = name
+        self.running = True
+        self.lock = threading.Lock()
+        self.frame: np.ndarray | None = None
+        self.timestamp: float | None = None
+        self.error: Exception | None = None
+
+    def run(self) -> None:
+        try:
+            while self.running:
+                ok, frame, timestamp = self.camera.read()
+                if not ok or frame is None:
+                    continue
+                with self.lock:
+                    self.frame = frame.copy()
+                    self.timestamp = float(timestamp) if timestamp is not None else time.time()
+        except Exception as exc:  # pragma: no cover - optional recording camera failure
+            self.error = exc
+            self.running = False
+            LOGGER.warning("Optional %s recording camera stopped: %s", self.name_for_log, exc)
+
+    def get_frame(self, *, copy_frame: bool = True) -> np.ndarray | None:
+        with self.lock:
+            if self.frame is None:
+                return None
+            return self.frame.copy() if copy_frame else self.frame
+
+    def stop(self) -> None:
+        self.running = False
 
 
 class ObservationThread(threading.Thread):
@@ -1110,50 +1220,75 @@ def _make_output_dir(args: Args) -> Path:
     return _repo_root() / args.record_root / args.task_name / timestamp
 
 
-def _init_cameras(camera_config_path: Path, use_tactile: bool) -> tuple[Any, Any | None, Any | None]:
+def _create_camera_from_info(BaseCamera, camera_info: dict[str, Any]):
+    camera_type = camera_info["type"]
+    if camera_type == "mvs_cam":
+        from perception.cameras.mvs_cam import MVSCamera
+
+        return MVSCamera(
+            {
+                "serial": camera_info.get("serial"),
+                "exposure": camera_info.get("exposure"),
+            }
+        )
+    if camera_type == "realsense":
+        return BaseCamera.create_camera(camera_type, camera_info.get("sn"))
+    return BaseCamera.create_camera(
+        camera_type,
+        camera_info.get("camera_index"),
+        camera_info.get("camera_v4l_path"),
+        camera_info.get("fps"),
+        camera_info.get("resolution"),
+    )
+
+
+def _optional_record_camera_from_config(BaseCamera, config: dict[str, Any]) -> Any | None:
+    for name in ("realsense", "record_realsense", "side", "head"):
+        if name not in config or name == "wrist":
+            continue
+        try:
+            return _create_camera_from_info(BaseCamera, config[name])
+        except Exception as exc:  # pragma: no cover - optional hardware path
+            LOGGER.warning("Disabling optional recording camera %s after init failure: %s", name, exc)
+            return None
+    return None
+
+
+def _init_cameras(camera_config_path: Path, use_tactile: bool) -> tuple[Any, Any | None, Any | None, Any | None]:
     BaseCamera = _load_base_camera()
     config_path = camera_config_path
 
     if not use_tactile:
         no_tactile_config_path = camera_config_path.with_name("handcap_camera_no_tactile.json")
-        if no_tactile_config_path.exists():
+        if camera_config_path.name == "handcap_camera.json" and no_tactile_config_path.exists():
             config_path = no_tactile_config_path
             LOGGER.info("use_tactile=False: using wrist-only camera config %s", config_path)
-            cam_dict = BaseCamera.create_cameras_from_config(config_path=str(config_path))
         else:
             LOGGER.info("use_tactile=False: using wrist camera only from %s", config_path)
-            with open(config_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
-            wrist_config = config.get("wrist")
-            if wrist_config is None:
-                raise KeyError(f"Camera config must contain a 'wrist' camera: {config_path}")
-            if wrist_config.get("type") != "mvs_cam":
-                raise ValueError("use_tactile=False expects the wrist camera to be type 'mvs_cam'")
-            _bootstrap_lerobot_src()
-            from perception.cameras.mvs_cam import MVSCamera
-
-            cam_dict = {
-                "wrist": MVSCamera(
-                    {
-                        "serial": wrist_config.get("serial"),
-                        "exposure": wrist_config.get("exposure"),
-                    }
-                )
-            }
-        if "wrist" not in cam_dict:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        if "wrist" not in config:
             raise KeyError(f"Camera config must contain a 'wrist' camera: {config_path}")
-        return cam_dict["wrist"], None, None
+        cam_wrist = _create_camera_from_info(BaseCamera, config["wrist"])
+        cam_realsense = _optional_record_camera_from_config(BaseCamera, config)
+        return cam_wrist, cam_realsense, None, None
 
-    cam_dict = BaseCamera.create_cameras_from_config(config_path=str(config_path))
-    if "wrist" not in cam_dict:
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = json.load(f)
+    if "wrist" not in config:
         raise KeyError(f"Camera config must contain a 'wrist' camera: {config_path}")
-    return cam_dict["wrist"], cam_dict["left_tactile"], cam_dict["right_tactile"]
+    cam_wrist = _create_camera_from_info(BaseCamera, config["wrist"])
+    cam_realsense = _optional_record_camera_from_config(BaseCamera, config)
+    cam_tactile_left = _create_camera_from_info(BaseCamera, config["left_tactile"])
+    cam_tactile_right = _create_camera_from_info(BaseCamera, config["right_tactile"])
+    return cam_wrist, cam_realsense, cam_tactile_left, cam_tactile_right
 
 
 def _init_recorder(
     output_dir: Path,
     ctrl_freq: int,
     cam_wrist,
+    realsense_source,
     cam_tactile_left,
     cam_tactile_right,
     *,
@@ -1164,6 +1299,8 @@ def _init_recorder(
 
     if init_wrist_img is None:
         raise RuntimeError("Failed to fetch initial wrist frame for recorder setup")
+
+    realsense_shape = WRIST_RECORD_SHAPE if realsense_source is not None else None
 
     left_shape = None
     right_shape = None
@@ -1181,8 +1318,10 @@ def _init_recorder(
         output_dir=output_dir,
         ctrl_freq=ctrl_freq,
         wrist_shape=WRIST_RECORD_SHAPE,
+        realsense_shape=realsense_shape,
         left_shape=left_shape,
         right_shape=right_shape,
+        realsense_source=realsense_source,
         save_states_json=save_states_json,
     )
 
@@ -1225,13 +1364,15 @@ def main(args: Args) -> None:
     LOGGER.info("Server metadata: %s", policy.get_server_metadata())
 
     LOGGER.info("Initializing cameras from %s (use_tactile=%s)", camera_config_path, args.use_tactile)
-    cam_wrist, cam_tactile_left, cam_tactile_right = _init_cameras(camera_config_path, args.use_tactile)
+    cam_wrist, cam_realsense, cam_tactile_left, cam_tactile_right = _init_cameras(camera_config_path, args.use_tactile)
+    realsense_thread = LatestCameraThread(cam_realsense, "realsense") if cam_realsense is not None else None
 
     LOGGER.info("Initializing recorder in %s", output_dir)
     recorder = _init_recorder(
         output_dir,
         args.ctrl_freq,
         cam_wrist,
+        realsense_thread,
         cam_tactile_left,
         cam_tactile_right,
         use_tactile=args.use_tactile,
@@ -1248,7 +1389,16 @@ def main(args: Args) -> None:
     LOGGER.info("Moving to init pose: %s", args.init_qpos)
     env.reset()
 
-    obs_thread = ObservationThread(cam_wrist, cam_tactile_left, cam_tactile_right, env, maxlen=args.obs_horizon)
+    if realsense_thread is not None:
+        realsense_thread.start()
+
+    obs_thread = ObservationThread(
+        cam_wrist,
+        cam_tactile_left,
+        cam_tactile_right,
+        env,
+        maxlen=args.obs_horizon,
+    )
     obs_thread.start()
 
     LOGGER.info("Waiting for observation queue to fill (obs_horizon=%d)", args.obs_horizon)
@@ -1360,6 +1510,8 @@ def main(args: Args) -> None:
         if metric_monitor.error is not None:
             LOGGER.warning("Trajectory metric monitor stopped after sampling error: %s", metric_monitor.error)
         obs_thread.stop()
+        if realsense_thread is not None:
+            realsense_thread.stop()
         recorder.flush()
 
 

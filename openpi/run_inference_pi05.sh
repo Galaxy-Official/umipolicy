@@ -1,6 +1,5 @@
 #!/bin/bash
 # PI05 真机远程推理 + 轨迹质量指标便捷启动脚本。
-# 原 run_inference_pi05.sh 不变；本脚本额外记录并计算 J, J_e, J_m, J_c。
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -8,12 +7,15 @@ cd "$SCRIPT_DIR"
 # ==============================================================================
 # 用户自定义配置区
 # ==============================================================================
-# 1. 外置旁观录像相机（仅录像，不参与推理）。
-# 填入 /dev/video 编号（如 4）。若不录像则留空。
-export RECORDING_INDEX="${RECORDING_INDEX:-0}"
+# 1. 相机配置：wrist 相机用于推理，RealSense 用于和 wrist 左右拼接录像。
+CAMERA_CONFIG_PATH="${CAMERA_CONFIG_PATH:-src/perception/configs/camera/handcap_realsense_no_tactile.json}"
+
+# 2. 外置旁观录像相机（仅录像，不参与推理）。
+# 填入 /dev/video 编号（如 4）。若不录像则留空。RealSense wrist 录像由推理内部记录。
+export RECORDING_INDEX="${RECORDING_INDEX:-}"
 
 # stiring
-3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
+# 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
 POLICY_CONFIG="${POLICY_CONFIG:-pi05_514_stiring_350}"
 
 # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
@@ -27,6 +29,7 @@ PROMPT="${PROMPT:-pick up the red stick to stir the granules in a white box.}"
 # POLICY_CONFIG="${POLICY_CONFIG:-pi05_513_screw_350}"
 
 # # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
+# POLICY_DIR="${POLICY_DIR:-ckpt/lihong/513_screw_vision_90000}"
 # POLICY_DIR="${POLICY_DIR:-ckpt/lihong/513_screw_350_vision_30000}"
 
 # # 5. 任务 Prompt 提示词（输入给模型的语言指令）
@@ -164,6 +167,7 @@ echo "  linear vel/acc:  ${FLEXIV_ARM_MAX_LINEAR_VEL} / ${FLEXIV_ARM_MAX_LINEAR_
 echo "  angular vel/acc: ${FLEXIV_ARM_MAX_ANGULAR_VEL} / ${FLEXIV_ARM_MAX_ANGULAR_ACC}"
 echo "  gripper vel/force: ${FLEXIV_GRIPPER_MOVE_VELOCITY} / ${FLEXIV_GRIPPER_MOVE_FORCE}"
 echo "  safety clip: ${FLEXIV_ENABLE_SAFETY_CLIP}"
+echo "  camera config: ${CAMERA_CONFIG_PATH}"
 
 CTRL_FREQ="5"
 STEPS_PER_INFERENCE="20"
@@ -183,6 +187,7 @@ bash start_handcap_remote_inference_metrics.sh \
   --ctrl-freq "${CTRL_FREQ}" \
   --steps-per-inference "${STEPS_PER_INFERENCE}" \
   --obs-horizon "${OBS_HORIZON}" \
+  --camera-config-path "${CAMERA_CONFIG_PATH}" \
   --action-latency "${ACTION_LATENCY}" \
   --metric-monitor-hz "${METRIC_MONITOR_HZ}" \
   --metric-t-ref "${METRIC_T_REF}" \
