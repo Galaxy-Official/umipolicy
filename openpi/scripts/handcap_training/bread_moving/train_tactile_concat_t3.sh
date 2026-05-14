@@ -12,11 +12,10 @@ exec > >(tee -a "logs/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
 export WANDB_MODE="${WANDB_MODE:-offline}"
-export WANDB_DIR="${WANDB_DIR:-wandb}"
-mkdir -p "${WANDB_DIR}"
 
 CONFIG_NAME="${CONFIG_NAME:-pi05_bread_moving_tactile_concat_t3}"
 EXP_NAME="${EXP_NAME:-501_bread_moving_handcap_pi05_4gpu_tactile_concat_t3}"
+export WANDB_DIR="${WANDB_DIR:-checkpoints/${CONFIG_NAME}/${EXP_NAME}}"
 DATA_ROOT="${DATA_ROOT:-Data/501_bread_moving_lerobot}"
 T3_ROOT="${T3_ROOT:-ckpt/t3_tiny}"
 

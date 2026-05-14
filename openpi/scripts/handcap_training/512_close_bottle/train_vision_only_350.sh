@@ -14,6 +14,7 @@ export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
 CONFIG_NAME="${CONFIG_NAME:-pi05_512_close_bottle_350}"
 EXP_NAME="${EXP_NAME:-512_close_bottle_350_handcap_pi05_4gpu_vision_only}"
+export WANDB_DIR="${WANDB_DIR:-checkpoints/${CONFIG_NAME}/${EXP_NAME}}"
 DATA_ROOT="${DATA_ROOT:-Data/512_close_bottle_lerobot_350}"
 
 BATCH_SIZE="${BATCH_SIZE:-128}"
@@ -34,8 +35,6 @@ if [[ -z "${PYTHON_BIN}" ]]; then
 fi
 
 export WANDB_MODE="${WANDB_MODE:-offline}"
-export WANDB_DIR="${WANDB_DIR:-wandb}"
-mkdir -p "${WANDB_DIR}"
 
 export XLA_PYTHON_CLIENT_PREALLOCATE="${XLA_PYTHON_CLIENT_PREALLOCATE:-true}"
 export XLA_PYTHON_CLIENT_MEM_FRACTION="${XLA_PYTHON_CLIENT_MEM_FRACTION:-0.95}"

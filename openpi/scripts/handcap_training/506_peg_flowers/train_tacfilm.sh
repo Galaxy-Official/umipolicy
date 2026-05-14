@@ -12,11 +12,10 @@ exec > >(tee -a "logs/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
 export WANDB_MODE="${WANDB_MODE:-offline}"
-export WANDB_DIR="${WANDB_DIR:-wandb}"
-mkdir -p "${WANDB_DIR}"
 
 CONFIG_NAME="${CONFIG_NAME:-pi05_506_peg_flowers_tactile_tacfilm}"
 EXP_NAME="${EXP_NAME:-506_peg_flowers_handcap_pi05_4gpu_tacfilm}"
+export WANDB_DIR="${WANDB_DIR:-checkpoints/${CONFIG_NAME}/${EXP_NAME}}"
 DATA_ROOT="${DATA_ROOT:-Data/506_peg_flowers_lerobot}"
 
 # ==============================================================================
