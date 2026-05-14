@@ -683,28 +683,41 @@ class Recorder:
         self.realsense_shape = realsense_shape
         self.left_shape = left_shape
         self.right_shape = right_shape
+        self._video_paths: dict[str, Path] = {}
+        self._video_frame_counts: dict[str, int] = {"wrist": 0, "left_tactile": 0, "right_tactile": 0}
+        self._wrist_preview_path = output_dir / "view1_realsense_wrist_preview.jpg"
+        self._wrist_preview_written = False
         wrist_video_name = "view1_realsense_wrist.avi" if realsense_shape is not None else "view1_wrist.avi"
         wrist_video_shape = (wrist_shape[0] * 2, wrist_shape[1]) if realsense_shape is not None else wrist_shape
-        self.wrist_video = cv2.VideoWriter(str(output_dir / wrist_video_name), fourcc, ctrl_freq, wrist_video_shape)
+        self._video_paths["wrist"] = output_dir / wrist_video_name
+        self.wrist_video = cv2.VideoWriter(str(self._video_paths["wrist"]), fourcc, ctrl_freq, wrist_video_shape)
         if not self.wrist_video.isOpened():
-            LOGGER.warning("Failed to open wrist video writer; only state logs will be saved.")
+            LOGGER.warning("Failed to open wrist video writer at %s; only state logs will be saved.", self._video_paths["wrist"])
             self.wrist_video = None
+        else:
+            LOGGER.info("Recording wrist video to %s", self._video_paths["wrist"])
         self.tactile_left_video = None
         self.tactile_right_video = None
         if left_shape is not None:
+            self._video_paths["left_tactile"] = output_dir / "view2_tactile_left.avi"
             self.tactile_left_video = cv2.VideoWriter(
-                str(output_dir / "view2_tactile_left.avi"), fourcc, ctrl_freq, left_shape
+                str(self._video_paths["left_tactile"]), fourcc, ctrl_freq, left_shape
             )
             if not self.tactile_left_video.isOpened():
-                LOGGER.warning("Failed to open left tactile video writer.")
+                LOGGER.warning("Failed to open left tactile video writer at %s.", self._video_paths["left_tactile"])
                 self.tactile_left_video = None
+            else:
+                LOGGER.info("Recording left tactile video to %s", self._video_paths["left_tactile"])
         if right_shape is not None:
+            self._video_paths["right_tactile"] = output_dir / "view3_tactile_right.avi"
             self.tactile_right_video = cv2.VideoWriter(
-                str(output_dir / "view3_tactile_right.avi"), fourcc, ctrl_freq, right_shape
+                str(self._video_paths["right_tactile"]), fourcc, ctrl_freq, right_shape
             )
             if not self.tactile_right_video.isOpened():
-                LOGGER.warning("Failed to open right tactile video writer.")
+                LOGGER.warning("Failed to open right tactile video writer at %s.", self._video_paths["right_tactile"])
                 self.tactile_right_video = None
+            else:
+                LOGGER.info("Recording right tactile video to %s", self._video_paths["right_tactile"])
         self._writer_thread = threading.Thread(target=self._writer_loop, daemon=True, name="handcap-video-writer")
         self._writer_thread.start()
 
@@ -766,14 +779,20 @@ class Recorder:
                 wrist_frame = _prepare_video_frame(latest_frame["wrist_img"], self.wrist_shape)
             if wrist_frame is not None:
                 self.wrist_video.write(wrist_frame)
+                self._video_frame_counts["wrist"] += 1
+                if not self._wrist_preview_written:
+                    cv2.imwrite(str(self._wrist_preview_path), wrist_frame)
+                    self._wrist_preview_written = True
         if self.tactile_left_video is not None and latest_frame["left_tactile_img"] is not None:
             left_frame = _prepare_video_frame(latest_frame["left_tactile_img"], self.left_shape)
             if left_frame is not None:
                 self.tactile_left_video.write(left_frame)
+                self._video_frame_counts["left_tactile"] += 1
         if self.tactile_right_video is not None and latest_frame["right_tactile_img"] is not None:
             right_frame = _prepare_video_frame(latest_frame["right_tactile_img"], self.right_shape)
             if right_frame is not None:
                 self.tactile_right_video.write(right_frame)
+                self._video_frame_counts["right_tactile"] += 1
 
     def append_state(
         self,
@@ -827,6 +846,20 @@ class Recorder:
             self.tactile_left_video.release()
         if self.tactile_right_video is not None:
             self.tactile_right_video.release()
+
+        for key, path in self._video_paths.items():
+            if path.exists():
+                LOGGER.info(
+                    "Recording saved: %s frames=%d size=%.1fKB path=%s",
+                    key,
+                    self._video_frame_counts.get(key, 0),
+                    path.stat().st_size / 1024.0,
+                    path,
+                )
+            else:
+                LOGGER.warning("Recording file was not created: %s path=%s", key, path)
+        if self._wrist_preview_path.exists():
+            LOGGER.info("Recording preview saved: %s", self._wrist_preview_path)
 
         if self.states_data:
             if self.save_states_json:
@@ -1422,6 +1455,7 @@ def main(args: Args) -> None:
                 continue
 
             latest_frame = frames[-1]
+            recorder.record_frame(latest_frame)
             observation = _make_policy_observation(latest_frame, prompt, args.use_tactile)
             action_result = policy.infer(observation)
             action_chunk = np.asarray(action_result["actions"], dtype=np.float64)
@@ -1455,7 +1489,6 @@ def main(args: Args) -> None:
             env.exec_actions(physical_actions, action_timestamps, target_force=target_force)
 
             inference_latency = time.time() - loop_start
-            recorder.record_frame(latest_frame)
             step += 1
             recorder.append_state(
                 step=step,
