@@ -1113,20 +1113,35 @@ class ObservationThread(threading.Thread):
     def run(self) -> None:
         try:
             while self.running:
+                obs_start = time.monotonic()
+                wrist_start = time.monotonic()
                 _, wrist_img, cam_cap_time = self.cam_wrist.read()
+                wrist_read_ms = (time.monotonic() - wrist_start) * 1000.0
                 left_tactile_img, right_tactile_img = None, None
+                left_tactile_read_ms = 0.0
+                right_tactile_read_ms = 0.0
                 if self.cam_tactile_left is not None:
+                    tactile_start = time.monotonic()
                     left_tactile_img, _ = self.cam_tactile_left.get_data()
+                    left_tactile_read_ms = (time.monotonic() - tactile_start) * 1000.0
                 if self.cam_tactile_right is not None:
+                    tactile_start = time.monotonic()
                     right_tactile_img, _ = self.cam_tactile_right.get_data()
+                    right_tactile_read_ms = (time.monotonic() - tactile_start) * 1000.0
+
+                robot_state_start = time.monotonic()
                 eepose = self.env.get_ee_pose()
                 gripper_width = self.env.get_gripper_width()
                 force = self.env.get_force()
+                robot_state_ms = (time.monotonic() - robot_state_start) * 1000.0
 
+                preprocess_start = time.monotonic()
                 if wrist_img is not None:
                     if wrist_img.shape[0] != 768 or wrist_img.shape[1] != 768:
                         wrist_img = cv2.resize(wrist_img, (768, 768), interpolation=cv2.INTER_AREA)
                     wrist_img = resize_with_black_padding(wrist_img, target_h=480, target_w=640)
+                preprocess_ms = (time.monotonic() - preprocess_start) * 1000.0
+                obs_total_ms = (time.monotonic() - obs_start) * 1000.0
 
                 with self.lock:
                     obs_id = self._obs_id
@@ -1141,6 +1156,15 @@ class ObservationThread(threading.Thread):
                             "eepose": np.asarray(eepose, dtype=np.float64),
                             "gripper_width": float(gripper_width),
                             "force": np.asarray(force, dtype=np.float32),
+                            "timing": {
+                                "obs_total_ms": obs_total_ms,
+                                "camera_read_ms": wrist_read_ms + left_tactile_read_ms + right_tactile_read_ms,
+                                "wrist_read_ms": wrist_read_ms,
+                                "left_tactile_read_ms": left_tactile_read_ms,
+                                "right_tactile_read_ms": right_tactile_read_ms,
+                                "robot_state_ms": robot_state_ms,
+                                "preprocess_ms": preprocess_ms,
+                            },
                         }
                     )
                     self.queue = self.queue[-self.maxlen :]

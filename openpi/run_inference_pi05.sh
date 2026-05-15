@@ -90,6 +90,7 @@ lsof -ti:8000 | xargs -r kill -9 || true
 
 RECORD_PID=""
 RECORD_FILE=""
+RUN_START_TIMESTAMP=""
 CLEANED_UP=0
 cleanup_recording() {
   if [[ "$CLEANED_UP" == "1" ]]; then
@@ -106,7 +107,21 @@ cleanup_recording() {
   # 等待内部脚本清理和打印日志完毕
   sleep 1.5
 
-  # 无论是否使用外置录像，都询问是否保留当前推理的所有数据
+  local latest_dir=""
+  local latest_basename=""
+  local current_run_data_dir=""
+  latest_dir=$(ls -td "${SCRIPT_DIR}/realworld_replay_recording/${TASK_NAME}/"* 2>/dev/null | head -n 1)
+  latest_basename="$(basename "${latest_dir:-}")"
+  if [[ -n "$latest_dir" && -n "$RUN_START_TIMESTAMP" && ( "$latest_basename" > "$RUN_START_TIMESTAMP" || "$latest_basename" == "$RUN_START_TIMESTAMP" ) ]]; then
+    current_run_data_dir="$latest_dir"
+  fi
+
+  if [[ ! ( -n "$RECORD_FILE" && -f "$RECORD_FILE" ) && -z "$current_run_data_dir" ]]; then
+    echo "未发现本次新生成的真机数据，跳过保存确认。"
+    return
+  fi
+
+  # 询问是否保留当前推理产生的数据
   echo ""
   read -p "❓ 刚刚的推理数据 (录像和轨迹代价函数) 是否需要保留? 输入 y 保留，直接回车或其他键删除 [y/N]: " keep_data </dev/tty
   
@@ -130,11 +145,11 @@ cleanup_recording() {
         echo "已删除外部录像: $RECORD_FILE"
       fi
       
-      # 删除最新生成的 realworld_replay_recording 目录
-      LATEST_DIR=$(ls -td "${SCRIPT_DIR}/realworld_replay_recording/${TASK_NAME}/"* 2>/dev/null | head -n 1)
-      if [[ -n "$LATEST_DIR" ]]; then
-        rm -rf "$LATEST_DIR"
-        echo "已删除推理内部记录: $LATEST_DIR"
+      if [[ -n "$current_run_data_dir" ]]; then
+        rm -rf "$current_run_data_dir"
+        echo "已删除推理内部记录: $current_run_data_dir"
+      else
+        echo "未发现本次新生成的推理内部记录，跳过删除。"
       fi
       ;;
   esac
@@ -182,13 +197,14 @@ echo "  record hz: ${RECORD_HZ}"
 echo "Runtime controls: SPACE=start recording/inference, r=reset to FLEXIV_INIT_POSE, Ctrl+C=stop and choose whether to keep data"
 
 CTRL_FREQ="10"
-STEPS_PER_INFERENCE="20"
+STEPS_PER_INFERENCE="10"
 OBS_HORIZON="${OBS_HORIZON:-2}"
 ACTION_LATENCY="${ACTION_LATENCY:-0.0}"
 TASK_NAME="${TASK_NAME:-handcap_flexiv_mvs_metrics}"
 METRIC_MONITOR_HZ="${METRIC_MONITOR_HZ:-50}"
 METRIC_T_REF="${METRIC_T_REF:-10.0}"
 
+RUN_START_TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 bash start_handcap_remote_inference_metrics.sh \
   --policy-config "${POLICY_CONFIG}" \
   --policy-dir "${POLICY_DIR}" \
