@@ -1501,6 +1501,12 @@ class FlexivRealEnv:
 
     def _action_pose_to_target_tcp(self, target_pose: np.ndarray) -> list[float]:
         target_pose_mat = pose_to_mat(target_pose)
+        
+        import os
+        # 允许通过环境变量恢复到旧版本的直接发送（不进行 TCP offset 转换）
+        if os.environ.get("FLEXIV_USE_DIRECT_EEF", "1") == "1":
+            return _mat_to_tcp_pose7(target_pose_mat)
+
         if self._action_frame == "tcp":
             return _mat_to_tcp_pose7(target_pose_mat)
 
