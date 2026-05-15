@@ -8,6 +8,11 @@ cd "$SCRIPT_DIR"
 # 用户自定义配置区
 # ==============================================================================
 # 1. 相机配置：wrist 相机用于推理，RealSense 用于和 wrist 左右拼接录像。
+
+# export FLEXIV_INIT_POSE="${FLEXIV_INIT_POSE:-[0.2082,-0.1915,0.1613,1.7303,-0.0706,0.4346,0.4882]}"
+export FLEXIV_INIT_POSE="${FLEXIV_INIT_POSE:-[0.0152,-0.2409,-0.0362,1.7667,-0.0382,0.4920,0.0718]}"
+
+
 CAMERA_CONFIG_PATH="${CAMERA_CONFIG_PATH:-src/perception/configs/camera/handcap_realsense_no_tactile.json}"
 
 # 2. 外置旁观录像相机（仅录像，不参与推理）。
@@ -157,8 +162,7 @@ export FLEXIV_ROBOT_IP="192.168.2.100"
 export FLEXIV_LOCAL_IP="192.168.2.102"
 export FLEXIV_ROBOT_SN="${FLEXIV_ROBOT_SN:-Rizon4-062339}"
 export FLEXIV_GRIPPER_NAME="${FLEXIV_GRIPPER_NAME:-Flexiv-GN01}"
-# export FLEXIV_INIT_POSE="${FLEXIV_INIT_POSE:-[0.2082,-0.1915,0.1613,1.7303,-0.0706,0.4346,0.4882]}"
-export FLEXIV_INIT_POSE="${FLEXIV_INIT_POSE:-[0.0152,-0.2409,-0.0362,1.7667,-0.0382,0.4920,0.0718]}"
+
 export FLEXIV_ACTION_FRAME="${FLEXIV_ACTION_FRAME:-flange}"
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 export JAX_PLATFORMS="${JAX_PLATFORMS:-cuda}"
