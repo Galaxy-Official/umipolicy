@@ -808,6 +808,26 @@ def get_handcap_configs():
             repo_id="lihongcs/510_erase_board_350_lerobot",
             data_root="Data/510_erase_board_350_lerobot",
         ),
+        TrainConfig(
+            name="pi05_510_erase_board_350_action16",
+            model=pi0_config.Pi0Config(
+                pi05=True,
+                use_tactile=False,
+                tactile_pretrained_ckpt="",
+                camera_keys=("wrist_0_rgb",),
+                action_horizon=16,
+            ),
+            data=LeRobotHandcapWristDataConfig(
+                repo_id="lihongcs/510_erase_board_350_lerobot",
+                data_root="Data/510_erase_board_350_lerobot",
+                base_config=DataConfig(
+                    prompt_from_task=True,
+                    use_handcap=True,
+                ),
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
+            **common_pi05_train_kwargs,
+        ),
         *make_pi05_505_configs(
             task_name="505_stiring",
             repo_id="lihongcs/505_stiring_lerobot",
@@ -817,6 +837,26 @@ def get_handcap_configs():
             task_name="514_stiring_350",
             repo_id="lihongcs/514_stiring_lerobot_350",
             data_root="Data/514_stiring_lerobot_350",
+        ),
+        TrainConfig(
+            name="pi05_514_stiring_350_action16",
+            model=pi0_config.Pi0Config(
+                pi05=True,
+                use_tactile=False,
+                tactile_pretrained_ckpt="",
+                camera_keys=("wrist_0_rgb",),
+                action_horizon=16,
+            ),
+            data=LeRobotHandcapWristDataConfig(
+                repo_id="lihongcs/514_stiring_lerobot_350",
+                data_root="Data/514_stiring_lerobot_350",
+                base_config=DataConfig(
+                    prompt_from_task=True,
+                    use_handcap=True,
+                ),
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
+            **common_pi05_train_kwargs,
         ),
         *make_pi05_505_configs(
             task_name="512_stiring",
