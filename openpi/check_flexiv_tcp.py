@@ -27,9 +27,9 @@ def main():
     parser.add_argument("--local_ip", type=str, default="192.168.2.102", help="IP of the local PC")
     args = parser.parse_args()
 
-    print(f"Connecting to Flexiv robot {args.robot_sn} via {args.local_ip}...")
+    print(f"Connecting to Flexiv robot {args.robot_sn}...")
     try:
-        robot = flexivrdk.Robot(args.robot_sn, [args.local_ip])
+        robot = flexivrdk.Robot(args.robot_sn)
     except Exception as e:
         print(f"Failed to connect to the robot: {e}")
         sys.exit(1)
