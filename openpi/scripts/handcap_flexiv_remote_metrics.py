@@ -49,6 +49,8 @@ LOGGER = logging.getLogger(__name__)
 _ACTIVE_RECORDER = None
 _SHUTTING_DOWN = False
 WRIST_RECORD_SHAPE = (640, 480)
+LEGACY_WRIST_SOURCE_SHAPE = (768, 768)
+LEGACY_WRIST_POLICY_SHAPE = (640, 480)
 MODEL_INPUT_HIGHLIGHT_THICKNESS = 16
 
 
@@ -160,6 +162,16 @@ def resize_with_black_padding(image, target_h=480, target_w=640, is_depth=False)
         
     canvas[pad_h:pad_h+new_h, pad_w:pad_w+new_w] = resized
     return canvas
+
+
+def _prepare_wrist_for_legacy_checkpoint(image_bgr: np.ndarray) -> np.ndarray:
+    """Match older 513-style checkpoints: square wrist frame -> 640x480 letterbox."""
+    source_w, source_h = LEGACY_WRIST_SOURCE_SHAPE
+    if image_bgr.shape[1] != source_w or image_bgr.shape[0] != source_h:
+        image_bgr = cv2.resize(image_bgr, (source_w, source_h), interpolation=cv2.INTER_AREA)
+
+    target_w, target_h = LEGACY_WRIST_POLICY_SHAPE
+    return resize_with_black_padding(image_bgr, target_h=target_h, target_w=target_w)
 
 
 def decode_handcap_action_chunk(action_chunk: np.ndarray) -> np.ndarray:
@@ -1274,9 +1286,7 @@ class ObservationThread(threading.Thread):
 
                 preprocess_start = time.monotonic()
                 if wrist_img is not None:
-                    if wrist_img.shape[0] != 768 or wrist_img.shape[1] != 768:
-                        wrist_img = cv2.resize(wrist_img, (768, 768), interpolation=cv2.INTER_AREA)
-                    wrist_img = resize_with_black_padding(wrist_img, target_h=480, target_w=640)
+                    wrist_img = _prepare_wrist_for_legacy_checkpoint(wrist_img)
                 preprocess_ms = (time.monotonic() - preprocess_start) * 1000.0
                 obs_total_ms = (time.monotonic() - obs_start) * 1000.0
 
