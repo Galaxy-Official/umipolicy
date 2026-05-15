@@ -49,6 +49,7 @@ LOGGER = logging.getLogger(__name__)
 _ACTIVE_RECORDER = None
 _SHUTTING_DOWN = False
 WRIST_RECORD_SHAPE = (640, 480)
+MODEL_INPUT_HIGHLIGHT_THICKNESS = 16
 
 
 def _repo_root() -> Path:
@@ -268,13 +269,25 @@ def _concat_realsense_wrist_frame(
     combined = np.ascontiguousarray(np.concatenate([realsense_frame, wrist_frame], axis=1))
     if highlight_wrist:
         x0 = frame_shape[0]
-        cv2.rectangle(combined, (x0, 0), (combined.shape[1] - 1, combined.shape[0] - 1), (0, 0, 255), 8)
+        cv2.rectangle(
+            combined,
+            (x0, 0),
+            (combined.shape[1] - 1, combined.shape[0] - 1),
+            (0, 0, 255),
+            MODEL_INPUT_HIGHLIGHT_THICKNESS,
+        )
     return combined
 
 
 def _highlight_video_frame(frame: np.ndarray) -> np.ndarray:
     highlighted = np.ascontiguousarray(frame.copy())
-    cv2.rectangle(highlighted, (0, 0), (highlighted.shape[1] - 1, highlighted.shape[0] - 1), (0, 0, 255), 8)
+    cv2.rectangle(
+        highlighted,
+        (0, 0),
+        (highlighted.shape[1] - 1, highlighted.shape[0] - 1),
+        (0, 0, 255),
+        MODEL_INPUT_HIGHLIGHT_THICKNESS,
+    )
     return highlighted
 
 
