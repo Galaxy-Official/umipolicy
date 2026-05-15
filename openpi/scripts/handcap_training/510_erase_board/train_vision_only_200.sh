@@ -15,7 +15,7 @@ export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 CONFIG_NAME="${CONFIG_NAME:-pi05_510_erase_board_200}"
 EXP_NAME="${EXP_NAME:-510_erase_board_200_handcap_pi05_4gpu_vision_only}"
 export WANDB_DIR="${WANDB_DIR:-checkpoints/${CONFIG_NAME}/${EXP_NAME}}"
-DATA_ROOT="${DATA_ROOT:-Data/510_erase_board_200}"
+DATA_ROOT="${DATA_ROOT:-Data/510_erase_board_lerobot_200}"
 
 BATCH_SIZE="${BATCH_SIZE:-128}"
 NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-200000}"

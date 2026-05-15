@@ -810,8 +810,8 @@ def get_handcap_configs():
         ),
         *make_pi05_505_configs(
             task_name="510_erase_board_200",
-            repo_id="lihongcs/510_erase_board_200",
-            data_root="Data/510_erase_board_200",
+            repo_id="lihongcs/510_erase_board_lerobot_200",
+            data_root="Data/510_erase_board_lerobot_200",
         ),
         TrainConfig(
             name="pi05_510_erase_board_350_action16",
