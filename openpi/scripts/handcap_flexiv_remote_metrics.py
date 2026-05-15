@@ -1417,7 +1417,10 @@ class FlexivRealEnv:
             self._enable_safety_clip,
         )
         if not self._enable_eef_to_tcp_conversion:
-            LOGGER.info("EEF-to-TCP conversion is temporarily disabled; executing raw 6D action poses.")
+            LOGGER.info(
+                "EEF-to-TCP conversion is temporarily disabled; converting raw 6D action poses "
+                "to Flexiv 7D poses without TCP offset compensation."
+            )
         self._robot = flexivrdk.Robot(robot_sn, [actual_local_ip])
 
         LOGGER.info("Initializing Gripper API.")
@@ -1573,14 +1576,11 @@ class FlexivRealEnv:
             if self._enable_eef_to_tcp_conversion:
                 target_tcp = self._action_pose_to_target_tcp(target_pose)
             else:
-                target_tcp = target_pose
+                target_tcp = _mat_to_tcp_pose7(pose_to_mat(target_pose))
             if self._enable_safety_clip:
-                from lerobot.common.robot_devices.robots.flexiv_safety import clip_target_pose_10d, clip_target_pose_7d
+                from lerobot.common.robot_devices.robots.flexiv_safety import clip_target_pose_7d
 
-                if len(target_tcp) >= 7:
-                    target_tcp = clip_target_pose_7d(target_tcp)
-                else:
-                    target_tcp = clip_target_pose_10d(target_tcp)
+                target_tcp = clip_target_pose_7d(target_tcp)
             self._set_latest_target(target_tcp, float(new_timestamps[i]))
 
             if self._dry_run:
