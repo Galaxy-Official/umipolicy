@@ -1382,7 +1382,8 @@ class FlexivRealEnv:
         self._gripper_move_velocity = _required_env_float("FLEXIV_GRIPPER_MOVE_VELOCITY")
         self._gripper_move_force = _required_env_float("FLEXIV_GRIPPER_MOVE_FORCE")
         self._enable_safety_clip = _required_env_bool("FLEXIV_ENABLE_SAFETY_CLIP")
-        self._enable_eef_to_tcp_conversion = False
+        self._enable_eef_to_tcp_conversion = _required_env_bool("FLEXIV_ENABLE_EEF_TO_TCP_CONVERSION")
+        self._logged_flange_to_tcp = False
         self._action_frame = os.environ.get("FLEXIV_ACTION_FRAME", "tcp").lower()
         if self._action_frame not in {"tcp", "flange"}:
             LOGGER.warning("Invalid FLEXIV_ACTION_FRAME=%r; using 'tcp'.", self._action_frame)
@@ -1416,11 +1417,7 @@ class FlexivRealEnv:
             self._gripper_move_force,
             self._enable_safety_clip,
         )
-        if not self._enable_eef_to_tcp_conversion:
-            LOGGER.info(
-                "EEF-to-TCP conversion is temporarily disabled; converting raw 6D action poses "
-                "to Flexiv 7D poses without TCP offset compensation."
-            )
+        LOGGER.info("EEF-to-TCP conversion: %s", self._enable_eef_to_tcp_conversion)
         self._robot = flexivrdk.Robot(robot_sn, [actual_local_ip])
 
         LOGGER.info("Initializing Gripper API.")
@@ -1514,6 +1511,19 @@ class FlexivRealEnv:
         current_flange_mat = _pose7_to_mat(states.flange_pose)
         current_tcp_mat = _pose7_to_mat(states.tcp_pose)
         flange_to_tcp_mat = np.linalg.inv(current_flange_mat) @ current_tcp_mat
+        if not self._logged_flange_to_tcp:
+            trans = flange_to_tcp_mat[:3, 3]
+            rotvec = st.Rotation.from_matrix(flange_to_tcp_mat[:3, :3]).as_rotvec()
+            LOGGER.info(
+                "Current flange->TCP transform: translation=(%.4f, %.4f, %.4f)m rotvec=(%.4f, %.4f, %.4f)",
+                trans[0],
+                trans[1],
+                trans[2],
+                rotvec[0],
+                rotvec[1],
+                rotvec[2],
+            )
+            self._logged_flange_to_tcp = True
         target_tcp_mat = target_pose_mat @ flange_to_tcp_mat
         return _mat_to_tcp_pose7(target_tcp_mat)
 
