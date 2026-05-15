@@ -1524,7 +1524,8 @@ class FlexivRealEnv:
                 rotvec[2],
             )
             self._logged_flange_to_tcp = True
-        target_tcp_mat = target_pose_mat @ flange_to_tcp_mat
+        # target_tcp_mat = target_pose_mat @ flange_to_tcp_mat
+        target_tcp_mat = target_pose_mat
         return _mat_to_tcp_pose7(target_tcp_mat)
 
     @staticmethod
