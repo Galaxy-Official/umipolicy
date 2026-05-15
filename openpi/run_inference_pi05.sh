@@ -66,13 +66,13 @@ export RECORDING_INDEX="${RECORDING_INDEX:-}"
 
 #  erase board
 # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
-# POLICY_CONFIG="${POLICY_CONFIG:-pi05_erase_board_wrist}"
+POLICY_CONFIG="${POLICY_CONFIG:-pi_05_510_erase_board_350}"
 
-# # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
-# POLICY_DIR="${POLICY_DIR:-ckpt/lihong/pi05_erase_board_wrist_110000}"
+# 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
+POLICY_DIR="${POLICY_DIR:-ckpt/lihong/510_erase_board_350_vision_20000}"
 
-# # 5. 任务 Prompt 提示词（输入给模型的语言指令）
-# PROMPT="${PROMPT:-Pick up the blackboard eraser and wipe off the blackboard}"
+# 5. 任务 Prompt 提示词（输入给模型的语言指令）
+PROMPT="${PROMPT:-Pick up the blackboard eraser and wipe off the blackboard}"
 
 # #  clamp seal
 # # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
