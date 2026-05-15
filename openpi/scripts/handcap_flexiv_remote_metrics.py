@@ -1382,8 +1382,6 @@ class FlexivRealEnv:
         self._gripper_move_velocity = _required_env_float("FLEXIV_GRIPPER_MOVE_VELOCITY")
         self._gripper_move_force = _required_env_float("FLEXIV_GRIPPER_MOVE_FORCE")
         self._enable_safety_clip = _required_env_bool("FLEXIV_ENABLE_SAFETY_CLIP")
-        self._enable_eef_to_tcp_conversion = _required_env_bool("FLEXIV_ENABLE_EEF_TO_TCP_CONVERSION")
-        self._logged_flange_to_tcp = False
         self._action_frame = os.environ.get("FLEXIV_ACTION_FRAME", "tcp").lower()
         if self._action_frame not in {"tcp", "flange"}:
             LOGGER.warning("Invalid FLEXIV_ACTION_FRAME=%r; using 'tcp'.", self._action_frame)
@@ -1417,7 +1415,6 @@ class FlexivRealEnv:
             self._gripper_move_force,
             self._enable_safety_clip,
         )
-        LOGGER.info("EEF-to-TCP conversion: %s", self._enable_eef_to_tcp_conversion)
         self._robot = flexivrdk.Robot(robot_sn, [actual_local_ip])
 
         LOGGER.info("Initializing Gripper API.")
@@ -1502,32 +1499,15 @@ class FlexivRealEnv:
             self._latest_target_tcp = list(target_tcp)
             self._latest_target_time = float(target_time)
 
-    def _get_flange_to_tcp_mat(self) -> np.ndarray:
-        states = self._robot.states()
-        current_flange_mat = _pose7_to_mat(states.flange_pose)
-        current_tcp_mat = _pose7_to_mat(states.tcp_pose)
-        flange_to_tcp_mat = np.linalg.inv(current_flange_mat) @ current_tcp_mat
-        if not self._logged_flange_to_tcp:
-            trans = flange_to_tcp_mat[:3, 3]
-            rotvec = st.Rotation.from_matrix(flange_to_tcp_mat[:3, :3]).as_rotvec()
-            LOGGER.info(
-                "Current flange->TCP transform: translation=(%.4f, %.4f, %.4f)m rotvec=(%.4f, %.4f, %.4f)",
-                trans[0],
-                trans[1],
-                trans[2],
-                rotvec[0],
-                rotvec[1],
-                rotvec[2],
-            )
-            self._logged_flange_to_tcp = True
-        return flange_to_tcp_mat
-
     def _action_pose_to_target_tcp(self, target_pose: np.ndarray) -> list[float]:
         target_pose_mat = pose_to_mat(target_pose)
         if self._action_frame == "tcp":
             return _mat_to_tcp_pose7(target_pose_mat)
 
-        flange_to_tcp_mat = self._get_flange_to_tcp_mat()
+        states = self._robot.states()
+        current_flange_mat = _pose7_to_mat(states.flange_pose)
+        current_tcp_mat = _pose7_to_mat(states.tcp_pose)
+        flange_to_tcp_mat = np.linalg.inv(current_flange_mat) @ current_tcp_mat
         target_tcp_mat = target_pose_mat @ flange_to_tcp_mat
         return _mat_to_tcp_pose7(target_tcp_mat)
 
@@ -1584,15 +1564,10 @@ class FlexivRealEnv:
             if should_reset is not None and should_reset():
                 return False
 
-            target_pose = new_actions[i, :6].copy()
+            target_pose = new_actions[i, :6]
             target_width = float(new_actions[i, 6])
 
-            if self._enable_eef_to_tcp_conversion:
-                target_tcp = self._action_pose_to_target_tcp(target_pose)
-            else:
-                if self._action_frame == "flange":
-                    self._get_flange_to_tcp_mat()
-                target_tcp = _mat_to_tcp_pose7(pose_to_mat(target_pose))
+            target_tcp = self._action_pose_to_target_tcp(target_pose)
             if self._enable_safety_clip:
                 from lerobot.common.robot_devices.robots.flexiv_safety import clip_target_pose_7d
 
@@ -1970,8 +1945,6 @@ def main(args: Args) -> None:
                     )
 
                     first_target = physical_actions[0]
-                    first_decoded_action = decoded_actions[0]
-                    target_delta = first_target[:3] - current_eepose[:3]
                     force_obs = _prepare_force(latest_frame.get("force"))
                     exec_horizon = len(physical_actions) * robot_dt
                     obs_timing = latest_frame.get("timing") if isinstance(latest_frame.get("timing"), dict) else {}
@@ -1986,7 +1959,6 @@ def main(args: Args) -> None:
                     LOGGER.info(
                         "[step=%d] infer=%.1fms policy_chunk=%d exec_steps=%d eef_xyz=(%.3f, %.3f, %.3f) "
                         "exec_horizon=%.2fs gripper=%.4f force=(%.2f, %.2f) target_xyz=(%.3f, %.3f, %.3f) "
-                        "rel_xyz=(%.4f, %.4f, %.4f) delta_xyz=(%.4f, %.4f, %.4f) "
                         "target_gripper=%.4f pred_force=(%.2f, %.2f) "
                         "timing_ms(camera_read=%.1f obs_total=%.1f robot_state=%.1f preprocess=%.1f "
                         "model_forward=%.1f server_infer=%.1f client_roundtrip=%.1f)",
@@ -2004,12 +1976,6 @@ def main(args: Args) -> None:
                         float(first_target[0]),
                         float(first_target[1]),
                         float(first_target[2]),
-                        float(first_decoded_action[0]),
-                        float(first_decoded_action[1]),
-                        float(first_decoded_action[2]),
-                        float(target_delta[0]),
-                        float(target_delta[1]),
-                        float(target_delta[2]),
                         float(first_target[6]),
                         float(force_pred[0]),
                         float(force_pred[1]),
