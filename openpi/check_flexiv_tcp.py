@@ -23,13 +23,13 @@ def pose7_to_mat(pose7):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--robot_ip", type=str, default="192.168.2.100", help="IP of the robot server")
+    parser.add_argument("--robot_sn", type=str, default="Rizon4-062339", help="Serial Number of the robot")
     parser.add_argument("--local_ip", type=str, default="192.168.2.102", help="IP of the local PC")
     args = parser.parse_args()
 
-    print(f"Connecting to Flexiv robot at {args.robot_ip} from {args.local_ip}...")
+    print(f"Connecting to Flexiv robot {args.robot_sn} via {args.local_ip}...")
     try:
-        robot = flexivrdk.Robot(args.robot_ip, args.local_ip)
+        robot = flexivrdk.Robot(args.robot_sn, [args.local_ip])
     except Exception as e:
         print(f"Failed to connect to the robot: {e}")
         sys.exit(1)
