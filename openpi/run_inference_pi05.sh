@@ -90,6 +90,12 @@ lsof -ti:8000 | xargs -r kill -9 || true
 
 RECORD_PID=""
 RECORD_FILE=""
+RECORD_ROOT="${RECORD_ROOT:-real_robot_inference_recording}"
+if [[ "$RECORD_ROOT" == /* ]]; then
+  RECORD_ROOT_PATH="$RECORD_ROOT"
+else
+  RECORD_ROOT_PATH="${SCRIPT_DIR}/${RECORD_ROOT}"
+fi
 RUN_START_TIMESTAMP=""
 CLEANED_UP=0
 cleanup_recording() {
@@ -110,7 +116,7 @@ cleanup_recording() {
   local latest_dir=""
   local latest_basename=""
   local current_run_data_dir=""
-  latest_dir=$(ls -td "${SCRIPT_DIR}/realworld_replay_recording/${TASK_NAME}/"* 2>/dev/null | head -n 1)
+  latest_dir=$(ls -td "${RECORD_ROOT_PATH}/${TASK_NAME}/"* 2>/dev/null | head -n 1)
   latest_basename="$(basename "${latest_dir:-}")"
   if [[ -n "$latest_dir" && -n "$RUN_START_TIMESTAMP" && ( "$latest_basename" > "$RUN_START_TIMESTAMP" || "$latest_basename" == "$RUN_START_TIMESTAMP" ) ]]; then
     current_run_data_dir="$latest_dir"
@@ -194,6 +200,7 @@ echo "  gripper vel/force: ${FLEXIV_GRIPPER_MOVE_VELOCITY} / ${FLEXIV_GRIPPER_MO
 echo "  safety clip: ${FLEXIV_ENABLE_SAFETY_CLIP}"
 echo "  camera config: ${CAMERA_CONFIG_PATH}"
 echo "  record hz: ${RECORD_HZ}"
+echo "  record root: ${RECORD_ROOT_PATH}"
 echo "Runtime controls: SPACE=start recording/inference, r=reset to FLEXIV_INIT_POSE, Ctrl+C=stop and choose whether to keep data"
 
 CTRL_FREQ="10"
@@ -221,6 +228,7 @@ bash start_handcap_remote_inference_metrics.sh \
   --metric-monitor-hz "${METRIC_MONITOR_HZ}" \
   --metric-t-ref "${METRIC_T_REF}" \
   --init-qpos "${FLEXIV_INIT_POSE}" \
+  --record-root "${RECORD_ROOT}" \
   --interactive-control \
   --startup-timeout 1800 \
   --no-use-tactile

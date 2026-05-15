@@ -680,7 +680,7 @@ class Args:
     init_qpos: tuple[float, ...] = (-0.0, -0.698, -0.0, 1.571, -0.0, 0.698, -0.0)
     camera_config_path: Path = dataclasses.field(default_factory=_default_camera_config_path)
     control_file: Path | None = None
-    record_root: str = "realworld_replay_recording"
+    record_root: str = "real_robot_inference_recording"
     use_tactile: bool = True
     force_predict: bool = False
     force_guide: bool = False
@@ -767,7 +767,7 @@ class Recorder:
         self.video_fps = float(video_fps)
         self._wrist_preview_path = output_dir / "view1_realsense_wrist_preview.jpg"
         self._wrist_preview_written = False
-        wrist_video_name = "view1_realsense_wrist.avi" if realsense_shape is not None else "view1_wrist.avi"
+        wrist_video_name = "view1_realsense_wrist.raw.avi" if realsense_shape is not None else "view1_wrist.raw.avi"
         wrist_video_shape = (wrist_shape[0] * 2, wrist_shape[1]) if realsense_shape is not None else wrist_shape
         self._video_paths["wrist"] = output_dir / wrist_video_name
         self.wrist_video = cv2.VideoWriter(str(self._video_paths["wrist"]), fourcc, video_fps, wrist_video_shape)
@@ -779,7 +779,7 @@ class Recorder:
         self.tactile_left_video = None
         self.tactile_right_video = None
         if left_shape is not None:
-            self._video_paths["left_tactile"] = output_dir / "view2_tactile_left.avi"
+            self._video_paths["left_tactile"] = output_dir / "view2_tactile_left.raw.avi"
             self.tactile_left_video = cv2.VideoWriter(
                 str(self._video_paths["left_tactile"]), fourcc, video_fps, left_shape
             )
@@ -789,7 +789,7 @@ class Recorder:
             else:
                 LOGGER.info("Recording left tactile video to %s", self._video_paths["left_tactile"])
         if right_shape is not None:
-            self._video_paths["right_tactile"] = output_dir / "view3_tactile_right.avi"
+            self._video_paths["right_tactile"] = output_dir / "view3_tactile_right.raw.avi"
             self.tactile_right_video = cv2.VideoWriter(
                 str(self._video_paths["right_tactile"]), fourcc, video_fps, right_shape
             )
@@ -901,14 +901,66 @@ class Recorder:
         ]
         return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
 
-    def _transcode_playable_mp4(self, source_path: Path) -> None:
-        if not source_path.exists() or source_path.stat().st_size == 0:
-            return
-        if shutil.which("ffmpeg") is None:
-            LOGGER.warning("ffmpeg is not available; skipping MP4 transcode for %s", source_path)
-            return
+    def _opencv_transcode_playable_mp4(self, source_path: Path, mp4_path: Path) -> Path | None:
+        cap = cv2.VideoCapture(str(source_path))
+        if not cap.isOpened():
+            LOGGER.warning("OpenCV could not read raw video for MP4 fallback: %s", source_path)
+            return None
 
-        mp4_path = source_path.with_suffix(".mp4")
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = float(cap.get(cv2.CAP_PROP_FPS) or self.video_fps)
+        if width <= 0 or height <= 0:
+            cap.release()
+            LOGGER.warning("OpenCV fallback got invalid video size for %s", source_path)
+            return None
+
+        writer = cv2.VideoWriter(
+            str(mp4_path),
+            cv2.VideoWriter_fourcc(*"mp4v"),
+            fps if fps > 0 else self.video_fps,
+            (width, height),
+        )
+        if not writer.isOpened():
+            cap.release()
+            LOGGER.warning("OpenCV could not open MP4 writer for fallback: %s", mp4_path)
+            return None
+
+        frame_count = 0
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+            writer.write(frame)
+            frame_count += 1
+
+        cap.release()
+        writer.release()
+
+        if frame_count == 0 or not mp4_path.exists() or mp4_path.stat().st_size == 0:
+            try:
+                mp4_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            LOGGER.warning("OpenCV MP4 fallback produced no usable video for %s", source_path)
+            return None
+
+        LOGGER.info(
+            "Playable MP4 saved via OpenCV fallback: frames=%d size=%.1fKB path=%s",
+            frame_count,
+            mp4_path.stat().st_size / 1024.0,
+            mp4_path,
+        )
+        return mp4_path
+
+    def _transcode_playable_mp4(self, source_path: Path) -> Path | None:
+        if not source_path.exists() or source_path.stat().st_size == 0:
+            return None
+        mp4_path = source_path.with_suffix("").with_suffix(".mp4") if source_path.name.endswith(".raw.avi") else source_path.with_suffix(".mp4")
+        if shutil.which("ffmpeg") is None:
+            LOGGER.warning("ffmpeg is not available; using OpenCV MP4 fallback for %s", source_path)
+            return self._opencv_transcode_playable_mp4(source_path, mp4_path)
+
         result = self._run_ffmpeg_transcode(
             source_path,
             mp4_path,
@@ -922,12 +974,13 @@ class Recorder:
                 ["-c:v", "mpeg4", "-q:v", "3"],
             )
         if result.returncode != 0:
-            LOGGER.warning("Failed to transcode %s to MP4: %s", source_path, result.stderr.strip())
-            return
+            LOGGER.warning("ffmpeg failed to transcode %s to MP4; using OpenCV fallback. Error: %s", source_path, result.stderr.strip())
+            return self._opencv_transcode_playable_mp4(source_path, mp4_path)
         if not mp4_path.exists() or mp4_path.stat().st_size == 0:
-            LOGGER.warning("MP4 transcode produced no file for %s", source_path)
-            return
+            LOGGER.warning("ffmpeg produced no MP4 for %s; using OpenCV fallback.", source_path)
+            return self._opencv_transcode_playable_mp4(source_path, mp4_path)
         LOGGER.info("Playable MP4 saved on server: %.1fKB path=%s", mp4_path.stat().st_size / 1024.0, mp4_path)
+        return mp4_path
 
     def append_state(
         self,
@@ -936,6 +989,7 @@ class Recorder:
         inference_latency: float,
         latest_frame: dict[str, Any],
         action_chunk: np.ndarray,
+        client_timing: dict[str, Any] | None,
         server_timing: dict[str, Any] | None,
         policy_timing: dict[str, Any] | None,
     ) -> None:
@@ -951,6 +1005,11 @@ class Recorder:
             "gripper_width": float(latest_frame["gripper_width"]),
             "action_chunk_size": int(action_chunk.shape[0]),
         }
+        obs_timing = latest_frame.get("timing")
+        if isinstance(obs_timing, dict):
+            for key, value in obs_timing.items():
+                state_key = key if key.startswith("obs_") else f"obs_{key}"
+                state_entry[state_key] = float(value)
         if "force" in latest_frame:
             force = _prepare_force(latest_frame.get("force"))
             state_entry["force_left"] = float(force[0])
@@ -958,6 +1017,9 @@ class Recorder:
         if action_chunk.shape[-1] >= 12:
             state_entry["pred_force_left"] = float(action_chunk[0, 10])
             state_entry["pred_force_right"] = float(action_chunk[0, 11])
+        if client_timing is not None:
+            for key, value in client_timing.items():
+                state_entry[f"client_{key}"] = float(value)
         if server_timing is not None:
             for key, value in server_timing.items():
                 state_entry[f"server_{key}"] = float(value)
@@ -991,7 +1053,13 @@ class Recorder:
                     path.stat().st_size / 1024.0,
                     path,
                 )
-                self._transcode_playable_mp4(path)
+                mp4_path = self._transcode_playable_mp4(path)
+                if mp4_path is not None and path.suffix == ".avi":
+                    try:
+                        path.unlink()
+                        LOGGER.info("Removed intermediate raw AVI: %s", path)
+                    except OSError as exc:
+                        LOGGER.warning("Failed to remove intermediate raw AVI %s: %s", path, exc)
             else:
                 LOGGER.warning("Recording file was not created: %s path=%s", key, path)
         if self._wrist_preview_path.exists():
@@ -1712,7 +1780,9 @@ def main(args: Args) -> None:
             latest_frame = frames[-1]
             recorder.record_frame(latest_frame, model_input=True)
             observation = _make_policy_observation(latest_frame, prompt, args.use_tactile)
+            client_infer_start = time.monotonic()
             action_result = policy.infer(observation)
+            client_policy_roundtrip_ms = (time.monotonic() - client_infer_start) * 1000.0
             action_chunk = np.asarray(action_result["actions"], dtype=np.float64)
             decoded_actions = decode_handcap_action_chunk(action_chunk)
             policy_chunk_size = len(decoded_actions)
@@ -1766,6 +1836,7 @@ def main(args: Args) -> None:
                 inference_latency=inference_latency,
                 latest_frame=latest_frame,
                 action_chunk=action_chunk,
+                client_timing={"policy_roundtrip_ms": client_policy_roundtrip_ms},
                 server_timing=action_result.get("server_timing"),
                 policy_timing=action_result.get("policy_timing"),
             )
@@ -1773,10 +1844,21 @@ def main(args: Args) -> None:
             first_target = physical_actions[0]
             force_obs = _prepare_force(latest_frame.get("force"))
             exec_horizon = len(physical_actions) * robot_dt
+            obs_timing = latest_frame.get("timing") if isinstance(latest_frame.get("timing"), dict) else {}
+            camera_read_ms = float(obs_timing.get("camera_read_ms", 0.0))
+            obs_total_ms = float(obs_timing.get("obs_total_ms", 0.0))
+            robot_state_ms = float(obs_timing.get("robot_state_ms", 0.0))
+            preprocess_ms = float(obs_timing.get("preprocess_ms", 0.0))
+            server_timing = action_result.get("server_timing") or {}
+            policy_timing = action_result.get("policy_timing") or {}
+            server_infer_ms = float(server_timing.get("infer_ms", 0.0))
+            model_forward_ms = float(policy_timing.get("infer_ms", 0.0))
             LOGGER.info(
                 "[step=%d] infer=%.1fms policy_chunk=%d exec_steps=%d eef_xyz=(%.3f, %.3f, %.3f) "
                 "exec_horizon=%.2fs gripper=%.4f force=(%.2f, %.2f) target_xyz=(%.3f, %.3f, %.3f) "
-                "target_gripper=%.4f pred_force=(%.2f, %.2f)",
+                "target_gripper=%.4f pred_force=(%.2f, %.2f) "
+                "timing_ms(camera_read=%.1f obs_total=%.1f robot_state=%.1f preprocess=%.1f "
+                "model_forward=%.1f server_infer=%.1f client_roundtrip=%.1f)",
                 step,
                 inference_latency * 1000.0,
                 policy_chunk_size,
@@ -1794,6 +1876,13 @@ def main(args: Args) -> None:
                 float(first_target[6]),
                 float(force_pred[0]),
                 float(force_pred[1]),
+                camera_read_ms,
+                obs_total_ms,
+                robot_state_ms,
+                preprocess_ms,
+                model_forward_ms,
+                server_infer_ms,
+                client_policy_roundtrip_ms,
             )
 
             if step % 2 == 0:
