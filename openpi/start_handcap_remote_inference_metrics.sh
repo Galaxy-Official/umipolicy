@@ -35,6 +35,8 @@ Usage:
     [--init-qpos "<7 floats, comma list, or bracket list>"] \
     [--record-root <dir>] \
     [--server-default-prompt "<prompt>"] \
+    [--interactive-control] \
+    [--control-file <path>] \
     [--startup-timeout 120] \
     [--log-dir <dir>] \
     [--dry-run]
@@ -167,6 +169,8 @@ ACTION_LATENCY="0.0"
 INIT_QPOS=""
 RECORD_ROOT=""
 SERVER_DEFAULT_PROMPT=""
+INTERACTIVE_CONTROL="false"
+CONTROL_FILE=""
 STARTUP_TIMEOUT="600"
 LOG_DIR=""
 DRY_RUN="false"
@@ -322,6 +326,15 @@ while [[ $# -gt 0 ]]; do
       SERVER_DEFAULT_PROMPT="$2"
       shift 2
       ;;
+    --interactive-control)
+      INTERACTIVE_CONTROL="true"
+      shift
+      ;;
+    --control-file)
+      require_value "$1" "${2-}"
+      CONTROL_FILE="$2"
+      shift 2
+      ;;
     --startup-timeout)
       require_value "$1" "${2-}"
       STARTUP_TIMEOUT="$2"
@@ -411,6 +424,14 @@ SERVER_LOG="$LOG_DIR/server.log"
 CLIENT_LOG="$LOG_DIR/client.log"
 PID_FILE="$LOG_DIR/pids.env"
 CMD_FILE="$LOG_DIR/run_command.txt"
+
+if [[ "$INTERACTIVE_CONTROL" == "true" && -z "$CONTROL_FILE" ]]; then
+  CONTROL_FILE="$LOG_DIR/runtime_control.commands"
+fi
+if [[ -n "$CONTROL_FILE" ]]; then
+  mkdir -p "$(dirname "$CONTROL_FILE")"
+  : > "$CONTROL_FILE"
+fi
 
 if [[ -n "$LEFT_VIDEO_INDEX" || -n "$RIGHT_VIDEO_INDEX" || -n "$TACTILE_CAPTURE_WIDTH" || -n "$TACTILE_CAPTURE_HEIGHT" ]]; then
   CUSTOM_CONFIG_PATH="$LOG_DIR/custom_camera_config.json"
@@ -517,6 +538,10 @@ if [[ -n "$RECORD_ROOT" ]]; then
   CLIENT_CMD+=(--record-root "$RECORD_ROOT")
 fi
 
+if [[ -n "$CONTROL_FILE" ]]; then
+  CLIENT_CMD+=(--control-file "$CONTROL_FILE")
+fi
+
 if [[ "$DRY_RUN" == "true" ]]; then
   CLIENT_CMD+=(--dry-run)
 fi
@@ -604,6 +629,7 @@ if [[ "$WAIT_STATUS" != "0" ]]; then
   fi
   exit 1
 fi
+echo "Policy server is ready; pretrained weights are loaded."
 
 echo "Starting Flexiv real-robot client..."
 if [[ -n "$CLIENT_LD_PRELOAD" ]]; then
@@ -628,9 +654,21 @@ Logs:
 
 PID file:
   $PID_FILE
-
-Press Ctrl+C to stop both processes.
 EOF
+if [[ "$INTERACTIVE_CONTROL" == "true" ]]; then
+  cat <<EOF
+
+Controls:
+  SPACE  start recording and real-robot inference
+  r      reset robot to init pose
+  Ctrl+C stop this inference and enter the save/discard prompt
+EOF
+else
+  echo "Press Ctrl+C to stop both processes."
+fi
+if [[ -n "$CONTROL_FILE" ]]; then
+  echo "Control file: $CONTROL_FILE"
+fi
 
 echo "==== live client.log ===="
 tail -n 0 -F "$CLIENT_LOG" &
@@ -659,7 +697,23 @@ while true; do
     break
   fi
 
-  sleep 1
+  if [[ "$INTERACTIVE_CONTROL" == "true" && -r /dev/tty ]]; then
+    key=""
+    if IFS= read -r -s -n 1 -t 1 key </dev/tty; then
+      case "$key" in
+        " ")
+          printf 'start\n' >> "$CONTROL_FILE"
+          echo "Sent start command: recording and inference will begin when the client reaches a safe point."
+          ;;
+        r|R)
+          printf 'reset\n' >> "$CONTROL_FILE"
+          echo "Sent reset command: robot will move to init pose when the client reaches a safe point."
+          ;;
+      esac
+    fi
+  else
+    sleep 1
+  fi
 done
 
 if [[ -n "${CLIENT_LOG_TAIL_PID:-}" ]] && kill -0 "$CLIENT_LOG_TAIL_PID" >/dev/null 2>&1; then

@@ -12,7 +12,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Any
+from typing import Any, Callable
 
 import cv2
 import numpy as np
@@ -602,6 +602,69 @@ class TrajectoryMetricMonitor(threading.Thread):
             return list(self.samples)
 
 
+class RuntimeControl:
+    def __init__(self, control_file: Path | None):
+        self.control_file = control_file
+        self.start_requested = threading.Event()
+        self.reset_requested = threading.Event()
+        self._running = True
+        self._thread: threading.Thread | None = None
+        self._offset = 0
+
+        if self.control_file is None:
+            self.start_requested.set()
+
+    def start(self) -> None:
+        if self.control_file is None:
+            return
+
+        self.control_file.parent.mkdir(parents=True, exist_ok=True)
+        self.control_file.touch(exist_ok=True)
+        self._thread = threading.Thread(target=self._watch_control_file, daemon=True, name="handcap-runtime-control")
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._running = False
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+
+    def consume_reset(self) -> bool:
+        if not self.reset_requested.is_set():
+            return False
+        self.reset_requested.clear()
+        return True
+
+    def _watch_control_file(self) -> None:
+        assert self.control_file is not None
+        while self._running:
+            try:
+                size = self.control_file.stat().st_size
+                if size < self._offset:
+                    self._offset = 0
+                if size > self._offset:
+                    with open(self.control_file, "r", encoding="utf-8") as f:
+                        f.seek(self._offset)
+                        chunk = f.read()
+                        self._offset = f.tell()
+                    self._handle_commands(chunk.splitlines())
+            except FileNotFoundError:
+                pass
+            except Exception as exc:  # pragma: no cover - control file is best-effort
+                LOGGER.warning("Runtime control file watcher skipped a poll: %s", exc)
+            time.sleep(0.05)
+
+    def _handle_commands(self, commands: list[str]) -> None:
+        for command in commands:
+            command = command.strip().lower()
+            if command == "start":
+                if not self.start_requested.is_set():
+                    LOGGER.info("Received SPACE/start command. Recording and inference will start.")
+                self.start_requested.set()
+            elif command == "reset":
+                LOGGER.info("Received r/reset command. Reset will run at the next safe point.")
+                self.reset_requested.set()
+
+
 @dataclasses.dataclass
 class Args:
     host: str = "0.0.0.0"
@@ -616,6 +679,7 @@ class Args:
     local_ip: str = dataclasses.field(default_factory=lambda: os.environ.get("FLEXIV_LOCAL_IP", "192.168.2.102"))
     init_qpos: tuple[float, ...] = (-0.0, -0.698, -0.0, 1.571, -0.0, 0.698, -0.0)
     camera_config_path: Path = dataclasses.field(default_factory=_default_camera_config_path)
+    control_file: Path | None = None
     record_root: str = "realworld_replay_recording"
     use_tactile: bool = True
     force_predict: bool = False
@@ -1326,13 +1390,23 @@ class FlexivRealEnv:
             "target_time": target_time,
         }
 
-    def exec_actions(self, actions: np.ndarray, timestamps: np.ndarray, target_force: float | None = None) -> None:
+    def exec_actions(
+        self,
+        actions: np.ndarray,
+        timestamps: np.ndarray,
+        target_force: float | None = None,
+        *,
+        should_reset: Callable[[], bool] | None = None,
+    ) -> bool:
         receive_time = time.time()
         is_new = timestamps > receive_time
         new_actions = actions[is_new]
         new_timestamps = timestamps[is_new]
 
         for i in range(len(new_actions)):
+            if should_reset is not None and should_reset():
+                return False
+
             target_pose = new_actions[i, :6]
             target_width = float(new_actions[i, 6])
 
@@ -1360,9 +1434,15 @@ class FlexivRealEnv:
                 move_force = self._gripper_move_force if target_force is None else float(target_force)
                 self._gripper.Move(safe_width, self._gripper_move_velocity, move_force)
 
-            dt = new_timestamps[i] - time.time()
-            if dt > 0:
-                time.sleep(dt)
+            while True:
+                if should_reset is not None and should_reset():
+                    return False
+                dt = new_timestamps[i] - time.time()
+                if dt <= 0:
+                    break
+                time.sleep(min(dt, 0.05))
+
+        return True
 
 
 def _make_output_dir(args: Args) -> Path:
@@ -1476,97 +1556,129 @@ def _init_recorder(
     )
 
 
+def _reset_to_init_pose(env: FlexivRealEnv, args: Args, reason: str) -> None:
+    LOGGER.info("%s Moving robot to init pose: %s", reason, args.init_qpos)
+    env.reset()
+    LOGGER.info("Reset finished.")
+
+
 def main(args: Args) -> None:
     from openpi_client import websocket_client_policy
 
-    LOGGER.info("Connecting to remote policy server at ws://%s:%d", args.host, args.port)
-    prompt = args.prompt or args.task_name
-    robot_dt = 1.0 / args.ctrl_freq
-    LOGGER.info(
-        "Control config: ctrl_freq=%.3fHz, record_hz=%.3fHz, robot_dt=%.4fs, steps_per_inference=%d, action_latency=%.4fs, "
-        "force_predict=%s, force_guide=%s, infer_force_control=%s",
-        args.ctrl_freq,
-        args.record_hz,
-        robot_dt,
-        args.steps_per_inference,
-        args.action_latency,
-        args.force_predict,
-        args.force_guide,
-        args.infer_force_control,
-    )
-    metric_config = _make_trajectory_cost_config(args)
-    LOGGER.info(
-        "Trajectory cost config: monitor_hz=%.1f, T_ref=%.3f, weights=(%.2f, %.2f, %.2f)",
-        metric_config.monitor_hz,
-        metric_config.t_ref,
-        metric_config.w_e,
-        metric_config.w_m,
-        metric_config.w_c,
-    )
-
-    camera_config_path = args.camera_config_path
-    if not camera_config_path.is_absolute():
-        camera_config_path = (_repo_root() / camera_config_path).resolve()
-    if not camera_config_path.exists():
-        camera_config_path = _default_camera_config_path()
-
-    output_dir = _make_output_dir(args)
-    policy = websocket_client_policy.WebsocketClientPolicy(host=args.host, port=args.port)
-    LOGGER.info("Server metadata: %s", policy.get_server_metadata())
-
-    LOGGER.info("Initializing cameras from %s (use_tactile=%s)", camera_config_path, args.use_tactile)
-    cam_wrist, cam_realsense, cam_tactile_left, cam_tactile_right = _init_cameras(camera_config_path, args.use_tactile)
-    realsense_thread = LatestCameraThread(cam_realsense, "realsense") if cam_realsense is not None else None
-
-    LOGGER.info("Initializing recorder in %s", output_dir)
-    recorder = _init_recorder(
-        output_dir,
-        args.record_hz,
-        cam_wrist,
-        realsense_thread,
-        cam_tactile_left,
-        cam_tactile_right,
-        use_tactile=args.use_tactile,
-        save_states_json=args.save_states_json,
-    )
-
     global _ACTIVE_RECORDER
-    _ACTIVE_RECORDER = recorder
     signal_module.signal(signal_module.SIGINT, _signal_handler)
     signal_module.signal(signal_module.SIGTERM, _signal_handler)
 
-    LOGGER.info("Initializing Flexiv environment at %s", args.robot_ip)
-    env = FlexivRealEnv(args.init_qpos, robot_ip=args.robot_ip, local_ip=args.local_ip, dry_run=args.dry_run)
-    LOGGER.info("Moving to init pose: %s", args.init_qpos)
-    env.reset()
-
-    if realsense_thread is not None:
-        realsense_thread.start()
-
-    obs_thread = ObservationThread(
-        cam_wrist,
-        cam_tactile_left,
-        cam_tactile_right,
-        env,
-        maxlen=args.obs_horizon,
-    )
-    obs_thread.start()
-    observation_recorder = ObservationRecordingThread(obs_thread, recorder, args.record_hz)
-    observation_recorder.start()
-    LOGGER.info("Continuous observation recording started at %.3fHz.", args.record_hz)
-
-    LOGGER.info("Waiting for observation queue to fill (obs_horizon=%d)", args.obs_horizon)
-    while obs_thread.get_obs(args.obs_horizon) is None:
-        time.sleep(0.01)
-    LOGGER.info("Observation queue filled. Starting inference loop.")
-
-    metric_monitor = TrajectoryMetricMonitor(env, metric_config)
-    recorder.attach_metric_monitor(metric_monitor, metric_config)
+    control = RuntimeControl(args.control_file)
+    recorder: Recorder | None = None
+    observation_recorder: ObservationRecordingThread | None = None
+    obs_thread: ObservationThread | None = None
+    realsense_thread: LatestCameraThread | None = None
+    metric_monitor: TrajectoryMetricMonitor | None = None
     metric_started = False
 
-    step = 0
     try:
+        control.start()
+
+        LOGGER.info("Connecting to remote policy server at ws://%s:%d", args.host, args.port)
+        if args.control_file is not None:
+            LOGGER.info("Interactive control file: %s", args.control_file)
+        prompt = args.prompt or args.task_name
+        robot_dt = 1.0 / args.ctrl_freq
+        LOGGER.info(
+            "Control config: ctrl_freq=%.3fHz, record_hz=%.3fHz, robot_dt=%.4fs, steps_per_inference=%d, action_latency=%.4fs, "
+            "force_predict=%s, force_guide=%s, infer_force_control=%s",
+            args.ctrl_freq,
+            args.record_hz,
+            robot_dt,
+            args.steps_per_inference,
+            args.action_latency,
+            args.force_predict,
+            args.force_guide,
+            args.infer_force_control,
+        )
+        metric_config = _make_trajectory_cost_config(args)
+        LOGGER.info(
+            "Trajectory cost config: monitor_hz=%.1f, T_ref=%.3f, weights=(%.2f, %.2f, %.2f)",
+            metric_config.monitor_hz,
+            metric_config.t_ref,
+            metric_config.w_e,
+            metric_config.w_m,
+            metric_config.w_c,
+        )
+
+        camera_config_path = args.camera_config_path
+        if not camera_config_path.is_absolute():
+            camera_config_path = (_repo_root() / camera_config_path).resolve()
+        if not camera_config_path.exists():
+            camera_config_path = _default_camera_config_path()
+
+        policy = websocket_client_policy.WebsocketClientPolicy(host=args.host, port=args.port)
+        LOGGER.info("Server metadata: %s", policy.get_server_metadata())
+
+        LOGGER.info("Initializing cameras from %s (use_tactile=%s)", camera_config_path, args.use_tactile)
+        cam_wrist, cam_realsense, cam_tactile_left, cam_tactile_right = _init_cameras(camera_config_path, args.use_tactile)
+        realsense_thread = LatestCameraThread(cam_realsense, "realsense") if cam_realsense is not None else None
+
+        LOGGER.info("Initializing Flexiv environment at %s", args.robot_ip)
+        env = FlexivRealEnv(args.init_qpos, robot_ip=args.robot_ip, local_ip=args.local_ip, dry_run=args.dry_run)
+        _reset_to_init_pose(env, args, "Startup reset.")
+
+        if realsense_thread is not None:
+            realsense_thread.start()
+
+        if not control.start_requested.is_set():
+            LOGGER.info("Ready. Press SPACE to start recording/inference, r to reset, Ctrl+C to stop.")
+        while not control.start_requested.is_set():
+            if control.consume_reset():
+                _reset_to_init_pose(env, args, "Reset requested before start.")
+            time.sleep(0.05)
+
+        if control.consume_reset():
+            _reset_to_init_pose(env, args, "Reset requested before start.")
+
+        output_dir = _make_output_dir(args)
+        LOGGER.info("Start command accepted. Initializing recorder in %s", output_dir)
+        recorder = _init_recorder(
+            output_dir,
+            args.record_hz,
+            cam_wrist,
+            realsense_thread,
+            cam_tactile_left,
+            cam_tactile_right,
+            use_tactile=args.use_tactile,
+            save_states_json=args.save_states_json,
+        )
+        _ACTIVE_RECORDER = recorder
+
+        obs_thread = ObservationThread(
+            cam_wrist,
+            cam_tactile_left,
+            cam_tactile_right,
+            env,
+            maxlen=args.obs_horizon,
+        )
+        obs_thread.start()
+        observation_recorder = ObservationRecordingThread(obs_thread, recorder, args.record_hz)
+        observation_recorder.start()
+        LOGGER.info("Continuous observation recording started at %.3fHz.", args.record_hz)
+
+        LOGGER.info("Waiting for observation queue to fill (obs_horizon=%d)", args.obs_horizon)
+        while obs_thread.get_obs(args.obs_horizon) is None:
+            if control.consume_reset():
+                _reset_to_init_pose(env, args, "Reset requested while filling observations.")
+            time.sleep(0.01)
+        LOGGER.info("Observation queue filled. Starting inference loop.")
+
+        metric_monitor = TrajectoryMetricMonitor(env, metric_config)
+        recorder.attach_metric_monitor(metric_monitor, metric_config)
+
+        step = 0
         while True:
+            if control.consume_reset():
+                _reset_to_init_pose(env, args, "Reset requested.")
+                continue
+
             loop_start = time.time()
             frames = obs_thread.get_obs(args.obs_horizon)
             if frames is None:
@@ -1580,8 +1692,12 @@ def main(args: Args) -> None:
             action_chunk = np.asarray(action_result["actions"], dtype=np.float64)
             decoded_actions = decode_handcap_action_chunk(action_chunk)
             policy_chunk_size = len(decoded_actions)
-            
-            # Convert the decoded actions (which are SE(3) relative pose increments) back to absolute physical target poses
+
+            if control.consume_reset():
+                _reset_to_init_pose(env, args, "Reset requested before action execution.")
+                continue
+
+            # Convert relative SE(3) increments back to absolute physical target poses.
             physical_actions = []
             current_eepose = latest_frame["eepose"]
             for action in decoded_actions:
@@ -1590,7 +1706,7 @@ def main(args: Args) -> None:
             physical_actions = np.array(physical_actions)
             if args.steps_per_inference > 0:
                 physical_actions = physical_actions[: args.steps_per_inference]
-            
+
             action_timestamps = (
                 (1 + np.arange(len(physical_actions), dtype=np.float64)) * robot_dt + time.time() - args.action_latency
             )
@@ -1605,7 +1721,19 @@ def main(args: Args) -> None:
                 metric_monitor.start()
                 metric_started = True
 
-            env.exec_actions(physical_actions, action_timestamps, target_force=target_force)
+            actions_completed = env.exec_actions(
+                physical_actions,
+                action_timestamps,
+                target_force=target_force,
+                should_reset=control.reset_requested.is_set,
+            )
+            if not actions_completed:
+                control.consume_reset()
+                _reset_to_init_pose(env, args, "Reset requested during action execution.")
+                continue
+            if control.consume_reset():
+                _reset_to_init_pose(env, args, "Reset requested during action execution.")
+                continue
 
             inference_latency = time.time() - loop_start
             step += 1
@@ -1643,8 +1771,7 @@ def main(args: Args) -> None:
                 float(force_pred[0]),
                 float(force_pred[1]),
             )
-            
-            # Print metrics periodically during inference
+
             if step % 2 == 0:
                 metric_samples_snapshot = metric_monitor.snapshot()
                 metric_summary = compute_trajectory_cost(metric_samples_snapshot, metric_config)
@@ -1658,17 +1785,24 @@ def main(args: Args) -> None:
                         metric_summary.get("J_c", 0.0),
                     )
     finally:
-        metric_monitor.stop()
-        if metric_started:
-            metric_monitor.join(timeout=2.0)
-        if metric_monitor.error is not None:
-            LOGGER.warning("Trajectory metric monitor stopped after sampling error: %s", metric_monitor.error)
-        observation_recorder.stop()
-        observation_recorder.join(timeout=2.0)
-        obs_thread.stop()
+        control.stop()
+        if metric_monitor is not None:
+            metric_monitor.stop()
+            if metric_started:
+                metric_monitor.join(timeout=2.0)
+            if metric_monitor.error is not None:
+                LOGGER.warning("Trajectory metric monitor stopped after sampling error: %s", metric_monitor.error)
+        if observation_recorder is not None:
+            observation_recorder.stop()
+            observation_recorder.join(timeout=2.0)
+        if obs_thread is not None:
+            obs_thread.stop()
         if realsense_thread is not None:
             realsense_thread.stop()
-        recorder.flush()
+        if recorder is not None:
+            recorder.flush()
+        if _ACTIVE_RECORDER is recorder:
+            _ACTIVE_RECORDER = None
 
 
 if __name__ == "__main__":
