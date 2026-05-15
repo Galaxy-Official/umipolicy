@@ -1382,6 +1382,7 @@ class FlexivRealEnv:
         self._gripper_move_velocity = _required_env_float("FLEXIV_GRIPPER_MOVE_VELOCITY")
         self._gripper_move_force = _required_env_float("FLEXIV_GRIPPER_MOVE_FORCE")
         self._enable_safety_clip = _required_env_bool("FLEXIV_ENABLE_SAFETY_CLIP")
+        self._enable_eef_to_tcp_conversion = False
         self._action_frame = os.environ.get("FLEXIV_ACTION_FRAME", "tcp").lower()
         if self._action_frame not in {"tcp", "flange"}:
             LOGGER.warning("Invalid FLEXIV_ACTION_FRAME=%r; using 'tcp'.", self._action_frame)
@@ -1415,6 +1416,8 @@ class FlexivRealEnv:
             self._gripper_move_force,
             self._enable_safety_clip,
         )
+        if not self._enable_eef_to_tcp_conversion:
+            LOGGER.info("EEF-to-TCP conversion is temporarily disabled; executing raw 6D action poses.")
         self._robot = flexivrdk.Robot(robot_sn, [actual_local_ip])
 
         LOGGER.info("Initializing Gripper API.")
@@ -1564,15 +1567,20 @@ class FlexivRealEnv:
             if should_reset is not None and should_reset():
                 return False
 
-            target_pose = new_actions[i, :6]
+            target_pose = new_actions[i, :6].copy()
             target_width = float(new_actions[i, 6])
 
-            # target_tcp = self._action_pose_to_target_tcp(target_pose)
-            target_tcp = target_pose
+            if self._enable_eef_to_tcp_conversion:
+                target_tcp = self._action_pose_to_target_tcp(target_pose)
+            else:
+                target_tcp = target_pose
             if self._enable_safety_clip:
-                from lerobot.common.robot_devices.robots.flexiv_safety import clip_target_pose_7d
+                from lerobot.common.robot_devices.robots.flexiv_safety import clip_target_pose_10d, clip_target_pose_7d
 
-                target_tcp = clip_target_pose_7d(target_tcp)
+                if len(target_tcp) >= 7:
+                    target_tcp = clip_target_pose_7d(target_tcp)
+                else:
+                    target_tcp = clip_target_pose_10d(target_tcp)
             self._set_latest_target(target_tcp, float(new_timestamps[i]))
 
             if self._dry_run:
