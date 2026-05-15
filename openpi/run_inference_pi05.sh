@@ -193,7 +193,7 @@ echo "  record root: ${RECORD_ROOT_PATH}"
 echo "Runtime controls: SPACE=start/stop one episode, r=reset to FLEXIV_INIT_POSE, Ctrl+C=exit session"
 
 CTRL_FREQ="10"
-STEPS_PER_INFERENCE="20"
+STEPS_PER_INFERENCE="10"
 OBS_HORIZON="${OBS_HORIZON:-2}"
 ACTION_LATENCY="${ACTION_LATENCY:-0.0}"
 TASK_NAME="${TASK_NAME:-handcap_flexiv_mvs_metrics}"
