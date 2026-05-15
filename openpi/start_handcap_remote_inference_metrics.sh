@@ -428,9 +428,12 @@ CMD_FILE="$LOG_DIR/run_command.txt"
 if [[ "$INTERACTIVE_CONTROL" == "true" && -z "$CONTROL_FILE" ]]; then
   CONTROL_FILE="$LOG_DIR/runtime_control.commands"
 fi
+CONTROL_EVENT_FILE=""
 if [[ -n "$CONTROL_FILE" ]]; then
   mkdir -p "$(dirname "$CONTROL_FILE")"
   : > "$CONTROL_FILE"
+  CONTROL_EVENT_FILE="${CONTROL_FILE}.events"
+  : > "$CONTROL_EVENT_FILE"
 fi
 
 if [[ -n "$LEFT_VIDEO_INDEX" || -n "$RIGHT_VIDEO_INDEX" || -n "$TACTILE_CAPTURE_WIDTH" || -n "$TACTILE_CAPTURE_HEIGHT" ]]; then
@@ -659,9 +662,9 @@ if [[ "$INTERACTIVE_CONTROL" == "true" ]]; then
   cat <<EOF
 
 Controls:
-  SPACE  start recording and real-robot inference
-  r      reset robot to init pose
-  Ctrl+C stop this inference and enter the save/discard prompt
+  SPACE  start current episode; press SPACE again to stop it and choose save/delete
+  r      reset robot to init pose while idle or at the next safe point
+  Ctrl+C exit the whole loaded inference session
 EOF
 else
   echo "Press Ctrl+C to stop both processes."
@@ -673,6 +676,71 @@ fi
 echo "==== live client.log ===="
 tail -n 0 -F "$CLIENT_LOG" &
 CLIENT_LOG_TAIL_PID=$!
+
+CONTROL_EVENT_OFFSET=0
+EPISODE_RUNNING=0
+CONTROL_EVENT_DELIM=$'\t'
+
+wait_for_episode_finished() {
+  local timeout="${1:-300}"
+  local deadline=$((SECONDS + timeout))
+  local line=""
+  local event_name=""
+  local event_payload=""
+  local current_size=0
+
+  if [[ -z "$CONTROL_EVENT_FILE" ]]; then
+    return 1
+  fi
+
+  while (( SECONDS < deadline )); do
+    if ! is_process_running "$CLIENT_PID"; then
+      return 2
+    fi
+
+    if [[ -f "$CONTROL_EVENT_FILE" ]]; then
+      current_size=$(wc -c < "$CONTROL_EVENT_FILE" | tr -d ' ')
+      if (( current_size > CONTROL_EVENT_OFFSET )); then
+        while IFS="$CONTROL_EVENT_DELIM" read -r event_name event_payload; do
+          if [[ "$event_name" == "episode_finished" && -n "$event_payload" ]]; then
+            EPISODE_OUTPUT_DIR="$event_payload"
+            CONTROL_EVENT_OFFSET=$current_size
+            return 0
+          fi
+        done < <(tail -c +"$((CONTROL_EVENT_OFFSET + 1))" "$CONTROL_EVENT_FILE")
+        CONTROL_EVENT_OFFSET=$current_size
+      fi
+    fi
+    sleep 0.2
+  done
+
+  return 1
+}
+
+prompt_keep_episode() {
+  local episode_dir="$1"
+  local keep_data=""
+
+  if [[ -z "$episode_dir" || ! -d "$episode_dir" ]]; then
+    echo "未发现本轮真机推理数据目录，跳过保存确认。"
+    printf 'discard\n' >> "$CONTROL_FILE"
+    return
+  fi
+
+  echo ""
+  read -p "❓ 本轮真机推理数据是否需要保留? 输入 y 保留，直接回车或其他键删除 [y/N]: " keep_data </dev/tty
+  case "$keep_data" in
+    y|Y|yes|Yes )
+      echo "✅ 已保留本轮数据: $episode_dir"
+      printf 'keep\n' >> "$CONTROL_FILE"
+      ;;
+    * )
+      rm -rf "$episode_dir"
+      echo "🗑️  已删除本轮数据: $episode_dir"
+      printf 'discard\n' >> "$CONTROL_FILE"
+      ;;
+  esac
+}
 
 EXITED_PROCESS=""
 EXIT_STATUS=0
@@ -702,8 +770,28 @@ while true; do
     if IFS= read -r -s -n 1 -t 1 key </dev/tty; then
       case "$key" in
         " ")
-          printf 'start\n' >> "$CONTROL_FILE"
-          echo "Sent start command: recording and inference will begin when the client reaches a safe point."
+          if [[ "$EPISODE_RUNNING" == "0" ]]; then
+            printf 'start\n' >> "$CONTROL_FILE"
+            EPISODE_RUNNING=1
+            echo "Sent start command: recording and inference will begin when the client reaches a safe point."
+          else
+            printf 'stop\n' >> "$CONTROL_FILE"
+            echo "Sent stop command: finishing the current episode and flushing video..."
+            EPISODE_OUTPUT_DIR=""
+            if wait_for_episode_finished 600; then
+              EPISODE_RUNNING=0
+              prompt_keep_episode "$EPISODE_OUTPUT_DIR"
+              echo "Ready for the next episode: press r to reset or SPACE to start."
+            else
+              wait_status=$?
+              EPISODE_RUNNING=0
+              if [[ "$wait_status" == "2" ]]; then
+                echo "Client exited before reporting episode completion." >&2
+              else
+                echo "Timed out waiting for episode completion. Check client.log before deleting data." >&2
+              fi
+            fi
+          fi
           ;;
         r|R)
           printf 'reset\n' >> "$CONTROL_FILE"

@@ -96,7 +96,6 @@ if [[ "$RECORD_ROOT" == /* ]]; then
 else
   RECORD_ROOT_PATH="${SCRIPT_DIR}/${RECORD_ROOT}"
 fi
-RUN_START_TIMESTAMP=""
 CLEANED_UP=0
 cleanup_recording() {
   if [[ "$CLEANED_UP" == "1" ]]; then
@@ -113,27 +112,17 @@ cleanup_recording() {
   # 等待内部脚本清理和打印日志完毕
   sleep 1.5
 
-  local latest_dir=""
-  local latest_basename=""
-  local current_run_data_dir=""
-  latest_dir=$(ls -td "${RECORD_ROOT_PATH}/${TASK_NAME}/"* 2>/dev/null | head -n 1)
-  latest_basename="$(basename "${latest_dir:-}")"
-  if [[ -n "$latest_dir" && -n "$RUN_START_TIMESTAMP" && ( "$latest_basename" > "$RUN_START_TIMESTAMP" || "$latest_basename" == "$RUN_START_TIMESTAMP" ) ]]; then
-    current_run_data_dir="$latest_dir"
-  fi
-
-  if [[ ! ( -n "$RECORD_FILE" && -f "$RECORD_FILE" ) && -z "$current_run_data_dir" ]]; then
-    echo "未发现本次新生成的真机数据，跳过保存确认。"
+  if [[ ! ( -n "$RECORD_FILE" && -f "$RECORD_FILE" ) ]]; then
     return
   fi
 
-  # 询问是否保留当前推理产生的数据
+  # 内部真机推理 episode 数据由空格停止时逐轮确认，这里只处理外置录像。
   echo ""
-  read -p "❓ 刚刚的推理数据 (录像和轨迹代价函数) 是否需要保留? 输入 y 保留，直接回车或其他键删除 [y/N]: " keep_data </dev/tty
+  read -p "❓ 外置相机整段录像是否需要保留? 输入 y 保留，直接回车或其他键删除 [y/N]: " keep_data </dev/tty
   
   case "$keep_data" in
     y|Y|yes|Yes ) 
-      echo "✅ 已保留数据。"
+      echo "✅ 已保留外置录像。"
       if [[ -n "$RECORD_FILE" && -f "$RECORD_FILE" ]]; then
         SPEEDUP_SCRIPT="${SCRIPT_DIR}/../speedup_video.py"
         if [[ -f "$SPEEDUP_SCRIPT" ]]; then
@@ -145,17 +134,10 @@ cleanup_recording() {
       fi
       ;;
     * ) 
-      echo "🗑️  不保留，正在清理本次产生的数据..."
+      echo "🗑️  不保留，正在清理外置录像..."
       if [[ -n "$RECORD_FILE" && -f "$RECORD_FILE" ]]; then
         rm -f "$RECORD_FILE"
         echo "已删除外部录像: $RECORD_FILE"
-      fi
-      
-      if [[ -n "$current_run_data_dir" ]]; then
-        rm -rf "$current_run_data_dir"
-        echo "已删除推理内部记录: $current_run_data_dir"
-      else
-        echo "未发现本次新生成的推理内部记录，跳过删除。"
       fi
       ;;
   esac
@@ -201,7 +183,7 @@ echo "  safety clip: ${FLEXIV_ENABLE_SAFETY_CLIP}"
 echo "  camera config: ${CAMERA_CONFIG_PATH}"
 echo "  record hz: ${RECORD_HZ}"
 echo "  record root: ${RECORD_ROOT_PATH}"
-echo "Runtime controls: SPACE=start recording/inference, r=reset to FLEXIV_INIT_POSE, Ctrl+C=stop and choose whether to keep data"
+echo "Runtime controls: SPACE=start/stop one episode, r=reset to FLEXIV_INIT_POSE, Ctrl+C=exit session"
 
 CTRL_FREQ="10"
 STEPS_PER_INFERENCE="10"
@@ -211,7 +193,6 @@ TASK_NAME="${TASK_NAME:-handcap_flexiv_mvs_metrics}"
 METRIC_MONITOR_HZ="${METRIC_MONITOR_HZ:-50}"
 METRIC_T_REF="${METRIC_T_REF:-10.0}"
 
-RUN_START_TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 bash start_handcap_remote_inference_metrics.sh \
   --policy-config "${POLICY_CONFIG}" \
   --policy-dir "${POLICY_DIR}" \
