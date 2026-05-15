@@ -25,13 +25,13 @@ export RECORDING_INDEX="${RECORDING_INDEX:-}"
 
 # close bottle
 # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
-POLICY_CONFIG="${POLICY_CONFIG:-pi05_512_close_bottle_350}"
+# POLICY_CONFIG="${POLICY_CONFIG:-pi05_512_close_bottle_350}"
 
-# 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
-POLICY_DIR="${POLICY_DIR:-ckpt/lihong/512_close_bottle_350_vision_40000}"
+# # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
+# POLICY_DIR="${POLICY_DIR:-ckpt/lihong/512_close_bottle_350_vision_40000}"
 
-# 5. 任务 Prompt 提示词（输入给模型的语言指令）
-PROMPT="${PROMPT:-Pick up the bottle cap and cover it with the lid.}"
+# # 5. 任务 Prompt 提示词（输入给模型的语言指令）
+# PROMPT="${PROMPT:-Pick up the bottle cap and cover it with the lid.}"
 
 # stiring
 # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
@@ -86,13 +86,13 @@ PROMPT="${PROMPT:-Pick up the bottle cap and cover it with the lid.}"
 
 #  bread moving
 # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
-# POLICY_CONFIG="${POLICY_CONFIG:-pi05_bread_moving}"
+POLICY_CONFIG="${POLICY_CONFIG:-pi05_bread_moving}"
 
-# # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
-# POLICY_DIR="${POLICY_DIR:-ckpt/501_bread_moving_pi05_199999}"
+# 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
+POLICY_DIR="${POLICY_DIR:-ckpt/501_bread_moving_pi05_199999}"
 
-# # 5. 任务 Prompt 提示词（输入给模型的语言指令）
-# PROMPT="${PROMPT:-Pick up the bread in the basket and put it in the blue bowl.}"
+# 5. 任务 Prompt 提示词（输入给模型的语言指令）
+PROMPT="${PROMPT:-Pick up the bread in the basket and put it in the blue bowl.}"
 # ==============================================================================
 
 # 每次启动前清理旧的 server/client。只清理端口不够：
