@@ -1567,7 +1567,8 @@ class FlexivRealEnv:
             target_pose = new_actions[i, :6]
             target_width = float(new_actions[i, 6])
 
-            target_tcp = self._action_pose_to_target_tcp(target_pose)
+            # target_tcp = self._action_pose_to_target_tcp(target_pose)
+            target_tcp = target_pose
             if self._enable_safety_clip:
                 from lerobot.common.robot_devices.robots.flexiv_safety import clip_target_pose_7d
 
