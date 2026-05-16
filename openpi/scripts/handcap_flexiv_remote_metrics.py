@@ -180,9 +180,8 @@ def _rot6d_to_mat(d6: np.ndarray) -> np.ndarray:
 
 
 def _prepare_camera_image(image_bgr: np.ndarray) -> np.ndarray:
-    image_bgr = _prepare_wrist_like_collection(image_bgr)
     rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-    rgb = _resize_image_area(rgb, WRIST_MODEL_INPUT_SHAPE)
+    rgb = image_tools.resize_with_pad(rgb, 224, 224)
     return image_tools.convert_to_uint8(rgb)
 
 
