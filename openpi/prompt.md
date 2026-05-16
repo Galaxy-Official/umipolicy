@@ -39,3 +39,8 @@ pick up the flower and insert it into the red vase.
 
 507_orangnize_cord 
 Organize the power cords into the cable organizer.
+
+
+516_stowing
+
+Sequentially move the yellow rectangular block, the orange box, and the yellow trapezoidal block into the paper box.
