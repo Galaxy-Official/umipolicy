@@ -179,17 +179,39 @@ def _rot6d_to_mat(d6: np.ndarray) -> np.ndarray:
     return np.stack((b1, b2, b3), axis=-2)
 
 
-def _prepare_camera_image(image_bgr: np.ndarray) -> np.ndarray:
+def _prepare_mvs_image(image_bgr: np.ndarray) -> np.ndarray:
+    """严格且唯一的 MVS 相机处理逻辑，保证与数采和离线处理 100% 对齐，不允许出错"""
     rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
     
-    # [INTERPOLATION ALIGNMENT] Match the exact data collection and processing pipeline:
-    # 1. handcap_rgb.py: 1680x1680 -> 768x768 (cv2.INTER_AREA)
+    # 1. 模拟 handcap_rgb.py: 1680x1680 -> 768x768 (cv2.INTER_AREA)
     rgb = cv2.resize(rgb, (768, 768), interpolation=cv2.INTER_AREA)
     
-    # 2. _01_combine_...py: 768x768 -> 224x224 (cv2.INTER_AREA)
+    # 2. 模拟 _01_combine...: 768x768 -> 224x224 (cv2.INTER_AREA)
     rgb = cv2.resize(rgb, (224, 224), interpolation=cv2.INTER_AREA)
     
     return image_tools.convert_to_uint8(rgb)
+
+
+def _prepare_realsense_image(image_bgr: np.ndarray) -> np.ndarray:
+    """单独的 RealSense 相机处理逻辑，处理成一样的高 (224)，维持原生宽高比 (更宽)"""
+    rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+    cur_h, cur_w = rgb.shape[:2]
+    
+    target_h = 224
+    scale = target_h / cur_h
+    target_w = max(1, int(round(cur_w * scale)))
+    
+    rgb = cv2.resize(rgb, (target_w, target_h), interpolation=cv2.INTER_AREA)
+    return image_tools.convert_to_uint8(rgb)
+
+
+def _prepare_camera_image(image_bgr: np.ndarray) -> np.ndarray:
+    """自动派发器：根据画面比例自动分配给专用的处理函数"""
+    cur_h, cur_w = image_bgr.shape[:2]
+    if cur_h == cur_w:
+        return _prepare_mvs_image(image_bgr)
+    else:
+        return _prepare_realsense_image(image_bgr)
 
 
 def _prepare_tactile_image(image_bgr: np.ndarray | None, use_tactile: bool) -> np.ndarray:
