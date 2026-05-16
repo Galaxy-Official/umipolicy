@@ -48,9 +48,9 @@ pos_rot_to_mat = _POSE_UTILS.pos_rot_to_mat
 LOGGER = logging.getLogger(__name__)
 _ACTIVE_RECORDER = None
 _SHUTTING_DOWN = False
-WRIST_RECORD_SHAPE = (640, 480)
-LEGACY_WRIST_SOURCE_SHAPE = (768, 768)
-LEGACY_WRIST_POLICY_SHAPE = (640, 480)
+WRIST_CAPTURE_SHAPE = (768, 768)
+WRIST_MODEL_INPUT_SHAPE = (224, 224)
+WRIST_RECORD_SHAPE = WRIST_CAPTURE_SHAPE
 MODEL_INPUT_HIGHLIGHT_THICKNESS = 16
 
 
@@ -134,44 +134,16 @@ def get_real_umi_inference_action(raw_action_rotvec: np.ndarray, abs_pose_rotvec
     target_pose_rotvec = mat_to_certain_pose_type(target_pose_mat, "rotvec")
     return target_pose_rotvec
 
-def resize_with_black_padding(image, target_h=480, target_w=640, is_depth=False):
-    """
-    Resize image to fit within (target_h, target_w) while preserving aspect ratio,
-    then pad with black borders to reach exactly (target_h, target_w).
-    """
-    h, w = image.shape[:2]
-    c = image.shape[2] if len(image.shape) == 3 else 1
-        
-    scale = min(target_w / w, target_h / h)
-    new_w = int(w * scale)
-    new_h = int(h * scale)
-    
-    interp = cv2.INTER_NEAREST if is_depth else cv2.INTER_LINEAR
-    resized = cv2.resize(image, (new_w, new_h), interpolation=interp)
-    
-    if len(resized.shape) == 2:
-        resized = np.expand_dims(resized, axis=-1)
-        
-    pad_w = (target_w - new_w) // 2
-    pad_h = (target_h - new_h) // 2
-    
-    if c == 3:
-        canvas = np.zeros((target_h, target_w, 3), dtype=image.dtype)
-    else:
-        canvas = np.zeros((target_h, target_w, 1), dtype=image.dtype)
-        
-    canvas[pad_h:pad_h+new_h, pad_w:pad_w+new_w] = resized
-    return canvas
+def _resize_image_area(image: np.ndarray, target_shape: tuple[int, int]) -> np.ndarray:
+    target_w, target_h = target_shape
+    if image.shape[1] == target_w and image.shape[0] == target_h:
+        return image
+    return cv2.resize(image, (target_w, target_h), interpolation=cv2.INTER_AREA)
 
 
-def _prepare_wrist_for_legacy_checkpoint(image_bgr: np.ndarray) -> np.ndarray:
-    """Match older 513-style checkpoints: square wrist frame -> 640x480 letterbox."""
-    source_w, source_h = LEGACY_WRIST_SOURCE_SHAPE
-    if image_bgr.shape[1] != source_w or image_bgr.shape[0] != source_h:
-        image_bgr = cv2.resize(image_bgr, (source_w, source_h), interpolation=cv2.INTER_AREA)
-
-    target_w, target_h = LEGACY_WRIST_POLICY_SHAPE
-    return resize_with_black_padding(image_bgr, target_h=target_h, target_w=target_w)
+def _prepare_wrist_like_collection(image_bgr: np.ndarray) -> np.ndarray:
+    """Match handcap_rgb.py: normalize raw MVS wrist frames to 768x768 BGR."""
+    return _resize_image_area(image_bgr, WRIST_CAPTURE_SHAPE)
 
 
 def decode_handcap_action_chunk(action_chunk: np.ndarray) -> np.ndarray:
@@ -208,8 +180,9 @@ def _rot6d_to_mat(d6: np.ndarray) -> np.ndarray:
 
 
 def _prepare_camera_image(image_bgr: np.ndarray) -> np.ndarray:
+    image_bgr = _prepare_wrist_like_collection(image_bgr)
     rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-    rgb = image_tools.resize_with_pad(rgb, 224, 224)
+    rgb = _resize_image_area(rgb, WRIST_MODEL_INPUT_SHAPE)
     return image_tools.convert_to_uint8(rgb)
 
 
@@ -1286,7 +1259,7 @@ class ObservationThread(threading.Thread):
 
                 preprocess_start = time.monotonic()
                 if wrist_img is not None:
-                    wrist_img = _prepare_wrist_for_legacy_checkpoint(wrist_img)
+                    wrist_img = _prepare_wrist_like_collection(wrist_img)
                 preprocess_ms = (time.monotonic() - preprocess_start) * 1000.0
                 obs_total_ms = (time.monotonic() - obs_start) * 1000.0
 
