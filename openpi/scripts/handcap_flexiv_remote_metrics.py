@@ -181,7 +181,14 @@ def _rot6d_to_mat(d6: np.ndarray) -> np.ndarray:
 
 def _prepare_camera_image(image_bgr: np.ndarray) -> np.ndarray:
     rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-    rgb = image_tools.resize_with_pad(rgb, 224, 224)
+    
+    # [INTERPOLATION ALIGNMENT] Match the exact data collection and processing pipeline:
+    # 1. handcap_rgb.py: 1680x1680 -> 768x768 (cv2.INTER_AREA)
+    rgb = cv2.resize(rgb, (768, 768), interpolation=cv2.INTER_AREA)
+    
+    # 2. _01_combine_...py: 768x768 -> 224x224 (cv2.INTER_AREA)
+    rgb = cv2.resize(rgb, (224, 224), interpolation=cv2.INTER_AREA)
+    
     return image_tools.convert_to_uint8(rgb)
 
 
