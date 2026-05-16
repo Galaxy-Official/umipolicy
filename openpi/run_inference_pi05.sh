@@ -35,14 +35,14 @@ export RECORDING_INDEX="${RECORDING_INDEX:-}"
 # PROMPT="${PROMPT:-Pick up the bottle cap and cover it with the lid.}"
 
 # stiring
-# 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
-# POLICY_CONFIG="${POLICY_CONFIG:-pi05_514_stiring_350}"
+3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
+POLICY_CONFIG="${POLICY_CONFIG:-pi05_514_stiring_350}"
 
-# # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
-# POLICY_DIR="${POLICY_DIR:-ckpt/lihong/514_stiring_350_vision_80000}"
+# 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
+POLICY_DIR="${POLICY_DIR:-ckpt/lihong/514_stiring_350_vision_action16}"
 
-# # 5. 任务 Prompt 提示词（输入给模型的语言指令）
-# PROMPT="${PROMPT:-pick up the red stick to stir the granules in a white box.}"
+# 5. 任务 Prompt 提示词（输入给模型的语言指令）
+PROMPT="${PROMPT:-pick up the red stick to stir the granules in a white box.}"
 
 # screw
 # # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
@@ -67,13 +67,13 @@ export RECORDING_INDEX="${RECORDING_INDEX:-}"
 
 #  erase board
 # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
-POLICY_CONFIG="${POLICY_CONFIG:-pi05_510_erase_board_350}"
+# POLICY_CONFIG="${POLICY_CONFIG:-pi05_510_erase_board_350}"
 
-# 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
-POLICY_DIR="${POLICY_DIR:-ckpt/lihong/510_erase_board_350_vision_action16}"
+# # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
+# POLICY_DIR="${POLICY_DIR:-ckpt/lihong/510_erase_board_350_vision_action16}"
 
-# 5. 任务 Prompt 提示词（输入给模型的语言指令）
-PROMPT="${PROMPT:-Pick up the blackboard eraser and wipe off the blackboard}"
+# # 5. 任务 Prompt 提示词（输入给模型的语言指令）
+# PROMPT="${PROMPT:-Pick up the blackboard eraser and wipe off the blackboard}"
 
 # #  clamp seal
 # # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
