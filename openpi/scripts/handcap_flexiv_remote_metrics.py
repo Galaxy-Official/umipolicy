@@ -1936,7 +1936,6 @@ def main(args: Args) -> None:
                     action_timestamps = (
                         (1 + np.arange(len(physical_actions), dtype=np.float64)) * robot_dt
                         + time.time()
-                        - args.action_latency
                     )
 
                     force_pred = action_chunk[0, 10:12] if action_chunk.shape[-1] >= 12 else np.zeros((2,), dtype=np.float64)
