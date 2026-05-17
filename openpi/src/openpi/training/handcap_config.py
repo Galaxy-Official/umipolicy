@@ -913,4 +913,9 @@ def get_handcap_configs():
             repo_id="lihongcs/501_bread_moving_raw_lerobot_200",
             data_root="Data/501_bread_moving_raw_lerobot_200",
         ),
+        *make_pi05_505_configs(
+            task_name="429eraseboard_raw_200",
+            repo_id="lihongcs/429eraseboard_raw_lerobot_200",
+            data_root="Data/429eraseboard_raw_lerobot_200",
+        ),
     ]
