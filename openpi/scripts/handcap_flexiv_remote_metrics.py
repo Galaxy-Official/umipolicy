@@ -364,6 +364,7 @@ class TrajectoryCostConfig:
     t_ref: float = 10.0
     d_min: float = 0.02
     v_min: float = 0.005
+    v_ref: float = 0.05
     a_ref: float = 0.30
     j_ref: float = 1.00
     a_max: float = 0.30
@@ -527,6 +528,12 @@ def compute_trajectory_cost(
     T = float(t[-1] - t[0])
     L = float(np.sum(np.linalg.norm(np.diff(p, axis=0), axis=1)))
     D = float(np.linalg.norm(p[-1] - p[0]))
+    effective_T = max(T, 1e-9)
+    path_length_rate = L / effective_T
+    displacement_rate = D / effective_T
+    path_excess_distance = max(L - max(D, config.d_min), 0.0)
+    path_excess_rate = path_excess_distance / effective_T
+    path_rate_ref = max(config.v_ref, 1e-9)
     path_ratio = L / max(D, config.d_min)
     path_excess = max(path_ratio - 1.0, 0.0)
     r_stop = float(np.mean(speed < config.v_min))
@@ -571,9 +578,14 @@ def compute_trajectory_cost(
     )
 
     eps = 1e-9
+    path_length_rate_cost = path_length_rate / max(path_rate_ref, eps)
+    path_excess_rate_cost = path_excess_rate / max(path_rate_ref, eps)
+    # Efficiency cost is normalized by elapsed time. Using whole-trajectory
+    # duration or path length directly makes early safety-boundary exits look
+    # artificially cheap compared with successful, full-length rollouts.
     J_e = (
-        T / max(config.t_ref, eps)
-        + config.lambda_l * path_excess
+        config.lambda_l * path_length_rate_cost
+        + path_excess_rate_cost
         + config.lambda_s * r_stop
     )
     J_m = (
@@ -606,8 +618,16 @@ def compute_trajectory_cost(
             "T": T,
             "L": L,
             "D": D,
+            "path_length_rate": float(path_length_rate),
+            "displacement_rate": float(displacement_rate),
+            "path_excess_distance": float(path_excess_distance),
+            "path_excess_rate": float(path_excess_rate),
+            "path_rate_ref": float(path_rate_ref),
+            "path_length_rate_cost": float(path_length_rate_cost),
+            "path_excess_rate_cost": float(path_excess_rate_cost),
             "path_ratio": float(path_ratio),
             "path_excess": float(path_excess),
+            "legacy_time_cost": float(T / max(config.t_ref, eps)),
             "r_stop": r_stop,
             "mu_v": mu_v,
             "sigma_v": sigma_v,
@@ -792,6 +812,7 @@ class Args:
     metric_t_ref: float = 10.0
     metric_d_min: float = 0.02
     metric_v_min: float = 0.005
+    metric_v_ref: float = 0.05
     metric_a_ref: float = 0.30
     metric_j_ref: float = 1.00
     metric_a_max: float = 0.30
@@ -815,6 +836,7 @@ def _make_trajectory_cost_config(args: Args) -> TrajectoryCostConfig:
         t_ref=args.metric_t_ref,
         d_min=args.metric_d_min,
         v_min=args.metric_v_min,
+        v_ref=args.metric_v_ref,
         a_ref=args.metric_a_ref,
         j_ref=args.metric_j_ref,
         a_max=args.metric_a_max,
@@ -1799,9 +1821,10 @@ def main(args: Args) -> None:
         )
         metric_config = _make_trajectory_cost_config(args)
         LOGGER.info(
-            "Trajectory cost config: monitor_hz=%.1f, T_ref=%.3f, weights=(%.2f, %.2f, %.2f)",
+            "Trajectory cost config: monitor_hz=%.1f, T_ref=%.3f, v_ref=%.3f, weights=(%.2f, %.2f, %.2f)",
             metric_config.monitor_hz,
             metric_config.t_ref,
+            metric_config.v_ref,
             metric_config.w_e,
             metric_config.w_m,
             metric_config.w_c,

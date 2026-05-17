@@ -903,4 +903,9 @@ def get_handcap_configs():
             repo_id="lihongcs/506_peg_flowers_lerobot",
             data_root="Data/506_peg_flowers_lerobot",
         ),
+        *make_pi05_505_configs(
+            task_name="427_yellow_to_pink_200",
+            repo_id="lihongcs/427_yellow_to_pink_lerobot_200",
+            data_root="Data/427_yellow_to_pink_lerobot_200",
+        ),
     ]

@@ -15,7 +15,9 @@ Pick up the towel and hang it on the pink rack.
 501_bread_moving
 Pick up the bread in the basket and put it in the blue bowl.
 
+yellow_to_pink_block_427
 
+pick up the yellow block and put in onto the pink block.
 
 
 505_stiring
