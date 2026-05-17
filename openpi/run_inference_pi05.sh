@@ -23,6 +23,16 @@ CAMERA_CONFIG_PATH="${CAMERA_CONFIG_PATH:-src/perception/configs/camera/handcap_
 # 填入 /dev/video 编号（如 4）。若不录像则留空。RealSense wrist 录像由推理内部记录。
 export RECORDING_INDEX="${RECORDING_INDEX:-}"
 
+# stowing
+# 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
+# POLICY_CONFIG="${POLICY_CONFIG:-pi05_516_stowing_210}"
+
+# # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
+# POLICY_DIR="${POLICY_DIR:-ckpt/lihong/516_stowing_210_vision_20000}"
+
+# # 5. 任务 Prompt 提示词（输入给模型的语言指令）
+# PROMPT="${PROMPT:-Sequentially move the yellow rectangular block, the orange box, and the yellow trapezoidal block into the paper box.}"
+
 
 # close bottle
 # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
@@ -36,13 +46,13 @@ export RECORDING_INDEX="${RECORDING_INDEX:-}"
 
 # stiring
 # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
-POLICY_CONFIG="${POLICY_CONFIG:-pi05_514_stiring_350}"
+# POLICY_CONFIG="${POLICY_CONFIG:-pi05_514_stiring_350}"
 
-# 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
-POLICY_DIR="${POLICY_DIR:-ckpt/lihong/514_stiring_350_vision_30000}"
+# # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
+# POLICY_DIR="${POLICY_DIR:-ckpt/lihong/514_stiring_350_vision_30000}"
 
-# 5. 任务 Prompt 提示词（输入给模型的语言指令）
-PROMPT="${PROMPT:-pick up the red stick to stir the granules in a white box.}"
+# # 5. 任务 Prompt 提示词（输入给模型的语言指令）
+# PROMPT="${PROMPT:-pick up the red stick to stir the granules in a white box.}"
 
 # screw
 # # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）

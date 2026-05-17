@@ -238,7 +238,9 @@ def _prepare_force(force: np.ndarray | None) -> np.ndarray:
     return np.clip(force_arr[:2], 0.0, 10.0)
 
 
-def _prepare_video_frame(image: np.ndarray | None, frame_shape: tuple[int, int]) -> np.ndarray | None:
+def _prepare_video_frame(
+    image: np.ndarray | None, frame_shape: tuple[int, int], keep_aspect_ratio: bool = False
+) -> np.ndarray | None:
     if image is None:
         return None
 
@@ -257,7 +259,23 @@ def _prepare_video_frame(image: np.ndarray | None, frame_shape: tuple[int, int])
         frame = np.clip(frame, 0, 255).astype(np.uint8)
 
     if (frame.shape[1], frame.shape[0]) != frame_shape:
-        frame = cv2.resize(frame, frame_shape, interpolation=cv2.INTER_AREA)
+        if keep_aspect_ratio:
+            # 等比例缩放并加黑边 (Letterbox)，保持宽高比不被拉伸压缩
+            target_w, target_h = frame_shape
+            cur_h, cur_w = frame.shape[:2]
+            scale = min(target_w / cur_w, target_h / cur_h)
+            new_w = max(1, int(round(cur_w * scale)))
+            new_h = max(1, int(round(cur_h * scale)))
+            resized = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
+            
+            pad_h = (target_h - new_h) // 2
+            pad_w = (target_w - new_w) // 2
+            padded = np.zeros((target_h, target_w, 3), dtype=frame.dtype)
+            padded[pad_h:pad_h+new_h, pad_w:pad_w+new_w] = resized
+            frame = padded
+        else:
+            # 原本的暴力缩放
+            frame = cv2.resize(frame, frame_shape, interpolation=cv2.INTER_AREA)
 
     return np.ascontiguousarray(frame)
 
@@ -269,8 +287,10 @@ def _concat_realsense_wrist_frame(
     *,
     highlight_wrist: bool = False,
 ) -> np.ndarray | None:
-    realsense_frame = _prepare_video_frame(realsense_img, frame_shape)
-    wrist_frame = _prepare_video_frame(wrist_img, frame_shape)
+    # RealSense 因为是长方形，为了录像不被压扁，设置 keep_aspect_ratio=True
+    realsense_frame = _prepare_video_frame(realsense_img, frame_shape, keep_aspect_ratio=True)
+    # Wrist 是正方形，直接缩放即可
+    wrist_frame = _prepare_video_frame(wrist_img, frame_shape, keep_aspect_ratio=False)
 
     if realsense_frame is None and wrist_frame is None:
         return None
