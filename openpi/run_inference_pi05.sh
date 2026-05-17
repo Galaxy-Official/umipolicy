@@ -26,13 +26,13 @@ export RECORDING_INDEX="${RECORDING_INDEX:-}"
 
 # stowing
 # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
-# POLICY_CONFIG="${POLICY_CONFIG:-pi05_516_stowing_210}"
+POLICY_CONFIG="${POLICY_CONFIG:-pi05_516_stowing_210}"
 
-# # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
-# POLICY_DIR="${POLICY_DIR:-ckpt/lihong/516_stowing_210_vision_20000}"
+# 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
+POLICY_DIR="${POLICY_DIR:-ckpt/lihong/516_stowing_210_vision_20000}"
 
-# # 5. 任务 Prompt 提示词（输入给模型的语言指令）
-# PROMPT="${PROMPT:-Sequentially move the yellow rectangular block, the orange box, and the yellow trapezoidal block into the paper box.}"
+# 5. 任务 Prompt 提示词（输入给模型的语言指令）
+PROMPT="${PROMPT:-Sequentially move the yellow rectangular block, the orange box, and the yellow trapezoidal block into the paper box.}"
 
 
 # close bottle
@@ -57,14 +57,14 @@ export RECORDING_INDEX="${RECORDING_INDEX:-}"
 
 # screw
 # # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
-POLICY_CONFIG="${POLICY_CONFIG:-pi05_513_screw_490}"
+# POLICY_CONFIG="${POLICY_CONFIG:-pi05_513_screw_490}"
 
-# 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
-# POLICY_DIR="${POLICY_DIR:-ckpt/lihong/513_screw_vision_90000}"
-POLICY_DIR="${POLICY_DIR:-ckpt/lihong/513_screw_490_vision_50000}"
+# # 4. 策略权重路径（保存模型的 ckpt 文件夹相对路径）
+# # POLICY_DIR="${POLICY_DIR:-ckpt/lihong/513_screw_vision_90000}"
+# POLICY_DIR="${POLICY_DIR:-ckpt/lihong/513_screw_490_vision_50000}"
 
-# # 5. 任务 Prompt 提示词（输入给模型的语言指令）
-PROMPT="${PROMPT:-pick up the red socket wrench to loose the screw on the board.}"
+# # # 5. 任务 Prompt 提示词（输入给模型的语言指令）
+# PROMPT="${PROMPT:-pick up the red socket wrench to loose the screw on the board.}"
 
 #  erase board
 # 3. 任务策略名称（需与 handcap_config.py 中的 registered name 对应）
