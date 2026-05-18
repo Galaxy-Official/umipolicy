@@ -11,8 +11,11 @@ exec > >(tee -a "logs/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
+export WANDB_MODE="${WANDB_MODE:-offline}"
+
 CONFIG_NAME="${CONFIG_NAME:-pi05_430_clamp_seal_tactile_force_predict}"
 EXP_NAME="${EXP_NAME:-clamp_seal_handcap_pi05_4gpu_tactile_force_predict}"
+export WANDB_DIR="${WANDB_DIR:-checkpoints/${CONFIG_NAME}/${EXP_NAME}}"
 
 # ==============================================================================
 # H200 (141GB) x4 & 80-Core 900GB RAM throughput-oriented defaults
@@ -87,6 +90,5 @@ python scripts/train.py \
   --num-train-steps "${NUM_TRAIN_STEPS}" \
   --save-interval "${SAVE_INTERVAL}" \
   --num-workers "${NUM_WORKERS}" \
-  --no-wandb-enabled \
   --fsdp-devices "${FSDP_DEVICES}" \
   "${RUN_MODE_FLAGS[@]}"

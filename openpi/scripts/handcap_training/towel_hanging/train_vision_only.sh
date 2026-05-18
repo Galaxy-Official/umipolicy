@@ -11,8 +11,11 @@ exec > >(tee -a "logs/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
+export WANDB_MODE="${WANDB_MODE:-offline}"
+
 CONFIG_NAME="${CONFIG_NAME:-pi05_430_towel_hanging}"
 EXP_NAME="${EXP_NAME:-towel_hanging_handcap_pi05_4gpu_vision_only}"
+export WANDB_DIR="${WANDB_DIR:-checkpoints/${CONFIG_NAME}/${EXP_NAME}}"
 
 # ==============================================================================
 # H200 (141GB) x4 & 80-Core 900GB RAM 极致资源榨干配置
@@ -53,6 +56,5 @@ python scripts/train.py \
   --num-train-steps "${NUM_TRAIN_STEPS}" \
   --save-interval "${SAVE_INTERVAL}" \
   --num-workers "${NUM_WORKERS}" \
-  --no-wandb-enabled \
   --fsdp-devices "${FSDP_DEVICES}" \
   --resume

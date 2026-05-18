@@ -61,6 +61,38 @@ def _load_base_camera() -> Any:
     return BaseCamera
 
 
+def _env_float(name: str, default: float) -> float:
+    value = os.environ.get(name)
+    if value is None or value == "":
+        return float(default)
+    try:
+        return float(value)
+    except ValueError:
+        LOGGER.warning("Invalid %s=%r; using %.4f.", name, value, default)
+        return float(default)
+
+
+def _pose7_to_mat(pose7: Any) -> np.ndarray:
+    pose = np.asarray(pose7, dtype=np.float64)
+    pos = pose[:3]
+    qw, qx, qy, qz = pose[3:]
+    return pos_rot_to_mat(pos, st.Rotation.from_quat([qx, qy, qz, qw]))
+
+
+def _mat_to_tcp_pose7(mat: np.ndarray) -> list[float]:
+    pos = np.asarray(mat[:3, 3], dtype=np.float64)
+    quat_xyzw = st.Rotation.from_matrix(mat[:3, :3]).as_quat(scalar_first=False)
+    return [
+        float(pos[0]),
+        float(pos[1]),
+        float(pos[2]),
+        float(quat_xyzw[3]),
+        float(quat_xyzw[0]),
+        float(quat_xyzw[1]),
+        float(quat_xyzw[2]),
+    ]
+
+
 from scipy.spatial.transform import Rotation
 
 def encode_state_to_handcap_state(eepose_rotvec: np.ndarray, gripper_width: float) -> np.ndarray:
@@ -467,6 +499,21 @@ class FlexivRealEnv:
         self._mode = flexivrdk.Mode
         self._dry_run = dry_run
         self._init_qpos = list(init_qpos) if init_qpos is not None else None
+        self._arm_max_linear_vel = _env_float("FLEXIV_ARM_MAX_LINEAR_VEL", 0.05)
+        self._arm_max_angular_vel = _env_float("FLEXIV_ARM_MAX_ANGULAR_VEL", 0.2)
+        self._arm_max_linear_acc = _env_float("FLEXIV_ARM_MAX_LINEAR_ACC", 0.1)
+        self._arm_max_angular_acc = _env_float("FLEXIV_ARM_MAX_ANGULAR_ACC", 0.3)
+        self._gripper_move_velocity = _env_float("FLEXIV_GRIPPER_MOVE_VELOCITY", 0.03)
+        self._gripper_move_force = _env_float("FLEXIV_GRIPPER_MOVE_FORCE", 20.0)
+        self._enable_safety_clip = os.environ.get("FLEXIV_ENABLE_SAFETY_CLIP", "1").lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        self._action_frame = os.environ.get("FLEXIV_ACTION_FRAME", "tcp").lower()
+        if self._action_frame not in {"tcp", "flange"}:
+            LOGGER.warning("Invalid FLEXIV_ACTION_FRAME=%r; using 'tcp'.", self._action_frame)
+            self._action_frame = "tcp"
 
         robot_sn = os.environ.get("FLEXIV_ROBOT_SN", "Rizon4-062339")
         gripper_name = os.environ.get("FLEXIV_GRIPPER_NAME", "Flexiv-GN01")
@@ -483,6 +530,18 @@ class FlexivRealEnv:
             robot_sn,
             robot_ip,
             actual_local_ip,
+        )
+        LOGGER.info(
+            "Flexiv Cartesian EEF limits: action_frame=%s linear_vel=%.3f angular_vel=%.3f "
+            "linear_acc=%.3f angular_acc=%.3f gripper_vel=%.3f gripper_force=%.3f safety_clip=%s",
+            self._action_frame,
+            self._arm_max_linear_vel,
+            self._arm_max_angular_vel,
+            self._arm_max_linear_acc,
+            self._arm_max_angular_acc,
+            self._gripper_move_velocity,
+            self._gripper_move_force,
+            self._enable_safety_clip,
         )
         self._robot = flexivrdk.Robot(robot_sn, [actual_local_ip])
 
@@ -511,7 +570,7 @@ class FlexivRealEnv:
 
         if not self._dry_run:
             max_width = self._gripper.params().max_width
-            self._gripper.Move(max_width, 0.1, 20)
+            self._gripper.Move(max_width, self._gripper_move_velocity, self._gripper_move_force)
             time.sleep(1)
 
     def reset(self) -> None:
@@ -525,7 +584,7 @@ class FlexivRealEnv:
             LOGGER.info("Resetting robot to initial joint positions: %s", self._init_qpos)
             self._robot.SendJointPosition(self._init_qpos, [0.0] * dof, [0.1] * dof, [0.1] * dof)
             max_width = self._gripper.params().max_width
-            self._gripper.Move(max_width, 0.1, 20)
+            self._gripper.Move(max_width, self._gripper_move_velocity, self._gripper_move_force)
             time.sleep(10)
 
         LOGGER.info("Switching back to NRT_CARTESIAN_MOTION_FORCE mode.")
@@ -533,9 +592,10 @@ class FlexivRealEnv:
         self._robot.SetForceControlAxis([False, False, False, False, False, False])
 
     def get_ee_pose(self) -> np.ndarray:
-        flange_pose_raw = self._robot.states().tcp_pose.copy()
-        pos = flange_pose_raw[:3]
-        qw, qx, qy, qz = flange_pose_raw[3:]
+        states = self._robot.states()
+        pose_raw = states.flange_pose.copy() if self._action_frame == "flange" else states.tcp_pose.copy()
+        pos = pose_raw[:3]
+        qw, qx, qy, qz = pose_raw[3:]
         rot = st.Rotation.from_quat([qx, qy, qz, qw])
         return mat_to_certain_pose_type(pos_rot_to_mat(np.array(pos, dtype=np.float64), rot), "rotvec")
 
@@ -555,7 +615,19 @@ class FlexivRealEnv:
         except Exception:
             return np.zeros((2,), dtype=np.float32)
 
-    def exec_actions(self, actions: np.ndarray, timestamps: np.ndarray, target_force: float = 20.0) -> None:
+    def _action_pose_to_target_tcp(self, target_pose: np.ndarray) -> list[float]:
+        target_pose_mat = pose_to_mat(target_pose)
+        if self._action_frame == "tcp":
+            return _mat_to_tcp_pose7(target_pose_mat)
+
+        states = self._robot.states()
+        current_flange_mat = _pose7_to_mat(states.flange_pose)
+        current_tcp_mat = _pose7_to_mat(states.tcp_pose)
+        flange_to_tcp_mat = np.linalg.inv(current_flange_mat) @ current_tcp_mat
+        target_tcp_mat = target_pose_mat @ flange_to_tcp_mat
+        return _mat_to_tcp_pose7(target_tcp_mat)
+
+    def exec_actions(self, actions: np.ndarray, timestamps: np.ndarray, target_force: float | None = None) -> None:
         receive_time = time.time()
         is_new = timestamps > receive_time
         new_actions = actions[is_new]
@@ -565,25 +637,28 @@ class FlexivRealEnv:
             target_pose = new_actions[i, :6]
             target_width = float(new_actions[i, 6])
 
-            pos, rot = pose_to_pos_rot(target_pose)
-            quat_xyzw = rot.as_quat(scalar_first=False)
-            target_tcp = [
-                float(pos[0]),
-                float(pos[1]),
-                float(pos[2]),
-                float(quat_xyzw[3]),
-                float(quat_xyzw[0]),
-                float(quat_xyzw[1]),
-                float(quat_xyzw[2]),
-            ]
+            target_tcp = self._action_pose_to_target_tcp(target_pose)
+            if self._enable_safety_clip:
+                from lerobot.common.robot_devices.robots.flexiv_safety import clip_target_pose_7d
+
+                target_tcp = clip_target_pose_7d(target_tcp)
 
             if self._dry_run:
                 LOGGER.info("Dry run: skipping joint/gripper command for action %d/%d", i + 1, len(new_actions))
             else:
-                self._robot.SendCartesianMotionForce(target_tcp, [0.0] * 6, [0.0] * 6, 0.15, 0.5, 0.3, 1.0)
+                self._robot.SendCartesianMotionForce(
+                    target_tcp,
+                    [0.0] * 6,
+                    [0.0] * 6,
+                    self._arm_max_linear_vel,
+                    self._arm_max_angular_vel,
+                    self._arm_max_linear_acc,
+                    self._arm_max_angular_acc,
+                )
                 max_width = self._gripper.params().max_width
                 safe_width = min(max(target_width, 0.001), max_width - 0.001)
-                self._gripper.Move(safe_width, 0.1, target_force)
+                move_force = self._gripper_move_force if target_force is None else float(target_force)
+                self._gripper.Move(safe_width, self._gripper_move_velocity, move_force)
 
             dt = new_timestamps[i] - time.time()
             if dt > 0:
@@ -766,11 +841,12 @@ def main(args: Args) -> None:
             if args.infer_force_control and (args.force_predict or args.force_guide):
                 target_force = max(1.0, float(np.sum(force_pred))) # 使用预测的左侧和右侧之和
             else:
-                target_force = 20.0
+                target_force = None
 
+            target_force_display = target_force if target_force is not None else _env_float("FLEXIV_GRIPPER_MOVE_FORCE", 20.0)
             LOGGER.info(f"===> 输入夹爪宽度 (Input Gripper): {latest_frame['gripper_width']:.4f} | 预测夹爪宽度 (Predicted Gripper): {action_chunk[0, 9]:.4f} | "
                         f"预测夹爪力 (Predicted Force): left={force_pred[0]:.2f}N, right={force_pred[1]:.2f}N, sum={np.sum(force_pred):.2f}N | "
-                        f"实际控制力 (Target Force)={target_force:.2f}N")
+                        f"实际控制力 (Target Force)={target_force_display:.2f}N")
 
             env.exec_actions(physical_actions, action_timestamps, target_force=target_force)
 

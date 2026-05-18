@@ -11,22 +11,36 @@ exec > >(tee -a "logs/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
-CONFIG_NAME="${CONFIG_NAME:-pi05_505_stiring_tactile_tacfilm}"
-EXP_NAME="${EXP_NAME:-505_stiring_handcap_pi05_4gpu_tacfilm}"
-DATA_ROOT="${DATA_ROOT:-Data/505_stiring_lerobot}"
+export WANDB_MODE="${WANDB_MODE:-offline}"
+
+CONFIG_NAME="${CONFIG_NAME:-pi05_512_stiring_tactile_tacfilm}"
+EXP_NAME="${EXP_NAME:-512_stiring_handcap_pi05_4gpu_tacfilm}"
+export WANDB_DIR="${WANDB_DIR:-checkpoints/${CONFIG_NAME}/${EXP_NAME}}"
+DATA_ROOT="${DATA_ROOT:-Data/512_stiring_lerobot}"
 
 # ==============================================================================
 # Same data and throughput defaults as train_vision_tactile.sh.
 # This script uses a separate config/experiment name so it will not touch prior
 # vision-only, vision+tactile, force-predict, T3, or health-distill checkpoints.
 # ==============================================================================
-BATCH_SIZE="${BATCH_SIZE:-64}"
+BATCH_SIZE="${BATCH_SIZE:-128}"
 NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-100000}"
 SAVE_INTERVAL="${SAVE_INTERVAL:-10000}"
-NUM_WORKERS="${NUM_WORKERS:-32}"
+NUM_WORKERS="${NUM_WORKERS:-64}"
 FSDP_DEVICES="${FSDP_DEVICES:-1}"
 RESUME="${RESUME:-0}"
 OVERWRITE="${OVERWRITE:-0}"
+PYTHON_BIN="${PYTHON_BIN:-}"
+if [[ -z "${PYTHON_BIN}" ]]; then
+  if command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+  elif command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+  else
+    echo "ERROR: Neither python nor python3 was found. Activate the openpi env or set PYTHON_BIN=/path/to/python."
+    exit 1
+  fi
+fi
 
 export XLA_PYTHON_CLIENT_PREALLOCATE="true"
 export XLA_PYTHON_CLIENT_MEM_FRACTION="0.95"
@@ -45,6 +59,7 @@ echo "Batch size: ${BATCH_SIZE}"
 echo "Train steps: ${NUM_TRAIN_STEPS}"
 echo "Save interval: ${SAVE_INTERVAL}"
 echo "Num Workers: ${NUM_WORKERS}"
+echo "Python: ${PYTHON_BIN}"
 echo "Resume: ${RESUME}"
 echo "Overwrite: ${OVERWRITE}"
 echo "=========================================="
@@ -86,15 +101,14 @@ elif [[ -d "${CHECKPOINT_DIR}" ]]; then
   exit 1
 fi
 
-python scripts/compute_norm_stats.py --config-name "${CONFIG_NAME}"
+"${PYTHON_BIN}" scripts/compute_norm_stats.py --config-name "${CONFIG_NAME}"
 
-python scripts/train.py \
+"${PYTHON_BIN}" scripts/train.py \
   "${CONFIG_NAME}" \
   --exp-name "${EXP_NAME}" \
   --batch-size "${BATCH_SIZE}" \
   --num-train-steps "${NUM_TRAIN_STEPS}" \
   --save-interval "${SAVE_INTERVAL}" \
   --num-workers "${NUM_WORKERS}" \
-  --no-wandb-enabled \
   --fsdp-devices "${FSDP_DEVICES}" \
   "${RUN_MODE_FLAGS[@]}"

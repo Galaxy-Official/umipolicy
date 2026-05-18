@@ -10,28 +10,31 @@ exec > >(tee -a "logs/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
-CONFIG_NAME="${CONFIG_NAME:-pi05_505_stiring_health_distill_tactile_wrist_force}"
-EXP_NAME="${EXP_NAME:-505_stiring_multihealth_pi05_health_distill_tactile_wrist_force}"
+export WANDB_MODE="${WANDB_MODE:-offline}"
+
+CONFIG_NAME="${CONFIG_NAME:-pi05_512_stiring_health_distill_tactile_wrist_force}"
+EXP_NAME="${EXP_NAME:-512_stiring_multihealth_pi05_health_distill_tactile_wrist_force}"
+export WANDB_DIR="${WANDB_DIR:-checkpoints/${CONFIG_NAME}/${EXP_NAME}}"
 
 # Relative to the openpi repo root after the cd above.
-DATA_ROOT_BASE="${DATA_ROOT_BASE:-Data/505_stiring_lerobot_multihealth}"
-HEALTH0_DATA_ROOT="${HEALTH0_DATA_ROOT:-${DATA_ROOT_BASE}/505_stiring_lerobot_health0}"
-HEALTH50_DATA_ROOT="${HEALTH50_DATA_ROOT:-${DATA_ROOT_BASE}/505_stiring_lerobot_health50}"
-HEALTH100_DATA_ROOT="${HEALTH100_DATA_ROOT:-${DATA_ROOT_BASE}/505_stiring_lerobot_health100}"
+DATA_ROOT_BASE="${DATA_ROOT_BASE:-Data/512_stiring_multihealth_lerobot}"
+HEALTH50_DATA_ROOT="${HEALTH50_DATA_ROOT:-${DATA_ROOT_BASE}/512_stiring_lerobt_health50}"
+HEALTH75_DATA_ROOT="${HEALTH75_DATA_ROOT:-${DATA_ROOT_BASE}/512_stiring_lerobt_health75}"
+HEALTH100_DATA_ROOT="${HEALTH100_DATA_ROOT:-${DATA_ROOT_BASE}/512_stiring_lerobt_health100_1}"
 
 HEALTH_DATA_ROOTS=(
-  "${HEALTH0_DATA_ROOT}"
   "${HEALTH50_DATA_ROOT}"
+  "${HEALTH75_DATA_ROOT}"
   "${HEALTH100_DATA_ROOT}"
 )
 HEALTH_REPO_IDS=(
-  "505_stiring_lerobot_health0"
-  "505_stiring_lerobot_health50"
-  "505_stiring_lerobot_health100"
+  "512_stiring_lerobt_health50"
+  "512_stiring_lerobt_health75"
+  "512_stiring_lerobt_health100_1"
 )
-HEALTH_LABELS=("0" "50" "100")
+HEALTH_LABELS=("50" "75" "100")
 
-BATCH_SIZE="${BATCH_SIZE:-144}"
+BATCH_SIZE="${BATCH_SIZE:-192}"
 NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-100000}"
 SAVE_INTERVAL="${SAVE_INTERVAL:-5000}"
 # This workload is video-decode bound; the latest profile starves the GPUs with
@@ -42,6 +45,17 @@ NUM_WORKERS="${NUM_WORKERS:-48}"
 FSDP_DEVICES="${FSDP_DEVICES:-1}"
 RESUME="${RESUME:-0}"
 OVERWRITE="${OVERWRITE:-0}"
+PYTHON_BIN="${PYTHON_BIN:-}"
+if [[ -z "${PYTHON_BIN}" ]]; then
+  if command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+  elif command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+  else
+    echo "ERROR: Neither python nor python3 was found. Activate the openpi env or set PYTHON_BIN=/path/to/python."
+    exit 1
+  fi
+fi
 
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
@@ -67,6 +81,7 @@ echo "Save interval: ${SAVE_INTERVAL}"
 echo "Num workers: ${NUM_WORKERS}"
 echo "DataLoader prefetch factor: ${OPENPI_DATALOADER_PREFETCH_FACTOR}"
 echo "OMP/MKL/OPENBLAS/NUMEXPR threads: ${OMP_NUM_THREADS}/${MKL_NUM_THREADS}/${OPENBLAS_NUM_THREADS}/${NUMEXPR_NUM_THREADS}"
+echo "Python: ${PYTHON_BIN}"
 echo "Health data roots:"
 for data_root in "${HEALTH_DATA_ROOTS[@]}"; do
   echo "  - ${data_root}"
@@ -114,19 +129,18 @@ elif [[ -d "${CHECKPOINT_DIR}" ]]; then
   exit 1
 fi
 
-python scripts/compute_norm_stats.py \
+"${PYTHON_BIN}" scripts/compute_norm_stats.py \
   --config-name "${CONFIG_NAME}" \
   --health-data-roots "${HEALTH_DATA_ROOTS[@]}" \
   --health-repo-ids "${HEALTH_REPO_IDS[@]}"
 
-python scripts/train.py \
+"${PYTHON_BIN}" scripts/train.py \
   "${CONFIG_NAME}" \
   --exp-name "${EXP_NAME}" \
   --batch-size "${BATCH_SIZE}" \
   --num-train-steps "${NUM_TRAIN_STEPS}" \
   --save-interval "${SAVE_INTERVAL}" \
   --num-workers "${NUM_WORKERS}" \
-  --no-wandb-enabled \
   --fsdp-devices "${FSDP_DEVICES}" \
   --data.health-data-roots "${HEALTH_DATA_ROOTS[@]}" \
   --data.health-repo-ids "${HEALTH_REPO_IDS[@]}" \

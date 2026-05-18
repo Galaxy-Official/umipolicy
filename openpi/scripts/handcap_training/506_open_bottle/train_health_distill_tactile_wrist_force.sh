@@ -10,8 +10,11 @@ exec > >(tee -a "logs/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
+export WANDB_MODE="${WANDB_MODE:-offline}"
+
 CONFIG_NAME="${CONFIG_NAME:-pi05_506_open_bottle_health_distill_tactile_wrist_force}"
 EXP_NAME="${EXP_NAME:-508_open_bottle_multihealth_pi05_health_distill_tactile_wrist_force}"
+export WANDB_DIR="${WANDB_DIR:-checkpoints/${CONFIG_NAME}/${EXP_NAME}}"
 
 # Relative to the openpi repo root after the cd above.
 DATA_ROOT_BASE="${DATA_ROOT_BASE:-Data/508_open_bottle_lerobot_multihealth}"
@@ -152,7 +155,6 @@ python scripts/train.py \
   --num-train-steps "${NUM_TRAIN_STEPS}" \
   --save-interval "${SAVE_INTERVAL}" \
   --num-workers "${NUM_WORKERS}" \
-  --no-wandb-enabled \
   --fsdp-devices "${FSDP_DEVICES}" \
   --data.health-data-roots "${HEALTH_DATA_ROOTS[@]}" \
   --data.health-repo-ids "${HEALTH_REPO_IDS[@]}" \

@@ -17,6 +17,7 @@ Usage:
     [--server-port 8000] \
     [--task-name handcap_flexiv_mvs_metrics] \
     [--ctrl-freq 20] \
+    [--record-hz 20] \
     [--steps-per-inference 4] \
     [--obs-horizon 2] \
     [--camera-config-path <path>] \
@@ -34,6 +35,8 @@ Usage:
     [--init-qpos "<7 floats, comma list, or bracket list>"] \
     [--record-root <dir>] \
     [--server-default-prompt "<prompt>"] \
+    [--interactive-control] \
+    [--control-file <path>] \
     [--startup-timeout 120] \
     [--log-dir <dir>] \
     [--dry-run]
@@ -155,6 +158,7 @@ PROMPT="simple sorting task"
 SERVER_PORT="8000"
 TASK_NAME="handcap_flexiv_mvs_metrics"
 CTRL_FREQ="20"
+RECORD_HZ="20"
 STEPS_PER_INFERENCE="4"
 OBS_HORIZON="2"
 CAMERA_CONFIG_PATH=""
@@ -165,6 +169,8 @@ ACTION_LATENCY="0.0"
 INIT_QPOS=""
 RECORD_ROOT=""
 SERVER_DEFAULT_PROMPT=""
+INTERACTIVE_CONTROL="false"
+CONTROL_FILE=""
 STARTUP_TIMEOUT="600"
 LOG_DIR=""
 DRY_RUN="false"
@@ -216,6 +222,11 @@ while [[ $# -gt 0 ]]; do
     --ctrl-freq)
       require_value "$1" "${2-}"
       CTRL_FREQ="$2"
+      shift 2
+      ;;
+    --record-hz)
+      require_value "$1" "${2-}"
+      RECORD_HZ="$2"
       shift 2
       ;;
     --steps-per-inference)
@@ -315,6 +326,15 @@ while [[ $# -gt 0 ]]; do
       SERVER_DEFAULT_PROMPT="$2"
       shift 2
       ;;
+    --interactive-control)
+      INTERACTIVE_CONTROL="true"
+      shift
+      ;;
+    --control-file)
+      require_value "$1" "${2-}"
+      CONTROL_FILE="$2"
+      shift 2
+      ;;
     --startup-timeout)
       require_value "$1" "${2-}"
       STARTUP_TIMEOUT="$2"
@@ -405,6 +425,17 @@ CLIENT_LOG="$LOG_DIR/client.log"
 PID_FILE="$LOG_DIR/pids.env"
 CMD_FILE="$LOG_DIR/run_command.txt"
 
+if [[ "$INTERACTIVE_CONTROL" == "true" && -z "$CONTROL_FILE" ]]; then
+  CONTROL_FILE="$LOG_DIR/runtime_control.commands"
+fi
+CONTROL_EVENT_FILE=""
+if [[ -n "$CONTROL_FILE" ]]; then
+  mkdir -p "$(dirname "$CONTROL_FILE")"
+  : > "$CONTROL_FILE"
+  CONTROL_EVENT_FILE="${CONTROL_FILE}.events"
+  : > "$CONTROL_EVENT_FILE"
+fi
+
 if [[ -n "$LEFT_VIDEO_INDEX" || -n "$RIGHT_VIDEO_INDEX" || -n "$TACTILE_CAPTURE_WIDTH" || -n "$TACTILE_CAPTURE_HEIGHT" ]]; then
   CUSTOM_CONFIG_PATH="$LOG_DIR/custom_camera_config.json"
   python -c "
@@ -412,7 +443,7 @@ import json
 import sys
 import os
 
-default_path = os.path.abspath('../lerobot/src/perception/configs/camera/handcap_camera.json')
+default_path = os.path.abspath('src/perception/configs/camera/handcap_camera.json')
 if not os.path.exists(default_path):
     print(f'Warning: Could not find default camera config at {default_path}')
     sys.exit(0)
@@ -468,6 +499,7 @@ CLIENT_CMD=(
   --prompt "$PROMPT"
   --task-name "$TASK_NAME"
   --ctrl-freq "$CTRL_FREQ"
+  --record-hz "$RECORD_HZ"
   --steps-per-inference "$STEPS_PER_INFERENCE"
   --obs-horizon "$OBS_HORIZON"
   --action-latency "$ACTION_LATENCY"
@@ -509,6 +541,10 @@ if [[ -n "$RECORD_ROOT" ]]; then
   CLIENT_CMD+=(--record-root "$RECORD_ROOT")
 fi
 
+if [[ -n "$CONTROL_FILE" ]]; then
+  CLIENT_CMD+=(--control-file "$CONTROL_FILE")
+fi
+
 if [[ "$DRY_RUN" == "true" ]]; then
   CLIENT_CMD+=(--dry-run)
 fi
@@ -546,7 +582,18 @@ cleanup() {
   fi
 
   if [[ -n "${CLIENT_PID:-}" ]] && kill -0 "$CLIENT_PID" >/dev/null 2>&1; then
-    kill "$CLIENT_PID" >/dev/null 2>&1 || true
+    echo "Stopping client process $CLIENT_PID and waiting for recorder flush..."
+    kill -INT "$CLIENT_PID" >/dev/null 2>&1 || true
+    for _ in {1..30}; do
+      if ! is_process_running "$CLIENT_PID"; then
+        break
+      fi
+      sleep 0.5
+    done
+    if is_process_running "$CLIENT_PID"; then
+      echo "Client did not exit after flush wait; sending TERM."
+      kill -TERM "$CLIENT_PID" >/dev/null 2>&1 || true
+    fi
     wait "$CLIENT_PID" 2>/dev/null || true
   fi
 
@@ -585,6 +632,7 @@ if [[ "$WAIT_STATUS" != "0" ]]; then
   fi
   exit 1
 fi
+echo "Policy server is ready; pretrained weights are loaded."
 
 echo "Starting Flexiv real-robot client..."
 if [[ -n "$CLIENT_LD_PRELOAD" ]]; then
@@ -609,13 +657,90 @@ Logs:
 
 PID file:
   $PID_FILE
-
-Press Ctrl+C to stop both processes.
 EOF
+if [[ "$INTERACTIVE_CONTROL" == "true" ]]; then
+  cat <<EOF
+
+Controls:
+  SPACE  start current episode; press SPACE again to stop it and choose save/delete
+  r      reset robot to init pose while idle or at the next safe point
+  Ctrl+C exit the whole loaded inference session
+EOF
+else
+  echo "Press Ctrl+C to stop both processes."
+fi
+if [[ -n "$CONTROL_FILE" ]]; then
+  echo "Control file: $CONTROL_FILE"
+fi
 
 echo "==== live client.log ===="
 tail -n 0 -F "$CLIENT_LOG" &
 CLIENT_LOG_TAIL_PID=$!
+
+CONTROL_EVENT_OFFSET=0
+EPISODE_RUNNING=0
+CONTROL_EVENT_DELIM=$'\t'
+
+wait_for_episode_finished() {
+  local timeout="${1:-300}"
+  local deadline=$((SECONDS + timeout))
+  local line=""
+  local event_name=""
+  local event_payload=""
+  local current_size=0
+
+  if [[ -z "$CONTROL_EVENT_FILE" ]]; then
+    return 1
+  fi
+
+  while (( SECONDS < deadline )); do
+    if ! is_process_running "$CLIENT_PID"; then
+      return 2
+    fi
+
+    if [[ -f "$CONTROL_EVENT_FILE" ]]; then
+      current_size=$(wc -c < "$CONTROL_EVENT_FILE" | tr -d ' ')
+      if (( current_size > CONTROL_EVENT_OFFSET )); then
+        while IFS="$CONTROL_EVENT_DELIM" read -r event_name event_payload; do
+          if [[ "$event_name" == "episode_finished" && -n "$event_payload" ]]; then
+            EPISODE_OUTPUT_DIR="$event_payload"
+            CONTROL_EVENT_OFFSET=$current_size
+            return 0
+          fi
+        done < <(tail -c +"$((CONTROL_EVENT_OFFSET + 1))" "$CONTROL_EVENT_FILE")
+        CONTROL_EVENT_OFFSET=$current_size
+      fi
+    fi
+    sleep 0.2
+  done
+
+  return 1
+}
+
+prompt_keep_episode() {
+  local episode_dir="$1"
+  local keep_data=""
+
+  if [[ -z "$episode_dir" || ! -d "$episode_dir" ]]; then
+    echo "未发现本轮真机推理数据目录，跳过保存确认。"
+    printf 'discard\n' >> "$CONTROL_FILE"
+    return
+  fi
+
+  echo ""
+  read -p "❓ 本轮真机推理数据是否需要保留? 输入 y 保留，直接回车或其他键删除 [y/N]: " keep_data </dev/tty
+  case "$keep_data" in
+    y|Y|yes|Yes )
+      echo "✅ 已保留本轮数据: $episode_dir"
+      printf 'keep\n' >> "$CONTROL_FILE"
+      ;;
+    * )
+      rm -rf "$episode_dir"
+      echo "🗑️  已删除本轮数据: $episode_dir"
+      printf 'discard\n' >> "$CONTROL_FILE"
+      ;;
+  esac
+}
 
 EXITED_PROCESS=""
 EXIT_STATUS=0
@@ -640,7 +765,43 @@ while true; do
     break
   fi
 
-  sleep 1
+  if [[ "$INTERACTIVE_CONTROL" == "true" && -r /dev/tty ]]; then
+    key=""
+    if IFS= read -r -s -n 1 -t 1 key </dev/tty; then
+      case "$key" in
+        " ")
+          if [[ "$EPISODE_RUNNING" == "0" ]]; then
+            printf 'start\n' >> "$CONTROL_FILE"
+            EPISODE_RUNNING=1
+            echo "Sent start command: recording and inference will begin when the client reaches a safe point."
+          else
+            printf 'stop\n' >> "$CONTROL_FILE"
+            echo "Sent stop command: finishing the current episode and flushing video..."
+            EPISODE_OUTPUT_DIR=""
+            if wait_for_episode_finished 600; then
+              EPISODE_RUNNING=0
+              prompt_keep_episode "$EPISODE_OUTPUT_DIR"
+              echo "Ready for the next episode: press r to reset or SPACE to start."
+            else
+              wait_status=$?
+              EPISODE_RUNNING=0
+              if [[ "$wait_status" == "2" ]]; then
+                echo "Client exited before reporting episode completion." >&2
+              else
+                echo "Timed out waiting for episode completion. Check client.log before deleting data." >&2
+              fi
+            fi
+          fi
+          ;;
+        r|R)
+          printf 'reset\n' >> "$CONTROL_FILE"
+          echo "Sent reset command: robot will move to init pose when the client reaches a safe point."
+          ;;
+      esac
+    fi
+  else
+    sleep 1
+  fi
 done
 
 if [[ -n "${CLIENT_LOG_TAIL_PID:-}" ]] && kill -0 "$CLIENT_LOG_TAIL_PID" >/dev/null 2>&1; then

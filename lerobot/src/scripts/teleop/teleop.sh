@@ -1,36 +1,31 @@
 #!/bin/bash
 # 启动 Flexiv 与 Koch 主从段遥操记录流程 (LeRobot 3.0标准)
 
-# 确保脚本发生错误时立刻停止
 set -e
 
-# 获取脚本所在的目录 (支持从任何路径执行)
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 SRC_DIR="${SCRIPT_DIR}/../.."
 
-# 设置 PYTHONPATH，确保 lerobot 可被 import
 export PYTHONPATH="${SRC_DIR}:${PYTHONPATH}"
 
-# --- 环境变量配置 ---
 export FLEXIV_ROBOT_IP="192.168.2.100"
 export FLEXIV_ROBOT_SN="Rizon4-062339"
 export FLEXIV_GRIPPER_NAME="Flexiv-GN01"
 export FLEXIV_LOCAL_IP="192.168.2.102"
 export FLEXIV_INIT_POSE="[-0.0, -0.698, -0.0, 1.571, -0.0, 0.698, -0.0]"
 
-# --- 采集参数配置 ---
-ROOT_DIR="Data/teleop"
-TASK_NAME="box and block into paper box"
+ROOT_DIR="Data/teleop/yibo"
+TASK_NAME="box_and_block_into_paper_box"
 REPO_ID="${TASK_NAME}_$(date +"%Y%m%d_%H%M%S")"
-TELEOP_TYPE="koch"                          # 可选: koch, so100
-TELEOP_PORT="/dev/ttyUSB0"                  # 主臂串口路径 (Linux: /dev/ttyUSB0)
-EPISODES=50                                 # 连续录入组数
-EPISODE_TIME_S=50                           # 每组总时长 (秒)
+TELEOP_TYPE="koch"
+TELEOP_PORT="/dev/ttyUSB0"
+EPISODES=50
+EPISODE_TIME_S=50
 FPS=20
-
-# --- 相机模式 ---
-# 设为 true 开启触觉相机 (webcam), false 仅使用 MVS 工业相机
 USE_TACTILE=false
+
+SAFETY_FILE="${SRC_DIR}/lerobot/common/robot_devices/robots/flexiv_safety.py"
+SAFETY_BACKUP="${SAFETY_FILE}.bak"
 
 echo "====================================================="
 echo " Starting LeRobot v3.0 Flexiv Teleoperation Pipeline "
@@ -42,10 +37,8 @@ echo " Tactile cams: ${USE_TACTILE}"
 echo "====================================================="
 echo ""
 
-# 使用 python -m 模块调用方式（与推理脚本保持一致）
 cd "${SRC_DIR}"
 
-# 确保串口权限 (需要 sudo 密码)
 if [ -e "${TELEOP_PORT}" ]; then
     echo "Granting permissions to ${TELEOP_PORT}..."
     sudo chmod 777 "${TELEOP_PORT}"
@@ -58,29 +51,42 @@ if [ "${USE_TACTILE}" = "true" ]; then
     TACTILE_FLAG="--use_tactile"
 fi
 
+# 备份并禁用安全边界
+cp "${SAFETY_FILE}" "${SAFETY_BACKUP}"
+sed -i 's/X_MIN = [0-9.-]*/X_MIN = -10.0/' "${SAFETY_FILE}"
+sed -i 's/X_MAX = [0-9.]*/X_MAX = 10.0/' "${SAFETY_FILE}"
+sed -i 's/Y_MIN = -[0-9.]*/Y_MIN = -10.0/' "${SAFETY_FILE}"
+sed -i 's/Y_MAX = [0-9.]*/Y_MAX = 10.0/' "${SAFETY_FILE}"
+sed -i 's/Z_MIN_BASE = [0-9.]*/Z_MIN_BASE = -10.0/' "${SAFETY_FILE}"
+sed -i 's/Z_MAX = [0-9.]*/Z_MAX = 10.0/' "${SAFETY_FILE}"
+echo "Safety boundaries disabled."
+
 START_TIME=$(date +%s)
 
 function on_exit {
-    # Ensure this only runs once
     if [ -z "${EXIT_PROCESSED}" ]; then
         export EXIT_PROCESSED=1
+
+        # 还原安全边界
+        if [ -f "${SAFETY_BACKUP}" ]; then
+            cp "${SAFETY_BACKUP}" "${SAFETY_FILE}"
+            rm "${SAFETY_BACKUP}"
+            echo "Safety boundaries restored."
+        fi
+
         END_TIME=$(date +%s)
         DURATION=$((END_TIME - START_TIME))
-
-        # Compute hours, minutes, seconds
         HOURS=$((DURATION / 3600))
         MINUTES=$(((DURATION % 3600) / 60))
         SECONDS=$((DURATION % 60))
         FORMATTED_TIME=$(printf "%02d:%02d:%02d" $HOURS $MINUTES $SECONDS)
 
-        # Append to summary file
         SUMMARY_FILE="${ROOT_DIR}/${REPO_ID}/collection_summary.txt"
         if [ -f "$SUMMARY_FILE" ]; then
             if ! grep -q "Total Duration (seconds)" "$SUMMARY_FILE"; then
                 echo "Total Duration (seconds): ${DURATION}" >> "$SUMMARY_FILE"
                 echo "Total Duration (formatted): ${FORMATTED_TIME}" >> "$SUMMARY_FILE"
             fi
-            
             echo ""
             echo "====================================================="
             echo "             Collection Finished!                    "
@@ -91,7 +97,6 @@ function on_exit {
     fi
 }
 
-# Trap EXIT and SIGINT so the summary is always printed, even if Ctrl+C is pressed
 trap on_exit EXIT SIGINT
 
 python -m lerobot.scripts.lerobot_flexiv_teleop_record \
@@ -104,4 +109,3 @@ python -m lerobot.scripts.lerobot_flexiv_teleop_record \
     --fps ${FPS} \
     --single-task "${TASK_NAME}" \
     ${TACTILE_FLAG}
-

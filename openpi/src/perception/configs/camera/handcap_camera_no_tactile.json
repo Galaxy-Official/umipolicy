@@ -1,0 +1,11 @@
+{
+    "wrist": {
+        "type": "mvs_cam",
+        "serial": "DA8942749",
+        "exposure": 20000
+    },
+    "realsense": {
+        "type": "realsense",
+        "sn": "233522075695"
+    }
+}

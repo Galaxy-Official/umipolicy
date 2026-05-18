@@ -789,14 +789,109 @@ def get_handcap_configs():
             keep_period=20_000,
         ),
         *make_pi05_505_configs(
-            task_name="505_screw",
-            repo_id="lihongcs/505_screw_lerobot",
-            data_root="Data/505_screw_lerobot",
+            task_name="513_screw",
+            repo_id="lihongcs/513_screw_lerobot",
+            data_root="Data/513_screw_lerobot",
+        ),
+        *make_pi05_505_configs(
+            task_name="513_screw_350",
+            repo_id="lihongcs/513_screw_lerobot_350",
+            data_root="Data/513_screw_lerobot_350",
+        ),
+        *make_pi05_505_configs(
+            task_name="513_screw_490",
+            repo_id="lihongcs/513_screw_lerobot_490",
+            data_root="Data/513_screw_lerobot_490",
+        ),
+        *make_pi05_505_configs(
+            task_name="510_erase_board_350",
+            repo_id="lihongcs/510_erase_board_350_lerobot",
+            data_root="Data/510_erase_board_350_lerobot",
+        ),
+        *make_pi05_505_configs(
+            task_name="510_erase_board_200",
+            repo_id="lihongcs/510_erase_board_lerobot_200",
+            data_root="Data/510_erase_board_lerobot_200",
+        ),
+        TrainConfig(
+            name="pi05_510_erase_board_350_action16",
+            model=pi0_config.Pi0Config(
+                pi05=True,
+                use_tactile=False,
+                tactile_pretrained_ckpt="",
+                camera_keys=("wrist_0_rgb",),
+                action_horizon=16,
+            ),
+            data=LeRobotHandcapWristDataConfig(
+                repo_id="lihongcs/510_erase_board_350_lerobot",
+                data_root="Data/510_erase_board_350_lerobot",
+                base_config=DataConfig(
+                    prompt_from_task=True,
+                    use_handcap=True,
+                ),
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
+            **common_pi05_train_kwargs,
         ),
         *make_pi05_505_configs(
             task_name="505_stiring",
             repo_id="lihongcs/505_stiring_lerobot",
             data_root="Data/505_stiring_lerobot",
+        ),
+        *make_pi05_505_configs(
+            task_name="514_stiring_350",
+            repo_id="lihongcs/514_stiring_lerobot_350",
+            data_root="Data/514_stiring_lerobot_350",
+        ),
+        TrainConfig(
+            name="pi05_514_stiring_350_action16",
+            model=pi0_config.Pi0Config(
+                pi05=True,
+                use_tactile=False,
+                tactile_pretrained_ckpt="",
+                camera_keys=("wrist_0_rgb",),
+                action_horizon=16,
+            ),
+            data=LeRobotHandcapWristDataConfig(
+                repo_id="lihongcs/514_stiring_lerobot_350",
+                data_root="Data/514_stiring_lerobot_350",
+                base_config=DataConfig(
+                    prompt_from_task=True,
+                    use_handcap=True,
+                ),
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader(pi05_base_params),
+            **common_pi05_train_kwargs,
+        ),
+        *make_pi05_505_configs(
+            task_name="512_stiring",
+            repo_id="lihongcs/512_stiring_lerobot",
+            data_root="Data/512_stiring_lerobot",
+        ),
+        *make_pi05_505_configs(
+            task_name="512_stiring_490",
+            repo_id="lihongcs/512_stiring_lerobot_490",
+            data_root="Data/512_stiring_lerobot_490",
+        ),
+        *make_pi05_505_configs(
+            task_name="512_close_bottle",
+            repo_id="lihongcs/512_close_bottle_lerobot",
+            data_root="Data/512_close_bottle_lerobot",
+        ),
+        *make_pi05_505_configs(
+            task_name="512_close_bottle_350",
+            repo_id="lihongcs/512_close_bottle_lerobot_350",
+            data_root="Data/512_close_bottle_lerobot_350",
+        ),
+        *make_pi05_505_configs(
+            task_name="516_stowing_210",
+            repo_id="lihongcs/516_stowing_lerobot_210",
+            data_root="Data/516_stowing_lerobot_210",
+        ),
+        *make_pi05_505_configs(
+            task_name="stowing_350",
+            repo_id="lihongcs/stowing_350_lerobot",
+            data_root="Data/stowing_350_lerobot",
         ),
         *make_pi05_505_configs(
             task_name="506_open_bottle",
@@ -807,5 +902,20 @@ def get_handcap_configs():
             task_name="506_peg_flowers",
             repo_id="lihongcs/506_peg_flowers_lerobot",
             data_root="Data/506_peg_flowers_lerobot",
+        ),
+        *make_pi05_505_configs(
+            task_name="427_yellow_to_pink_200",
+            repo_id="lihongcs/427_yellow_to_pink_lerobot_200",
+            data_root="Data/427_yellow_to_pink_lerobot_200",
+        ),
+        *make_pi05_505_configs(
+            task_name="501_bread_moving_raw_200",
+            repo_id="lihongcs/501_bread_moving_raw_lerobot_200",
+            data_root="Data/501_bread_moving_raw_lerobot_200",
+        ),
+        *make_pi05_505_configs(
+            task_name="429eraseboard_raw_200",
+            repo_id="lihongcs/429eraseboard_raw_lerobot_200",
+            data_root="Data/429eraseboard_raw_lerobot_200",
         ),
     ]

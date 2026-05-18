@@ -1,14 +1,18 @@
 import dataclasses
+import importlib.util
 import json
 import logging
 import os
 from pathlib import Path
+import queue
+import shutil
 import signal as signal_module
 import socket
+import subprocess
 import sys
 import threading
 import time
-from typing import Any
+from typing import Any, Callable
 
 import cv2
 import numpy as np
@@ -17,48 +21,93 @@ import scipy.spatial.transform as st
 from openpi_client import image_tools
 
 
-_EXTERNAL_LEROBOT_SRC = Path(__file__).resolve().parents[2] / "lerobot" / "src"
-if str(_EXTERNAL_LEROBOT_SRC) not in sys.path:
-    sys.path.insert(0, str(_EXTERNAL_LEROBOT_SRC))
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_LOCAL_LEROBOT_SRC = _REPO_ROOT / "src" / "openpi"
+if str(_LOCAL_LEROBOT_SRC) not in sys.path:
+    sys.path.insert(0, str(_LOCAL_LEROBOT_SRC))
 
-from lerobot.datasets.pose_utils import mat_to_certain_pose_type
-from lerobot.datasets.pose_utils import mat_to_pose
-from lerobot.datasets.pose_utils import pose_to_mat
-from lerobot.datasets.pose_utils import pose_to_pos_rot
-from lerobot.datasets.pose_utils import pos_rot_to_mat
+
+def _load_local_pose_utils() -> Any:
+    pose_utils_path = _LOCAL_LEROBOT_SRC / "lerobot" / "datasets" / "pose_utils.py"
+    spec = importlib.util.spec_from_file_location("_openpi_local_pose_utils", pose_utils_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load pose_utils from {pose_utils_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_POSE_UTILS = _load_local_pose_utils()
+mat_to_certain_pose_type = _POSE_UTILS.mat_to_certain_pose_type
+mat_to_pose = _POSE_UTILS.mat_to_pose
+pose_to_mat = _POSE_UTILS.pose_to_mat
+pose_to_pos_rot = _POSE_UTILS.pose_to_pos_rot
+pos_rot_to_mat = _POSE_UTILS.pos_rot_to_mat
 
 
 LOGGER = logging.getLogger(__name__)
 _ACTIVE_RECORDER = None
-WRIST_RECORD_SHAPE = (640, 480)
+_SHUTTING_DOWN = False
+WRIST_CAPTURE_SHAPE = (768, 768)
+WRIST_MODEL_INPUT_SHAPE = (224, 224)
+WRIST_RECORD_SHAPE = WRIST_CAPTURE_SHAPE
+MODEL_INPUT_HIGHLIGHT_THICKNESS = 16
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[1]
-
-
-def _workspace_root() -> Path:
-    return Path(__file__).resolve().parents[2]
+    return _REPO_ROOT
 
 
 def _default_camera_config_path() -> Path:
-    return _workspace_root() / "lerobot" / "src" / "perception" / "configs" / "camera" / "handcap_camera.json"
-
-
-def _bootstrap_lerobot_src() -> Path:
-    if str(_EXTERNAL_LEROBOT_SRC) not in sys.path:
-        sys.path.insert(0, str(_EXTERNAL_LEROBOT_SRC))
-    return _EXTERNAL_LEROBOT_SRC
+    return _repo_root() / "src" / "perception" / "configs" / "camera" / "handcap_camera.json"
 
 
 def _load_base_camera() -> Any:
-    try:
-        from perception.cameras.base_camera import BaseCamera
-    except ImportError:
-        _bootstrap_lerobot_src()
-        from perception.cameras.base_camera import BaseCamera
-
+    from perception.cameras.base_camera import BaseCamera
     return BaseCamera
+
+
+def _required_env_float(name: str) -> float:
+    value = os.environ.get(name)
+    if value is None or value == "":
+        raise RuntimeError(f"{name} must be set by the launch script before starting real-robot inference.")
+    try:
+        return float(value)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be a float, got {value!r}. Set it in run_inference_pi05.sh.") from exc
+
+
+def _required_env_bool(name: str) -> bool:
+    value = os.environ.get(name)
+    if value is None or value == "":
+        raise RuntimeError(f"{name} must be set by the launch script before starting real-robot inference.")
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise RuntimeError(f"{name} must be one of 1/0/true/false/yes/no/on/off, got {value!r}.")
+
+
+def _pose7_to_mat(pose7: Any) -> np.ndarray:
+    pose = np.asarray(pose7, dtype=np.float64)
+    pos = pose[:3]
+    qw, qx, qy, qz = pose[3:]
+    return pos_rot_to_mat(pos, st.Rotation.from_quat([qx, qy, qz, qw]))
+
+
+def _mat_to_tcp_pose7(mat: np.ndarray) -> list[float]:
+    pos = np.asarray(mat[:3, 3], dtype=np.float64)
+    quat_xyzw = st.Rotation.from_matrix(mat[:3, :3]).as_quat(scalar_first=False)
+    return [
+        float(pos[0]),
+        float(pos[1]),
+        float(pos[2]),
+        float(quat_xyzw[3]),
+        float(quat_xyzw[0]),
+        float(quat_xyzw[1]),
+        float(quat_xyzw[2]),
+    ]
 
 
 from scipy.spatial.transform import Rotation
@@ -85,34 +134,16 @@ def get_real_umi_inference_action(raw_action_rotvec: np.ndarray, abs_pose_rotvec
     target_pose_rotvec = mat_to_certain_pose_type(target_pose_mat, "rotvec")
     return target_pose_rotvec
 
-def resize_with_black_padding(image, target_h=480, target_w=640, is_depth=False):
-    """
-    Resize image to fit within (target_h, target_w) while preserving aspect ratio,
-    then pad with black borders to reach exactly (target_h, target_w).
-    """
-    h, w = image.shape[:2]
-    c = image.shape[2] if len(image.shape) == 3 else 1
-        
-    scale = min(target_w / w, target_h / h)
-    new_w = int(w * scale)
-    new_h = int(h * scale)
-    
-    interp = cv2.INTER_NEAREST if is_depth else cv2.INTER_LINEAR
-    resized = cv2.resize(image, (new_w, new_h), interpolation=interp)
-    
-    if len(resized.shape) == 2:
-        resized = np.expand_dims(resized, axis=-1)
-        
-    pad_w = (target_w - new_w) // 2
-    pad_h = (target_h - new_h) // 2
-    
-    if c == 3:
-        canvas = np.zeros((target_h, target_w, 3), dtype=image.dtype)
-    else:
-        canvas = np.zeros((target_h, target_w, 1), dtype=image.dtype)
-        
-    canvas[pad_h:pad_h+new_h, pad_w:pad_w+new_w] = resized
-    return canvas
+def _resize_image_area(image: np.ndarray, target_shape: tuple[int, int]) -> np.ndarray:
+    target_w, target_h = target_shape
+    if image.shape[1] == target_w and image.shape[0] == target_h:
+        return image
+    return cv2.resize(image, (target_w, target_h), interpolation=cv2.INTER_AREA)
+
+
+def _prepare_wrist_like_collection(image_bgr: np.ndarray) -> np.ndarray:
+    """Match handcap_rgb.py: normalize raw MVS wrist frames to 768x768 BGR."""
+    return _resize_image_area(image_bgr, WRIST_CAPTURE_SHAPE)
 
 
 def decode_handcap_action_chunk(action_chunk: np.ndarray) -> np.ndarray:
@@ -148,10 +179,39 @@ def _rot6d_to_mat(d6: np.ndarray) -> np.ndarray:
     return np.stack((b1, b2, b3), axis=-2)
 
 
-def _prepare_camera_image(image_bgr: np.ndarray) -> np.ndarray:
+def _prepare_mvs_image(image_bgr: np.ndarray) -> np.ndarray:
+    """严格且唯一的 MVS 相机处理逻辑，保证与数采和离线处理 100% 对齐，不允许出错"""
     rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-    rgb = image_tools.resize_with_pad(rgb, 224, 224)
+    
+    # 1. 模拟 handcap_rgb.py: 1680x1680 -> 768x768 (cv2.INTER_AREA)
+    rgb = cv2.resize(rgb, (768, 768), interpolation=cv2.INTER_AREA)
+    
+    # 2. 模拟 _01_combine...: 768x768 -> 224x224 (cv2.INTER_AREA)
+    rgb = cv2.resize(rgb, (224, 224), interpolation=cv2.INTER_AREA)
+    
     return image_tools.convert_to_uint8(rgb)
+
+
+def _prepare_realsense_image(image_bgr: np.ndarray) -> np.ndarray:
+    """单独的 RealSense 相机处理逻辑，处理成一样的高 (224)，维持原生宽高比 (更宽)"""
+    rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+    cur_h, cur_w = rgb.shape[:2]
+    
+    target_h = 224
+    scale = target_h / cur_h
+    target_w = max(1, int(round(cur_w * scale)))
+    
+    rgb = cv2.resize(rgb, (target_w, target_h), interpolation=cv2.INTER_AREA)
+    return image_tools.convert_to_uint8(rgb)
+
+
+def _prepare_camera_image(image_bgr: np.ndarray) -> np.ndarray:
+    """自动派发器：根据画面比例自动分配给专用的处理函数"""
+    cur_h, cur_w = image_bgr.shape[:2]
+    if cur_h == cur_w:
+        return _prepare_mvs_image(image_bgr)
+    else:
+        return _prepare_realsense_image(image_bgr)
 
 
 def _prepare_tactile_image(image_bgr: np.ndarray | None, use_tactile: bool) -> np.ndarray:
@@ -178,7 +238,9 @@ def _prepare_force(force: np.ndarray | None) -> np.ndarray:
     return np.clip(force_arr[:2], 0.0, 10.0)
 
 
-def _prepare_video_frame(image: np.ndarray | None, frame_shape: tuple[int, int]) -> np.ndarray | None:
+def _prepare_video_frame(
+    image: np.ndarray | None, frame_shape: tuple[int, int], keep_aspect_ratio: bool = False
+) -> np.ndarray | None:
     if image is None:
         return None
 
@@ -197,9 +259,69 @@ def _prepare_video_frame(image: np.ndarray | None, frame_shape: tuple[int, int])
         frame = np.clip(frame, 0, 255).astype(np.uint8)
 
     if (frame.shape[1], frame.shape[0]) != frame_shape:
-        frame = cv2.resize(frame, frame_shape, interpolation=cv2.INTER_AREA)
+        if keep_aspect_ratio:
+            # 等比例缩放并加黑边 (Letterbox)，保持宽高比不被拉伸压缩
+            target_w, target_h = frame_shape
+            cur_h, cur_w = frame.shape[:2]
+            scale = min(target_w / cur_w, target_h / cur_h)
+            new_w = max(1, int(round(cur_w * scale)))
+            new_h = max(1, int(round(cur_h * scale)))
+            resized = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
+            
+            pad_h = (target_h - new_h) // 2
+            pad_w = (target_w - new_w) // 2
+            padded = np.zeros((target_h, target_w, 3), dtype=frame.dtype)
+            padded[pad_h:pad_h+new_h, pad_w:pad_w+new_w] = resized
+            frame = padded
+        else:
+            # 原本的暴力缩放
+            frame = cv2.resize(frame, frame_shape, interpolation=cv2.INTER_AREA)
 
     return np.ascontiguousarray(frame)
+
+
+def _concat_realsense_wrist_frame(
+    realsense_img: np.ndarray | None,
+    wrist_img: np.ndarray | None,
+    frame_shape: tuple[int, int],
+    *,
+    highlight_wrist: bool = False,
+) -> np.ndarray | None:
+    # RealSense 因为是长方形，为了录像不被压扁，设置 keep_aspect_ratio=True
+    realsense_frame = _prepare_video_frame(realsense_img, frame_shape, keep_aspect_ratio=True)
+    # Wrist 是正方形，直接缩放即可
+    wrist_frame = _prepare_video_frame(wrist_img, frame_shape, keep_aspect_ratio=False)
+
+    if realsense_frame is None and wrist_frame is None:
+        return None
+    if realsense_frame is None:
+        realsense_frame = np.zeros_like(wrist_frame)
+    if wrist_frame is None:
+        wrist_frame = np.zeros_like(realsense_frame)
+
+    combined = np.ascontiguousarray(np.concatenate([realsense_frame, wrist_frame], axis=1))
+    if highlight_wrist:
+        x0 = frame_shape[0]
+        cv2.rectangle(
+            combined,
+            (x0, 0),
+            (combined.shape[1] - 1, combined.shape[0] - 1),
+            (0, 0, 255),
+            MODEL_INPUT_HIGHLIGHT_THICKNESS,
+        )
+    return combined
+
+
+def _highlight_video_frame(frame: np.ndarray) -> np.ndarray:
+    highlighted = np.ascontiguousarray(frame.copy())
+    cv2.rectangle(
+        highlighted,
+        (0, 0),
+        (highlighted.shape[1] - 1, highlighted.shape[0] - 1),
+        (0, 0, 255),
+        MODEL_INPUT_HIGHLIGHT_THICKNESS,
+    )
+    return highlighted
 
 
 def _make_policy_observation(latest_frame: dict[str, Any], prompt: str, use_tactile: bool) -> dict[str, Any]:
@@ -242,6 +364,7 @@ class TrajectoryCostConfig:
     t_ref: float = 10.0
     d_min: float = 0.02
     v_min: float = 0.005
+    v_ref: float = 0.05
     a_ref: float = 0.30
     j_ref: float = 1.00
     a_max: float = 0.30
@@ -405,6 +528,12 @@ def compute_trajectory_cost(
     T = float(t[-1] - t[0])
     L = float(np.sum(np.linalg.norm(np.diff(p, axis=0), axis=1)))
     D = float(np.linalg.norm(p[-1] - p[0]))
+    effective_T = max(T, 1e-9)
+    path_length_rate = L / effective_T
+    displacement_rate = D / effective_T
+    path_excess_distance = max(L - max(D, config.d_min), 0.0)
+    path_excess_rate = path_excess_distance / effective_T
+    path_rate_ref = max(config.v_ref, 1e-9)
     path_ratio = L / max(D, config.d_min)
     path_excess = max(path_ratio - 1.0, 0.0)
     r_stop = float(np.mean(speed < config.v_min))
@@ -449,9 +578,14 @@ def compute_trajectory_cost(
     )
 
     eps = 1e-9
+    path_length_rate_cost = path_length_rate / max(path_rate_ref, eps)
+    path_excess_rate_cost = path_excess_rate / max(path_rate_ref, eps)
+    # Efficiency cost is normalized by elapsed time. Using whole-trajectory
+    # duration or path length directly makes early safety-boundary exits look
+    # artificially cheap compared with successful, full-length rollouts.
     J_e = (
-        T / max(config.t_ref, eps)
-        + config.lambda_l * path_excess
+        config.lambda_l * path_length_rate_cost
+        + path_excess_rate_cost
         + config.lambda_s * r_stop
     )
     J_m = (
@@ -484,8 +618,16 @@ def compute_trajectory_cost(
             "T": T,
             "L": L,
             "D": D,
+            "path_length_rate": float(path_length_rate),
+            "displacement_rate": float(displacement_rate),
+            "path_excess_distance": float(path_excess_distance),
+            "path_excess_rate": float(path_excess_rate),
+            "path_rate_ref": float(path_rate_ref),
+            "path_length_rate_cost": float(path_length_rate_cost),
+            "path_excess_rate_cost": float(path_excess_rate_cost),
             "path_ratio": float(path_ratio),
             "path_excess": float(path_excess),
+            "legacy_time_cost": float(T / max(config.t_ref, eps)),
             "r_stop": r_stop,
             "mu_v": mu_v,
             "sigma_v": sigma_v,
@@ -538,6 +680,111 @@ class TrajectoryMetricMonitor(threading.Thread):
             return list(self.samples)
 
 
+class RuntimeControl:
+    def __init__(self, control_file: Path | None):
+        self.control_file = control_file
+        self.event_file = control_file.parent / f"{control_file.name}.events" if control_file is not None else None
+        self.start_requested = threading.Event()
+        self.stop_requested = threading.Event()
+        self.reset_requested = threading.Event()
+        self._decision_queue: queue.Queue[str] = queue.Queue()
+        self._running = True
+        self._thread: threading.Thread | None = None
+        self._offset = 0
+
+        if self.control_file is None:
+            self.start_requested.set()
+
+    def start(self) -> None:
+        if self.control_file is None:
+            return
+
+        self.control_file.parent.mkdir(parents=True, exist_ok=True)
+        self.control_file.touch(exist_ok=True)
+        if self.event_file is not None:
+            self.event_file.touch(exist_ok=True)
+        self._thread = threading.Thread(target=self._watch_control_file, daemon=True, name="handcap-runtime-control")
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._running = False
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+
+    def consume_reset(self) -> bool:
+        if not self.reset_requested.is_set():
+            return False
+        self.reset_requested.clear()
+        return True
+
+    def consume_start(self) -> bool:
+        if not self.start_requested.is_set():
+            return False
+        self.start_requested.clear()
+        return True
+
+    def consume_stop(self) -> bool:
+        if not self.stop_requested.is_set():
+            return False
+        self.stop_requested.clear()
+        return True
+
+    def emit_event(self, name: str, payload: str | Path | None = None) -> None:
+        if self.event_file is None:
+            return
+        line = name if payload is None else f"{name}\t{payload}"
+        try:
+            with open(self.event_file, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except Exception as exc:  # pragma: no cover - control file is best-effort
+            LOGGER.warning("Failed to write runtime control event %s: %s", name, exc)
+
+    def wait_for_save_decision(self) -> str:
+        if self.control_file is None:
+            return "keep"
+        while True:
+            try:
+                return self._decision_queue.get(timeout=0.1)
+            except queue.Empty:
+                if not self._running:
+                    return "keep"
+
+    def _watch_control_file(self) -> None:
+        assert self.control_file is not None
+        while self._running:
+            try:
+                size = self.control_file.stat().st_size
+                if size < self._offset:
+                    self._offset = 0
+                if size > self._offset:
+                    with open(self.control_file, "r", encoding="utf-8") as f:
+                        f.seek(self._offset)
+                        chunk = f.read()
+                        self._offset = f.tell()
+                    self._handle_commands(chunk.splitlines())
+            except FileNotFoundError:
+                pass
+            except Exception as exc:  # pragma: no cover - control file is best-effort
+                LOGGER.warning("Runtime control file watcher skipped a poll: %s", exc)
+            time.sleep(0.05)
+
+    def _handle_commands(self, commands: list[str]) -> None:
+        for command in commands:
+            command = command.strip().lower()
+            if command == "start":
+                if not self.start_requested.is_set():
+                    LOGGER.info("Received SPACE/start command. Recording and inference will start.")
+                self.start_requested.set()
+            elif command == "stop":
+                LOGGER.info("Received SPACE/stop command. Current episode will finish and flush.")
+                self.stop_requested.set()
+            elif command == "reset":
+                LOGGER.info("Received r/reset command. Reset will run at the next safe point.")
+                self.reset_requested.set()
+            elif command in {"keep", "discard"}:
+                self._decision_queue.put(command)
+
+
 @dataclasses.dataclass
 class Args:
     host: str = "0.0.0.0"
@@ -552,17 +799,20 @@ class Args:
     local_ip: str = dataclasses.field(default_factory=lambda: os.environ.get("FLEXIV_LOCAL_IP", "192.168.2.102"))
     init_qpos: tuple[float, ...] = (-0.0, -0.698, -0.0, 1.571, -0.0, 0.698, -0.0)
     camera_config_path: Path = dataclasses.field(default_factory=_default_camera_config_path)
-    record_root: str = "realworld_replay_recording"
+    control_file: Path | None = None
+    record_root: str = "real_robot_inference_recording"
     use_tactile: bool = True
     force_predict: bool = False
     force_guide: bool = False
     infer_force_control: bool = False
     dry_run: bool = False
     save_states_json: bool = True
+    record_hz: float = 20.0
     metric_monitor_hz: float = 50.0
     metric_t_ref: float = 10.0
     metric_d_min: float = 0.02
     metric_v_min: float = 0.005
+    metric_v_ref: float = 0.05
     metric_a_ref: float = 0.30
     metric_j_ref: float = 1.00
     metric_a_max: float = 0.30
@@ -586,6 +836,7 @@ def _make_trajectory_cost_config(args: Args) -> TrajectoryCostConfig:
         t_ref=args.metric_t_ref,
         d_min=args.metric_d_min,
         v_min=args.metric_v_min,
+        v_ref=args.metric_v_ref,
         a_ref=args.metric_a_ref,
         j_ref=args.metric_j_ref,
         a_max=args.metric_a_max,
@@ -608,45 +859,74 @@ class Recorder:
     def __init__(
         self,
         output_dir: Path,
-        ctrl_freq: int,
+        episode_index: int,
+        video_fps: float,
         wrist_shape: tuple[int, int],
+        realsense_shape: tuple[int, int] | None,
         left_shape: tuple[int, int] | None,
         right_shape: tuple[int, int] | None,
         *,
+        realsense_source: Any | None,
         save_states_json: bool,
     ) -> None:
         self.output_dir = output_dir
+        self.episode_index = int(episode_index)
+        self.realsense_source = realsense_source
         self.save_states_json = save_states_json
         self.states_data: list[dict[str, Any]] = []
         self._closed = False
+        self._writer_running = True
+        self._frame_queue: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=2)
         self.metric_monitor: TrajectoryMetricMonitor | None = None
         self.metric_config: TrajectoryCostConfig | None = None
 
         output_dir.mkdir(parents=True, exist_ok=True)
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        fourcc = cv2.VideoWriter_fourcc(*"MJPG")
         self.wrist_shape = wrist_shape
+        self.realsense_shape = realsense_shape
         self.left_shape = left_shape
         self.right_shape = right_shape
-        self.wrist_video = cv2.VideoWriter(str(output_dir / "view1_wrist.mp4"), fourcc, ctrl_freq, wrist_shape)
+        self._video_paths: dict[str, Path] = {}
+        self._video_frame_counts: dict[str, int] = {"wrist": 0, "left_tactile": 0, "right_tactile": 0}
+        self.video_fps = float(video_fps)
+        episode_prefix = f"episode_{self.episode_index:03d}"
+        wrist_video_name = (
+            f"{episode_prefix}_view1_realsense_wrist.raw.avi"
+            if realsense_shape is not None
+            else f"{episode_prefix}_view1_wrist.raw.avi"
+        )
+        wrist_video_shape = (wrist_shape[0] * 2, wrist_shape[1]) if realsense_shape is not None else wrist_shape
+        self._video_paths["wrist"] = output_dir / wrist_video_name
+        self.wrist_video = cv2.VideoWriter(str(self._video_paths["wrist"]), fourcc, video_fps, wrist_video_shape)
         if not self.wrist_video.isOpened():
-            LOGGER.warning("Failed to open wrist video writer; only state logs will be saved.")
+            LOGGER.warning("Failed to open wrist video writer at %s; only state logs will be saved.", self._video_paths["wrist"])
             self.wrist_video = None
+        else:
+            LOGGER.info("Recording wrist video to %s", self._video_paths["wrist"])
         self.tactile_left_video = None
         self.tactile_right_video = None
         if left_shape is not None:
+            self._video_paths["left_tactile"] = output_dir / f"{episode_prefix}_view2_tactile_left.raw.avi"
             self.tactile_left_video = cv2.VideoWriter(
-                str(output_dir / "view2_tactile_left.mp4"), fourcc, ctrl_freq, left_shape
+                str(self._video_paths["left_tactile"]), fourcc, video_fps, left_shape
             )
             if not self.tactile_left_video.isOpened():
-                LOGGER.warning("Failed to open left tactile video writer.")
+                LOGGER.warning("Failed to open left tactile video writer at %s.", self._video_paths["left_tactile"])
                 self.tactile_left_video = None
+            else:
+                LOGGER.info("Recording left tactile video to %s", self._video_paths["left_tactile"])
         if right_shape is not None:
+            self._video_paths["right_tactile"] = output_dir / f"{episode_prefix}_view3_tactile_right.raw.avi"
             self.tactile_right_video = cv2.VideoWriter(
-                str(output_dir / "view3_tactile_right.mp4"), fourcc, ctrl_freq, right_shape
+                str(self._video_paths["right_tactile"]), fourcc, video_fps, right_shape
             )
             if not self.tactile_right_video.isOpened():
-                LOGGER.warning("Failed to open right tactile video writer.")
+                LOGGER.warning("Failed to open right tactile video writer at %s.", self._video_paths["right_tactile"])
                 self.tactile_right_video = None
+            else:
+                LOGGER.info("Recording right tactile video to %s", self._video_paths["right_tactile"])
+        self._writer_thread = threading.Thread(target=self._writer_loop, daemon=True, name="handcap-video-writer")
+        self._writer_thread.start()
 
     def attach_metric_monitor(
         self,
@@ -656,19 +936,175 @@ class Recorder:
         self.metric_monitor = metric_monitor
         self.metric_config = metric_config
 
-    def record_frame(self, latest_frame: dict[str, Any]) -> None:
+    def record_frame(self, latest_frame: dict[str, Any], *, model_input: bool = False) -> None:
+        if self._closed:
+            return
+
+        packet = {
+            "wrist_img": latest_frame.get("wrist_img"),
+            "realsense_img": self.realsense_source.get_frame(copy_frame=False)
+            if self.realsense_source is not None
+            else None,
+            "left_tactile_img": latest_frame.get("left_tactile_img"),
+            "right_tactile_img": latest_frame.get("right_tactile_img"),
+            "model_input": model_input,
+        }
+        try:
+            self._frame_queue.put_nowait(packet)
+        except queue.Full:
+            try:
+                self._frame_queue.get_nowait()
+                self._frame_queue.task_done()
+            except queue.Empty:
+                pass
+            try:
+                self._frame_queue.put_nowait(packet)
+            except queue.Full:
+                pass
+
+    def _writer_loop(self) -> None:
+        while self._writer_running or not self._frame_queue.empty():
+            try:
+                latest_frame = self._frame_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            try:
+                self._write_frame(latest_frame)
+            except Exception as exc:  # pragma: no cover - recording should never stop control
+                LOGGER.warning("Failed to write recording frame: %s", exc)
+            finally:
+                self._frame_queue.task_done()
+
+    def _write_frame(self, latest_frame: dict[str, Any]) -> None:
         if self.wrist_video is not None:
-            wrist_frame = _prepare_video_frame(latest_frame["wrist_img"], self.wrist_shape)
+            if self.realsense_shape is not None:
+                wrist_frame = _concat_realsense_wrist_frame(
+                    latest_frame.get("realsense_img"),
+                    latest_frame["wrist_img"],
+                    self.wrist_shape,
+                    highlight_wrist=bool(latest_frame.get("model_input")),
+                )
+            else:
+                wrist_frame = _prepare_video_frame(latest_frame["wrist_img"], self.wrist_shape)
+                if wrist_frame is not None and latest_frame.get("model_input"):
+                    wrist_frame = _highlight_video_frame(wrist_frame)
             if wrist_frame is not None:
                 self.wrist_video.write(wrist_frame)
+                self._video_frame_counts["wrist"] += 1
         if self.tactile_left_video is not None and latest_frame["left_tactile_img"] is not None:
             left_frame = _prepare_video_frame(latest_frame["left_tactile_img"], self.left_shape)
             if left_frame is not None:
                 self.tactile_left_video.write(left_frame)
+                self._video_frame_counts["left_tactile"] += 1
         if self.tactile_right_video is not None and latest_frame["right_tactile_img"] is not None:
             right_frame = _prepare_video_frame(latest_frame["right_tactile_img"], self.right_shape)
             if right_frame is not None:
                 self.tactile_right_video.write(right_frame)
+                self._video_frame_counts["right_tactile"] += 1
+
+    def _run_ffmpeg_transcode(self, source_path: Path, mp4_path: Path, codec_args: list[str]) -> subprocess.CompletedProcess:
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-fflags",
+            "+genpts",
+            "-r",
+            f"{self.video_fps:g}",
+            "-i",
+            str(source_path),
+            "-an",
+            *codec_args,
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            str(mp4_path),
+        ]
+        return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+
+    def _opencv_transcode_playable_mp4(self, source_path: Path, mp4_path: Path) -> Path | None:
+        cap = cv2.VideoCapture(str(source_path))
+        if not cap.isOpened():
+            LOGGER.warning("OpenCV could not read raw video for MP4 fallback: %s", source_path)
+            return None
+
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = float(cap.get(cv2.CAP_PROP_FPS) or self.video_fps)
+        if width <= 0 or height <= 0:
+            cap.release()
+            LOGGER.warning("OpenCV fallback got invalid video size for %s", source_path)
+            return None
+
+        writer = cv2.VideoWriter(
+            str(mp4_path),
+            cv2.VideoWriter_fourcc(*"mp4v"),
+            fps if fps > 0 else self.video_fps,
+            (width, height),
+        )
+        if not writer.isOpened():
+            cap.release()
+            LOGGER.warning("OpenCV could not open MP4 writer for fallback: %s", mp4_path)
+            return None
+
+        frame_count = 0
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+            writer.write(frame)
+            frame_count += 1
+
+        cap.release()
+        writer.release()
+
+        if frame_count == 0 or not mp4_path.exists() or mp4_path.stat().st_size == 0:
+            try:
+                mp4_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            LOGGER.warning("OpenCV MP4 fallback produced no usable video for %s", source_path)
+            return None
+
+        LOGGER.info(
+            "Playable MP4 saved via OpenCV fallback: frames=%d size=%.1fKB path=%s",
+            frame_count,
+            mp4_path.stat().st_size / 1024.0,
+            mp4_path,
+        )
+        return mp4_path
+
+    def _transcode_playable_mp4(self, source_path: Path) -> Path | None:
+        if not source_path.exists() or source_path.stat().st_size == 0:
+            return None
+        mp4_path = source_path.with_suffix("").with_suffix(".mp4") if source_path.name.endswith(".raw.avi") else source_path.with_suffix(".mp4")
+        if shutil.which("ffmpeg") is None:
+            LOGGER.warning("ffmpeg is not available; using OpenCV MP4 fallback for %s", source_path)
+            return self._opencv_transcode_playable_mp4(source_path, mp4_path)
+
+        result = self._run_ffmpeg_transcode(
+            source_path,
+            mp4_path,
+            ["-c:v", "libx264", "-crf", "18", "-preset", "veryfast"],
+        )
+        if result.returncode != 0:
+            LOGGER.warning("libx264 MP4 transcode failed for %s; retrying with MPEG-4. Error: %s", source_path, result.stderr.strip())
+            result = self._run_ffmpeg_transcode(
+                source_path,
+                mp4_path,
+                ["-c:v", "mpeg4", "-q:v", "3"],
+            )
+        if result.returncode != 0:
+            LOGGER.warning("ffmpeg failed to transcode %s to MP4; using OpenCV fallback. Error: %s", source_path, result.stderr.strip())
+            return self._opencv_transcode_playable_mp4(source_path, mp4_path)
+        if not mp4_path.exists() or mp4_path.stat().st_size == 0:
+            LOGGER.warning("ffmpeg produced no MP4 for %s; using OpenCV fallback.", source_path)
+            return self._opencv_transcode_playable_mp4(source_path, mp4_path)
+        LOGGER.info("Playable MP4 saved on server: %.1fKB path=%s", mp4_path.stat().st_size / 1024.0, mp4_path)
+        return mp4_path
 
     def append_state(
         self,
@@ -677,6 +1113,7 @@ class Recorder:
         inference_latency: float,
         latest_frame: dict[str, Any],
         action_chunk: np.ndarray,
+        client_timing: dict[str, Any] | None,
         server_timing: dict[str, Any] | None,
         policy_timing: dict[str, Any] | None,
     ) -> None:
@@ -692,6 +1129,11 @@ class Recorder:
             "gripper_width": float(latest_frame["gripper_width"]),
             "action_chunk_size": int(action_chunk.shape[0]),
         }
+        obs_timing = latest_frame.get("timing")
+        if isinstance(obs_timing, dict):
+            for key, value in obs_timing.items():
+                state_key = key if key.startswith("obs_") else f"obs_{key}"
+                state_entry[state_key] = float(value)
         if "force" in latest_frame:
             force = _prepare_force(latest_frame.get("force"))
             state_entry["force_left"] = float(force[0])
@@ -699,6 +1141,9 @@ class Recorder:
         if action_chunk.shape[-1] >= 12:
             state_entry["pred_force_left"] = float(action_chunk[0, 10])
             state_entry["pred_force_right"] = float(action_chunk[0, 11])
+        if client_timing is not None:
+            for key, value in client_timing.items():
+                state_entry[f"client_{key}"] = float(value)
         if server_timing is not None:
             for key, value in server_timing.items():
                 state_entry[f"server_{key}"] = float(value)
@@ -711,6 +1156,10 @@ class Recorder:
         if self._closed:
             return
         self._closed = True
+        self._writer_running = False
+        self._writer_thread.join(timeout=10.0)
+        if self._writer_thread.is_alive():
+            LOGGER.warning("Video writer thread did not finish before timeout; releasing writers anyway.")
 
         if self.wrist_video is not None:
             self.wrist_video.release()
@@ -719,6 +1168,24 @@ class Recorder:
         if self.tactile_right_video is not None:
             self.tactile_right_video.release()
 
+        for key, path in self._video_paths.items():
+            if path.exists():
+                LOGGER.info(
+                    "Recording saved: %s frames=%d size=%.1fKB path=%s",
+                    key,
+                    self._video_frame_counts.get(key, 0),
+                    path.stat().st_size / 1024.0,
+                    path,
+                )
+                mp4_path = self._transcode_playable_mp4(path)
+                if mp4_path is not None and path.suffix == ".avi":
+                    try:
+                        path.unlink()
+                        LOGGER.info("Removed intermediate raw AVI: %s", path)
+                    except OSError as exc:
+                        LOGGER.warning("Failed to remove intermediate raw AVI %s: %s", path, exc)
+            else:
+                LOGGER.warning("Recording file was not created: %s path=%s", key, path)
         if self.states_data:
             if self.save_states_json:
                 with open(self.output_dir / "states.json", "w", encoding="utf-8") as f:
@@ -776,11 +1243,49 @@ class Recorder:
 
 def _signal_handler(sig, frame) -> None:
     del sig, frame
-    LOGGER.info("Detected interrupt signal, flushing recorder.")
-    global _ACTIVE_RECORDER
-    if _ACTIVE_RECORDER is not None:
-        _ACTIVE_RECORDER.flush()
-    raise SystemExit(0)
+    global _SHUTTING_DOWN
+    if _SHUTTING_DOWN:
+        return
+    _SHUTTING_DOWN = True
+    signal_module.signal(signal_module.SIGINT, signal_module.SIG_IGN)
+    signal_module.signal(signal_module.SIGTERM, signal_module.SIG_IGN)
+    LOGGER.info("Detected interrupt signal; exiting after normal cleanup.")
+    raise KeyboardInterrupt
+
+
+class LatestCameraThread(threading.Thread):
+    def __init__(self, camera, name: str):
+        super().__init__(daemon=True, name=f"handcap-{name}-capture")
+        self.camera = camera
+        self.name_for_log = name
+        self.running = True
+        self.lock = threading.Lock()
+        self.frame: np.ndarray | None = None
+        self.timestamp: float | None = None
+        self.error: Exception | None = None
+
+    def run(self) -> None:
+        try:
+            while self.running:
+                ok, frame, timestamp = self.camera.read()
+                if not ok or frame is None:
+                    continue
+                with self.lock:
+                    self.frame = frame.copy()
+                    self.timestamp = float(timestamp) if timestamp is not None else time.time()
+        except Exception as exc:  # pragma: no cover - optional recording camera failure
+            self.error = exc
+            self.running = False
+            LOGGER.warning("Optional %s recording camera stopped: %s", self.name_for_log, exc)
+
+    def get_frame(self, *, copy_frame: bool = True) -> np.ndarray | None:
+        with self.lock:
+            if self.frame is None:
+                return None
+            return self.frame.copy() if copy_frame else self.frame
+
+    def stop(self) -> None:
+        self.running = False
 
 
 class ObservationThread(threading.Thread):
@@ -794,29 +1299,46 @@ class ObservationThread(threading.Thread):
         self.running = True
         self.lock = threading.Lock()
         self.queue: list[dict[str, Any]] = []
+        self._obs_id = 0
         self.error: Exception | None = None
 
     def run(self) -> None:
         try:
             while self.running:
+                obs_start = time.monotonic()
+                wrist_start = time.monotonic()
                 _, wrist_img, cam_cap_time = self.cam_wrist.read()
+                wrist_read_ms = (time.monotonic() - wrist_start) * 1000.0
                 left_tactile_img, right_tactile_img = None, None
+                left_tactile_read_ms = 0.0
+                right_tactile_read_ms = 0.0
                 if self.cam_tactile_left is not None:
+                    tactile_start = time.monotonic()
                     left_tactile_img, _ = self.cam_tactile_left.get_data()
+                    left_tactile_read_ms = (time.monotonic() - tactile_start) * 1000.0
                 if self.cam_tactile_right is not None:
+                    tactile_start = time.monotonic()
                     right_tactile_img, _ = self.cam_tactile_right.get_data()
+                    right_tactile_read_ms = (time.monotonic() - tactile_start) * 1000.0
+
+                robot_state_start = time.monotonic()
                 eepose = self.env.get_ee_pose()
                 gripper_width = self.env.get_gripper_width()
                 force = self.env.get_force()
+                robot_state_ms = (time.monotonic() - robot_state_start) * 1000.0
 
+                preprocess_start = time.monotonic()
                 if wrist_img is not None:
-                    if wrist_img.shape[0] != 768 or wrist_img.shape[1] != 768:
-                        wrist_img = cv2.resize(wrist_img, (768, 768), interpolation=cv2.INTER_AREA)
-                    wrist_img = resize_with_black_padding(wrist_img, target_h=480, target_w=640)
+                    wrist_img = _prepare_wrist_like_collection(wrist_img)
+                preprocess_ms = (time.monotonic() - preprocess_start) * 1000.0
+                obs_total_ms = (time.monotonic() - obs_start) * 1000.0
 
                 with self.lock:
+                    obs_id = self._obs_id
+                    self._obs_id += 1
                     self.queue.append(
                         {
+                            "obs_id": obs_id,
                             "wrist_img": wrist_img.copy() if wrist_img is not None else None,
                             "left_tactile_img": left_tactile_img.copy() if left_tactile_img is not None else None,
                             "right_tactile_img": right_tactile_img.copy() if right_tactile_img is not None else None,
@@ -824,6 +1346,15 @@ class ObservationThread(threading.Thread):
                             "eepose": np.asarray(eepose, dtype=np.float64),
                             "gripper_width": float(gripper_width),
                             "force": np.asarray(force, dtype=np.float32),
+                            "timing": {
+                                "obs_total_ms": obs_total_ms,
+                                "camera_read_ms": wrist_read_ms + left_tactile_read_ms + right_tactile_read_ms,
+                                "wrist_read_ms": wrist_read_ms,
+                                "left_tactile_read_ms": left_tactile_read_ms,
+                                "right_tactile_read_ms": right_tactile_read_ms,
+                                "robot_state_ms": robot_state_ms,
+                                "preprocess_ms": preprocess_ms,
+                            },
                         }
                     )
                     self.queue = self.queue[-self.maxlen :]
@@ -838,6 +1369,45 @@ class ObservationThread(threading.Thread):
             if len(self.queue) < n:
                 return None
             return list(self.queue[-n:])
+
+    def stop(self) -> None:
+        self.running = False
+
+    def get_latest(self) -> dict[str, Any] | None:
+        if self.error is not None:
+            raise RuntimeError("Observation thread failed") from self.error
+        with self.lock:
+            if not self.queue:
+                return None
+            return dict(self.queue[-1])
+
+
+class ObservationRecordingThread(threading.Thread):
+    def __init__(self, obs_thread: ObservationThread, recorder: Recorder, record_hz: float):
+        super().__init__(daemon=True, name="handcap-observation-recorder")
+        self.obs_thread = obs_thread
+        self.recorder = recorder
+        self.record_hz = float(record_hz)
+        self.running = True
+        self._last_obs_id: int | None = None
+
+    def run(self) -> None:
+        period = 1.0 / max(self.record_hz, 1e-6)
+        while self.running:
+            start = time.time()
+            try:
+                latest_frame = self.obs_thread.get_latest()
+                if latest_frame is not None:
+                    obs_id = latest_frame.get("obs_id")
+                    if obs_id != self._last_obs_id:
+                        self.recorder.record_frame(latest_frame)
+                        self._last_obs_id = obs_id
+            except Exception as exc:  # pragma: no cover - recording should not affect inference
+                LOGGER.warning("Observation recording thread skipped a frame: %s", exc)
+            elapsed = time.time() - start
+            sleep_time = period - elapsed
+            if sleep_time > 0:
+                time.sleep(sleep_time)
 
     def stop(self) -> None:
         self.running = False
@@ -858,6 +1428,17 @@ class FlexivRealEnv:
         self._mode = flexivrdk.Mode
         self._dry_run = dry_run
         self._init_qpos = list(init_qpos) if init_qpos is not None else None
+        self._arm_max_linear_vel = _required_env_float("FLEXIV_ARM_MAX_LINEAR_VEL")
+        self._arm_max_angular_vel = _required_env_float("FLEXIV_ARM_MAX_ANGULAR_VEL")
+        self._arm_max_linear_acc = _required_env_float("FLEXIV_ARM_MAX_LINEAR_ACC")
+        self._arm_max_angular_acc = _required_env_float("FLEXIV_ARM_MAX_ANGULAR_ACC")
+        self._gripper_move_velocity = _required_env_float("FLEXIV_GRIPPER_MOVE_VELOCITY")
+        self._gripper_move_force = _required_env_float("FLEXIV_GRIPPER_MOVE_FORCE")
+        self._enable_safety_clip = _required_env_bool("FLEXIV_ENABLE_SAFETY_CLIP")
+        self._action_frame = os.environ.get("FLEXIV_ACTION_FRAME", "tcp").lower()
+        if self._action_frame not in {"tcp", "flange"}:
+            LOGGER.warning("Invalid FLEXIV_ACTION_FRAME=%r; using 'tcp'.", self._action_frame)
+            self._action_frame = "tcp"
 
         robot_sn = os.environ.get("FLEXIV_ROBOT_SN", "Rizon4-062339")
         gripper_name = os.environ.get("FLEXIV_GRIPPER_NAME", "Flexiv-GN01")
@@ -874,6 +1455,18 @@ class FlexivRealEnv:
             robot_sn,
             robot_ip,
             actual_local_ip,
+        )
+        LOGGER.info(
+            "Flexiv Cartesian EEF limits: action_frame=%s linear_vel=%.3f angular_vel=%.3f "
+            "linear_acc=%.3f angular_acc=%.3f gripper_vel=%.3f gripper_force=%.3f safety_clip=%s",
+            self._action_frame,
+            self._arm_max_linear_vel,
+            self._arm_max_angular_vel,
+            self._arm_max_linear_acc,
+            self._arm_max_angular_acc,
+            self._gripper_move_velocity,
+            self._gripper_move_force,
+            self._enable_safety_clip,
         )
         self._robot = flexivrdk.Robot(robot_sn, [actual_local_ip])
 
@@ -909,7 +1502,7 @@ class FlexivRealEnv:
 
         if not self._dry_run:
             max_width = self._gripper.params().max_width
-            self._gripper.Move(max_width, 0.1, 20)
+            self._gripper.Move(max_width, self._gripper_move_velocity, self._gripper_move_force)
             time.sleep(1)
 
     def reset(self) -> None:
@@ -923,7 +1516,7 @@ class FlexivRealEnv:
             LOGGER.info("Resetting robot to initial joint positions: %s", self._init_qpos)
             self._robot.SendJointPosition(self._init_qpos, [0.0] * dof, [0.1] * dof, [0.1] * dof)
             max_width = self._gripper.params().max_width
-            self._gripper.Move(max_width, 0.1, 20)
+            self._gripper.Move(max_width, self._gripper_move_velocity, self._gripper_move_force)
             time.sleep(20)
 
         LOGGER.info("Switching back to NRT_CARTESIAN_MOTION_FORCE mode.")
@@ -931,9 +1524,10 @@ class FlexivRealEnv:
         self._robot.SetForceControlAxis([False, False, False, False, False, False])
 
     def get_ee_pose(self) -> np.ndarray:
-        flange_pose_raw = self._robot.states().tcp_pose.copy()
-        pos = flange_pose_raw[:3]
-        qw, qx, qy, qz = flange_pose_raw[3:]
+        states = self._robot.states()
+        pose_raw = states.flange_pose.copy() if self._action_frame == "flange" else states.tcp_pose.copy()
+        pos = pose_raw[:3]
+        qw, qx, qy, qz = pose_raw[3:]
         rot = st.Rotation.from_quat([qx, qy, qz, qw])
         return mat_to_certain_pose_type(pos_rot_to_mat(np.array(pos, dtype=np.float64), rot), "rotvec")
 
@@ -957,6 +1551,24 @@ class FlexivRealEnv:
         with self._target_lock:
             self._latest_target_tcp = list(target_tcp)
             self._latest_target_time = float(target_time)
+
+    def _action_pose_to_target_tcp(self, target_pose: np.ndarray) -> list[float]:
+        target_pose_mat = pose_to_mat(target_pose)
+        
+        import os
+        # 允许通过环境变量恢复到旧版本的直接发送（不进行 TCP offset 转换）
+        if os.environ.get("FLEXIV_USE_DIRECT_EEF", "1") == "1":
+            return _mat_to_tcp_pose7(target_pose_mat)
+
+        if self._action_frame == "tcp":
+            return _mat_to_tcp_pose7(target_pose_mat)
+
+        states = self._robot.states()
+        current_flange_mat = _pose7_to_mat(states.flange_pose)
+        current_tcp_mat = _pose7_to_mat(states.tcp_pose)
+        flange_to_tcp_mat = np.linalg.inv(current_flange_mat) @ current_tcp_mat
+        target_tcp_mat = target_pose_mat @ flange_to_tcp_mat
+        return _mat_to_tcp_pose7(target_tcp_mat)
 
     @staticmethod
     def _timestamp_to_seconds(timestamp: Any) -> float | None:
@@ -994,91 +1606,140 @@ class FlexivRealEnv:
             "target_time": target_time,
         }
 
-    def exec_actions(self, actions: np.ndarray, timestamps: np.ndarray, target_force: float = 20.0) -> None:
+    def exec_actions(
+        self,
+        actions: np.ndarray,
+        timestamps: np.ndarray,
+        target_force: float | None = None,
+        *,
+        should_reset: Callable[[], bool] | None = None,
+    ) -> bool:
         receive_time = time.time()
         is_new = timestamps > receive_time
         new_actions = actions[is_new]
         new_timestamps = timestamps[is_new]
 
         for i in range(len(new_actions)):
+            if should_reset is not None and should_reset():
+                return False
+
             target_pose = new_actions[i, :6]
             target_width = float(new_actions[i, 6])
 
-            pos, rot = pose_to_pos_rot(target_pose)
-            quat_xyzw = rot.as_quat(scalar_first=False)
-            target_tcp = [
-                float(pos[0]),
-                float(pos[1]),
-                float(pos[2]),
-                float(quat_xyzw[3]),
-                float(quat_xyzw[0]),
-                float(quat_xyzw[1]),
-                float(quat_xyzw[2]),
-            ]
+            target_tcp = self._action_pose_to_target_tcp(target_pose)
+            if self._enable_safety_clip:
+                from lerobot.common.robot_devices.robots.flexiv_safety import clip_target_pose_7d
+
+                target_tcp = clip_target_pose_7d(target_tcp)
             self._set_latest_target(target_tcp, float(new_timestamps[i]))
 
             if self._dry_run:
                 LOGGER.info("Dry run: skipping joint/gripper command for action %d/%d", i + 1, len(new_actions))
             else:
-                self._robot.SendCartesianMotionForce(target_tcp, [0.0] * 6, [0.0] * 6, 0.15, 0.5, 0.3, 1.0)
+                self._robot.SendCartesianMotionForce(
+                    target_tcp,
+                    [0.0] * 6,
+                    [0.0] * 6,
+                    self._arm_max_linear_vel,
+                    self._arm_max_angular_vel,
+                    self._arm_max_linear_acc,
+                    self._arm_max_angular_acc,
+                )
                 max_width = self._gripper.params().max_width
                 safe_width = min(max(target_width, 0.001), max_width - 0.001)
-                self._gripper.Move(safe_width, 0.1, target_force)
+                move_force = self._gripper_move_force if target_force is None else float(target_force)
+                self._gripper.Move(safe_width, self._gripper_move_velocity, move_force)
 
-            dt = new_timestamps[i] - time.time()
-            if dt > 0:
-                time.sleep(dt)
+            while True:
+                if should_reset is not None and should_reset():
+                    return False
+                dt = new_timestamps[i] - time.time()
+                if dt <= 0:
+                    break
+                time.sleep(min(dt, 0.05))
+
+        return True
 
 
-def _make_output_dir(args: Args) -> Path:
+def _make_session_dir(args: Args) -> Path:
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     return _repo_root() / args.record_root / args.task_name / timestamp
 
 
-def _init_cameras(camera_config_path: Path, use_tactile: bool) -> tuple[Any, Any | None, Any | None]:
+def _make_output_dir(session_dir: Path, episode_index: int) -> Path:
+    return session_dir / f"episode_{episode_index:03d}"
+
+
+def _create_camera_from_info(BaseCamera, camera_info: dict[str, Any]):
+    camera_type = camera_info["type"]
+    if camera_type == "mvs_cam":
+        from perception.cameras.mvs_cam import MVSCamera
+
+        return MVSCamera(
+            {
+                "serial": camera_info.get("serial"),
+                "exposure": camera_info.get("exposure"),
+            }
+        )
+    if camera_type == "realsense":
+        return BaseCamera.create_camera(camera_type, camera_info.get("sn"))
+    return BaseCamera.create_camera(
+        camera_type,
+        camera_info.get("camera_index"),
+        camera_info.get("camera_v4l_path"),
+        camera_info.get("fps"),
+        camera_info.get("resolution"),
+    )
+
+
+def _optional_record_camera_from_config(BaseCamera, config: dict[str, Any]) -> Any | None:
+    for name in ("realsense", "record_realsense", "side", "head"):
+        if name not in config or name == "wrist":
+            continue
+        try:
+            return _create_camera_from_info(BaseCamera, config[name])
+        except Exception as exc:  # pragma: no cover - optional hardware path
+            LOGGER.warning("Disabling optional recording camera %s after init failure: %s", name, exc)
+            return None
+    return None
+
+
+def _init_cameras(camera_config_path: Path, use_tactile: bool) -> tuple[Any, Any | None, Any | None, Any | None]:
     BaseCamera = _load_base_camera()
     config_path = camera_config_path
 
     if not use_tactile:
         no_tactile_config_path = camera_config_path.with_name("handcap_camera_no_tactile.json")
-        if no_tactile_config_path.exists():
+        if camera_config_path.name == "handcap_camera.json" and no_tactile_config_path.exists():
             config_path = no_tactile_config_path
             LOGGER.info("use_tactile=False: using wrist-only camera config %s", config_path)
-            cam_dict = BaseCamera.create_cameras_from_config(config_path=str(config_path))
         else:
             LOGGER.info("use_tactile=False: using wrist camera only from %s", config_path)
-            with open(config_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
-            wrist_config = config.get("wrist")
-            if wrist_config is None:
-                raise KeyError(f"Camera config must contain a 'wrist' camera: {config_path}")
-            if wrist_config.get("type") != "mvs_cam":
-                raise ValueError("use_tactile=False expects the wrist camera to be type 'mvs_cam'")
-            _bootstrap_lerobot_src()
-            from perception.cameras.mvs_cam import MVSCamera
-
-            cam_dict = {
-                "wrist": MVSCamera(
-                    {
-                        "serial": wrist_config.get("serial"),
-                        "exposure": wrist_config.get("exposure"),
-                    }
-                )
-            }
-        if "wrist" not in cam_dict:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        if "wrist" not in config:
             raise KeyError(f"Camera config must contain a 'wrist' camera: {config_path}")
-        return cam_dict["wrist"], None, None
+        cam_wrist = _create_camera_from_info(BaseCamera, config["wrist"])
+        cam_realsense = _optional_record_camera_from_config(BaseCamera, config)
+        return cam_wrist, cam_realsense, None, None
 
-    cam_dict = BaseCamera.create_cameras_from_config(config_path=str(config_path))
-    if "wrist" not in cam_dict:
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = json.load(f)
+    if "wrist" not in config:
         raise KeyError(f"Camera config must contain a 'wrist' camera: {config_path}")
-    return cam_dict["wrist"], cam_dict["left_tactile"], cam_dict["right_tactile"]
+    cam_wrist = _create_camera_from_info(BaseCamera, config["wrist"])
+    cam_realsense = _optional_record_camera_from_config(BaseCamera, config)
+    cam_tactile_left = _create_camera_from_info(BaseCamera, config["left_tactile"])
+    cam_tactile_right = _create_camera_from_info(BaseCamera, config["right_tactile"])
+    return cam_wrist, cam_realsense, cam_tactile_left, cam_tactile_right
 
 
 def _init_recorder(
     output_dir: Path,
-    ctrl_freq: int,
+    episode_index: int,
+    record_hz: float,
     cam_wrist,
+    realsense_source,
     cam_tactile_left,
     cam_tactile_right,
     *,
@@ -1089,6 +1750,8 @@ def _init_recorder(
 
     if init_wrist_img is None:
         raise RuntimeError("Failed to fetch initial wrist frame for recorder setup")
+
+    realsense_shape = WRIST_RECORD_SHAPE if realsense_source is not None else None
 
     left_shape = None
     right_shape = None
@@ -1104,188 +1767,347 @@ def _init_recorder(
 
     return Recorder(
         output_dir=output_dir,
-        ctrl_freq=ctrl_freq,
+        episode_index=episode_index,
+        video_fps=record_hz,
         wrist_shape=WRIST_RECORD_SHAPE,
+        realsense_shape=realsense_shape,
         left_shape=left_shape,
         right_shape=right_shape,
+        realsense_source=realsense_source,
         save_states_json=save_states_json,
     )
+
+
+def _reset_to_init_pose(env: FlexivRealEnv, args: Args, reason: str) -> None:
+    LOGGER.info("%s Moving robot to init pose: %s", reason, args.init_qpos)
+    env.reset()
+    LOGGER.info("Reset finished.")
 
 
 def main(args: Args) -> None:
     from openpi_client import websocket_client_policy
 
-    LOGGER.info("Connecting to remote policy server at ws://%s:%d", args.host, args.port)
-    prompt = args.prompt or args.task_name
-    robot_dt = 1.0 / args.ctrl_freq
-    LOGGER.info(
-        "Control config: ctrl_freq=%.3fHz, robot_dt=%.4fs, steps_per_inference=%d, action_latency=%.4fs, "
-        "force_predict=%s, force_guide=%s, infer_force_control=%s",
-        args.ctrl_freq,
-        robot_dt,
-        args.steps_per_inference,
-        args.action_latency,
-        args.force_predict,
-        args.force_guide,
-        args.infer_force_control,
-    )
-    metric_config = _make_trajectory_cost_config(args)
-    LOGGER.info(
-        "Trajectory cost config: monitor_hz=%.1f, T_ref=%.3f, weights=(%.2f, %.2f, %.2f)",
-        metric_config.monitor_hz,
-        metric_config.t_ref,
-        metric_config.w_e,
-        metric_config.w_m,
-        metric_config.w_c,
-    )
-
-    camera_config_path = args.camera_config_path
-    if not camera_config_path.is_absolute():
-        camera_config_path = (_repo_root() / camera_config_path).resolve()
-    if not camera_config_path.exists():
-        camera_config_path = _default_camera_config_path()
-
-    output_dir = _make_output_dir(args)
-    policy = websocket_client_policy.WebsocketClientPolicy(host=args.host, port=args.port)
-    LOGGER.info("Server metadata: %s", policy.get_server_metadata())
-
-    LOGGER.info("Initializing cameras from %s (use_tactile=%s)", camera_config_path, args.use_tactile)
-    cam_wrist, cam_tactile_left, cam_tactile_right = _init_cameras(camera_config_path, args.use_tactile)
-
-    LOGGER.info("Initializing recorder in %s", output_dir)
-    recorder = _init_recorder(
-        output_dir,
-        args.ctrl_freq,
-        cam_wrist,
-        cam_tactile_left,
-        cam_tactile_right,
-        use_tactile=args.use_tactile,
-        save_states_json=args.save_states_json,
-    )
-
     global _ACTIVE_RECORDER
-    _ACTIVE_RECORDER = recorder
     signal_module.signal(signal_module.SIGINT, _signal_handler)
     signal_module.signal(signal_module.SIGTERM, _signal_handler)
 
-    LOGGER.info("Initializing Flexiv environment at %s", args.robot_ip)
-    env = FlexivRealEnv(args.init_qpos, robot_ip=args.robot_ip, local_ip=args.local_ip, dry_run=args.dry_run)
-    LOGGER.info("Moving to init pose: %s", args.init_qpos)
-    env.reset()
-
-    obs_thread = ObservationThread(cam_wrist, cam_tactile_left, cam_tactile_right, env, maxlen=args.obs_horizon)
-    obs_thread.start()
-
-    LOGGER.info("Waiting for observation queue to fill (obs_horizon=%d)", args.obs_horizon)
-    while obs_thread.get_obs(args.obs_horizon) is None:
-        time.sleep(0.01)
-    LOGGER.info("Observation queue filled. Starting inference loop.")
-
-    metric_monitor = TrajectoryMetricMonitor(env, metric_config)
-    recorder.attach_metric_monitor(metric_monitor, metric_config)
+    control = RuntimeControl(args.control_file)
+    recorder: Recorder | None = None
+    observation_recorder: ObservationRecordingThread | None = None
+    obs_thread: ObservationThread | None = None
+    realsense_thread: LatestCameraThread | None = None
+    metric_monitor: TrajectoryMetricMonitor | None = None
     metric_started = False
 
-    step = 0
     try:
+        control.start()
+
+        LOGGER.info("Connecting to remote policy server at ws://%s:%d", args.host, args.port)
+        if args.control_file is not None:
+            LOGGER.info("Interactive control file: %s", args.control_file)
+        prompt = args.prompt or args.task_name
+        robot_dt = 1.0 / args.ctrl_freq
+        LOGGER.info(
+            "Control config: ctrl_freq=%.3fHz, record_hz=%.3fHz, robot_dt=%.4fs, steps_per_inference=%d, action_latency=%.4fs, "
+            "force_predict=%s, force_guide=%s, infer_force_control=%s",
+            args.ctrl_freq,
+            args.record_hz,
+            robot_dt,
+            args.steps_per_inference,
+            args.action_latency,
+            args.force_predict,
+            args.force_guide,
+            args.infer_force_control,
+        )
+        metric_config = _make_trajectory_cost_config(args)
+        LOGGER.info(
+            "Trajectory cost config: monitor_hz=%.1f, T_ref=%.3f, v_ref=%.3f, weights=(%.2f, %.2f, %.2f)",
+            metric_config.monitor_hz,
+            metric_config.t_ref,
+            metric_config.v_ref,
+            metric_config.w_e,
+            metric_config.w_m,
+            metric_config.w_c,
+        )
+
+        camera_config_path = args.camera_config_path
+        if not camera_config_path.is_absolute():
+            camera_config_path = (_repo_root() / camera_config_path).resolve()
+        if not camera_config_path.exists():
+            camera_config_path = _default_camera_config_path()
+
+        policy = websocket_client_policy.WebsocketClientPolicy(host=args.host, port=args.port)
+        LOGGER.info("Server metadata: %s", policy.get_server_metadata())
+
+        LOGGER.info("Initializing cameras from %s (use_tactile=%s)", camera_config_path, args.use_tactile)
+        cam_wrist, cam_realsense, cam_tactile_left, cam_tactile_right = _init_cameras(camera_config_path, args.use_tactile)
+        realsense_thread = LatestCameraThread(cam_realsense, "realsense") if cam_realsense is not None else None
+
+        LOGGER.info("Initializing Flexiv environment at %s", args.robot_ip)
+        env = FlexivRealEnv(args.init_qpos, robot_ip=args.robot_ip, local_ip=args.local_ip, dry_run=args.dry_run)
+        _reset_to_init_pose(env, args, "Startup reset.")
+
+        if realsense_thread is not None:
+            realsense_thread.start()
+
+        session_dir = _make_session_dir(args)
+        episode_index = 0
+        LOGGER.info("Session recording directory: %s", session_dir)
+        LOGGER.info("Ready. Press SPACE to start/stop one episode, r to reset, Ctrl+C to exit.")
         while True:
-            loop_start = time.time()
-            frames = obs_thread.get_obs(args.obs_horizon)
-            if frames is None:
-                time.sleep(0.01)
-                continue
+            while not control.consume_start():
+                if control.consume_reset():
+                    _reset_to_init_pose(env, args, "Reset requested while idle.")
+                control.consume_stop()
+                time.sleep(0.05)
 
-            latest_frame = frames[-1]
-            observation = _make_policy_observation(latest_frame, prompt, args.use_tactile)
-            action_result = policy.infer(observation)
-            action_chunk = np.asarray(action_result["actions"], dtype=np.float64)
-            decoded_actions = decode_handcap_action_chunk(action_chunk)
-            policy_chunk_size = len(decoded_actions)
-            
-            # Convert the decoded actions (which are SE(3) relative pose increments) back to absolute physical target poses
-            physical_actions = []
-            current_eepose = latest_frame["eepose"]
-            for action in decoded_actions:
-                abs_phys_pose = get_real_umi_inference_action(action[:6], current_eepose)
-                physical_actions.append(np.concatenate([abs_phys_pose, action[6:7]], axis=-1))
-            physical_actions = np.array(physical_actions)
-            if args.steps_per_inference > 0:
-                physical_actions = physical_actions[: args.steps_per_inference]
-            
-            action_timestamps = (
-                (1 + np.arange(len(physical_actions), dtype=np.float64)) * robot_dt + time.time() - args.action_latency
-            )
+            if control.consume_reset():
+                _reset_to_init_pose(env, args, "Reset requested before episode start.")
 
-            force_pred = action_chunk[0, 10:12] if action_chunk.shape[-1] >= 12 else np.zeros((2,), dtype=np.float64)
-            if args.infer_force_control and (args.force_predict or args.force_guide):
-                target_force = max(1.0, float(np.mean(force_pred)))
-            else:
-                target_force = 20.0
-
-            if not metric_started:
-                metric_monitor.start()
-                metric_started = True
-
-            env.exec_actions(physical_actions, action_timestamps, target_force=target_force)
-
-            inference_latency = time.time() - loop_start
-            recorder.record_frame(latest_frame)
-            step += 1
-            recorder.append_state(
-                step=step,
-                inference_latency=inference_latency,
-                latest_frame=latest_frame,
-                action_chunk=action_chunk,
-                server_timing=action_result.get("server_timing"),
-                policy_timing=action_result.get("policy_timing"),
-            )
-
-            first_target = physical_actions[0]
-            force_obs = _prepare_force(latest_frame.get("force"))
-            exec_horizon = len(physical_actions) * robot_dt
+            control.consume_stop()
+            output_dir = _make_output_dir(session_dir, episode_index)
             LOGGER.info(
-                "[step=%d] infer=%.1fms policy_chunk=%d exec_steps=%d eef_xyz=(%.3f, %.3f, %.3f) "
-                "exec_horizon=%.2fs gripper=%.4f force=(%.2f, %.2f) target_xyz=(%.3f, %.3f, %.3f) "
-                "target_gripper=%.4f pred_force=(%.2f, %.2f)",
-                step,
-                inference_latency * 1000.0,
-                policy_chunk_size,
-                len(physical_actions),
-                float(current_eepose[0]),
-                float(current_eepose[1]),
-                float(current_eepose[2]),
-                exec_horizon,
-                float(latest_frame["gripper_width"]),
-                float(force_obs[0]),
-                float(force_obs[1]),
-                float(first_target[0]),
-                float(first_target[1]),
-                float(first_target[2]),
-                float(first_target[6]),
-                float(force_pred[0]),
-                float(force_pred[1]),
+                "Start command accepted. Initializing episode %03d recorder in %s",
+                episode_index,
+                output_dir,
             )
-            
-            # Print metrics periodically during inference
-            if step % 2 == 0:
-                metric_samples_snapshot = metric_monitor.snapshot()
-                metric_summary = compute_trajectory_cost(metric_samples_snapshot, metric_config)
-                if metric_summary.get("valid"):
-                    LOGGER.info(
-                        "[step=%d] Current Trajectory Cost: J=%.3f (J_e=%.3f, J_m=%.3f, J_c=%.3f)",
-                        step,
-                        metric_summary.get("J", 0.0),
-                        metric_summary.get("J_e", 0.0),
-                        metric_summary.get("J_m", 0.0),
-                        metric_summary.get("J_c", 0.0),
+            control.emit_event("episode_started", output_dir)
+            recorder = _init_recorder(
+                output_dir,
+                episode_index,
+                args.record_hz,
+                cam_wrist,
+                realsense_thread,
+                cam_tactile_left,
+                cam_tactile_right,
+                use_tactile=args.use_tactile,
+                save_states_json=args.save_states_json,
+            )
+            _ACTIVE_RECORDER = recorder
+
+            obs_thread = ObservationThread(
+                cam_wrist,
+                cam_tactile_left,
+                cam_tactile_right,
+                env,
+                maxlen=args.obs_horizon,
+            )
+            obs_thread.start()
+            observation_recorder = ObservationRecordingThread(obs_thread, recorder, args.record_hz)
+            observation_recorder.start()
+            LOGGER.info("Continuous observation recording started at %.3fHz.", args.record_hz)
+
+            metric_monitor = TrajectoryMetricMonitor(env, metric_config)
+            recorder.attach_metric_monitor(metric_monitor, metric_config)
+            metric_started = False
+            step = 0
+
+            try:
+                LOGGER.info("Waiting for observation queue to fill (obs_horizon=%d)", args.obs_horizon)
+                episode_stopped_before_inference = False
+                while obs_thread.get_obs(args.obs_horizon) is None:
+                    if control.stop_requested.is_set():
+                        LOGGER.info("Stop requested before observation queue filled.")
+                        episode_stopped_before_inference = True
+                        break
+                    if control.consume_reset():
+                        _reset_to_init_pose(env, args, "Reset requested while filling observations.")
+                    time.sleep(0.01)
+                if not episode_stopped_before_inference:
+                    LOGGER.info("Observation queue filled. Starting inference loop.")
+
+                while not control.stop_requested.is_set():
+                    if episode_stopped_before_inference:
+                        break
+                    if control.consume_reset():
+                        _reset_to_init_pose(env, args, "Reset requested.")
+                        continue
+
+                    loop_start = time.time()
+                    frames = obs_thread.get_obs(args.obs_horizon)
+                    if frames is None:
+                        time.sleep(0.01)
+                        continue
+
+                    latest_frame = frames[-1]
+                    recorder.record_frame(latest_frame, model_input=True)
+                    observation = _make_policy_observation(latest_frame, prompt, args.use_tactile)
+                    client_infer_start = time.monotonic()
+                    action_result = policy.infer(observation)
+                    client_policy_roundtrip_ms = (time.monotonic() - client_infer_start) * 1000.0
+                    action_chunk = np.asarray(action_result["actions"], dtype=np.float64)
+                    decoded_actions = decode_handcap_action_chunk(action_chunk)
+                    policy_chunk_size = len(decoded_actions)
+
+                    if control.consume_stop():
+                        LOGGER.info("Stop requested before action execution.")
+                        break
+                    if control.consume_reset():
+                        _reset_to_init_pose(env, args, "Reset requested before action execution.")
+                        continue
+
+                    # Convert relative SE(3) increments back to absolute physical target poses.
+                    physical_actions = []
+                    current_eepose = latest_frame["eepose"]
+                    for action in decoded_actions:
+                        abs_phys_pose = get_real_umi_inference_action(action[:6], current_eepose)
+                        physical_actions.append(np.concatenate([abs_phys_pose, action[6:7]], axis=-1))
+                    physical_actions = np.array(physical_actions)
+                    if args.steps_per_inference > 0:
+                        physical_actions = physical_actions[: args.steps_per_inference]
+
+                    action_timestamps = (
+                        (1 + np.arange(len(physical_actions), dtype=np.float64)) * robot_dt
+                        + time.time()
                     )
+
+                    force_pred = action_chunk[0, 10:12] if action_chunk.shape[-1] >= 12 else np.zeros((2,), dtype=np.float64)
+                    if args.infer_force_control and (args.force_predict or args.force_guide):
+                        target_force = max(1.0, float(np.mean(force_pred)))
+                    else:
+                        target_force = None
+
+                    if not metric_started:
+                        metric_monitor.start()
+                        metric_started = True
+
+                    actions_completed = env.exec_actions(
+                        physical_actions,
+                        action_timestamps,
+                        target_force=target_force,
+                        should_reset=lambda: control.reset_requested.is_set() or control.stop_requested.is_set(),
+                    )
+                    if not actions_completed:
+                        if control.consume_stop():
+                            LOGGER.info("Stop requested during action execution.")
+                            break
+                        if control.consume_reset():
+                            _reset_to_init_pose(env, args, "Reset requested during action execution.")
+                            continue
+                    if control.consume_stop():
+                        LOGGER.info("Stop requested after action execution.")
+                        break
+                    if control.consume_reset():
+                        _reset_to_init_pose(env, args, "Reset requested during action execution.")
+                        continue
+
+                    inference_latency = time.time() - loop_start
+                    step += 1
+                    recorder.append_state(
+                        step=step,
+                        inference_latency=inference_latency,
+                        latest_frame=latest_frame,
+                        action_chunk=action_chunk,
+                        client_timing={"policy_roundtrip_ms": client_policy_roundtrip_ms},
+                        server_timing=action_result.get("server_timing"),
+                        policy_timing=action_result.get("policy_timing"),
+                    )
+
+                    first_target = physical_actions[0]
+                    force_obs = _prepare_force(latest_frame.get("force"))
+                    exec_horizon = len(physical_actions) * robot_dt
+                    obs_timing = latest_frame.get("timing") if isinstance(latest_frame.get("timing"), dict) else {}
+                    camera_read_ms = float(obs_timing.get("camera_read_ms", 0.0))
+                    obs_total_ms = float(obs_timing.get("obs_total_ms", 0.0))
+                    robot_state_ms = float(obs_timing.get("robot_state_ms", 0.0))
+                    preprocess_ms = float(obs_timing.get("preprocess_ms", 0.0))
+                    server_timing = action_result.get("server_timing") or {}
+                    policy_timing = action_result.get("policy_timing") or {}
+                    server_infer_ms = float(server_timing.get("infer_ms", 0.0))
+                    model_forward_ms = float(policy_timing.get("infer_ms", 0.0))
+                    LOGGER.info(
+                        "[step=%d] infer=%.1fms policy_chunk=%d exec_steps=%d eef_xyz=(%.3f, %.3f, %.3f) "
+                        "exec_horizon=%.2fs gripper=%.4f force=(%.2f, %.2f) target_xyz=(%.3f, %.3f, %.3f) "
+                        "target_gripper=%.4f pred_force=(%.2f, %.2f) "
+                        "timing_ms(camera_read=%.1f obs_total=%.1f robot_state=%.1f preprocess=%.1f "
+                        "model_forward=%.1f server_infer=%.1f client_roundtrip=%.1f)",
+                        step,
+                        inference_latency * 1000.0,
+                        policy_chunk_size,
+                        len(physical_actions),
+                        float(current_eepose[0]),
+                        float(current_eepose[1]),
+                        float(current_eepose[2]),
+                        exec_horizon,
+                        float(latest_frame["gripper_width"]),
+                        float(force_obs[0]),
+                        float(force_obs[1]),
+                        float(first_target[0]),
+                        float(first_target[1]),
+                        float(first_target[2]),
+                        float(first_target[6]),
+                        float(force_pred[0]),
+                        float(force_pred[1]),
+                        camera_read_ms,
+                        obs_total_ms,
+                        robot_state_ms,
+                        preprocess_ms,
+                        model_forward_ms,
+                        server_infer_ms,
+                        client_policy_roundtrip_ms,
+                    )
+
+                    if step % 2 == 0:
+                        metric_samples_snapshot = metric_monitor.snapshot()
+                        metric_summary = compute_trajectory_cost(metric_samples_snapshot, metric_config)
+                        if metric_summary.get("valid"):
+                            LOGGER.info(
+                                "[step=%d] Current Trajectory Cost: J=%.3f (J_e=%.3f, J_m=%.3f, J_c=%.3f)",
+                                step,
+                                metric_summary.get("J", 0.0),
+                                metric_summary.get("J_e", 0.0),
+                                metric_summary.get("J_m", 0.0),
+                                metric_summary.get("J_c", 0.0),
+                            )
+            finally:
+                control.consume_stop()
+                if metric_monitor is not None:
+                    metric_monitor.stop()
+                    if metric_started:
+                        metric_monitor.join(timeout=2.0)
+                    if metric_monitor.error is not None:
+                        LOGGER.warning("Trajectory metric monitor stopped after sampling error: %s", metric_monitor.error)
+                    metric_monitor = None
+                    metric_started = False
+                if observation_recorder is not None:
+                    observation_recorder.stop()
+                    observation_recorder.join(timeout=2.0)
+                    observation_recorder = None
+                if obs_thread is not None:
+                    obs_thread.stop()
+                    obs_thread = None
+                if recorder is not None:
+                    recorder.flush()
+                    recorder = None
+                _ACTIVE_RECORDER = None
+                control.emit_event("episode_finished", output_dir)
+                LOGGER.info("Episode finished: %s", output_dir)
+                decision = control.wait_for_save_decision()
+                if decision == "keep":
+                    episode_index += 1
+                    LOGGER.info("Episode kept. Next episode index will be %03d.", episode_index)
+                else:
+                    LOGGER.info("Episode discarded. Next episode will reuse index %03d.", episode_index)
+                LOGGER.info("Ready. Press SPACE to start episode %03d, r to reset, Ctrl+C to exit.", episode_index)
     finally:
-        metric_monitor.stop()
-        if metric_started:
-            metric_monitor.join(timeout=2.0)
-        if metric_monitor.error is not None:
-            LOGGER.warning("Trajectory metric monitor stopped after sampling error: %s", metric_monitor.error)
-        obs_thread.stop()
-        recorder.flush()
+        control.stop()
+        if metric_monitor is not None:
+            metric_monitor.stop()
+            if metric_started:
+                metric_monitor.join(timeout=2.0)
+            if metric_monitor.error is not None:
+                LOGGER.warning("Trajectory metric monitor stopped after sampling error: %s", metric_monitor.error)
+        if observation_recorder is not None:
+            observation_recorder.stop()
+            observation_recorder.join(timeout=2.0)
+        if obs_thread is not None:
+            obs_thread.stop()
+        if realsense_thread is not None:
+            realsense_thread.stop()
+        if recorder is not None:
+            recorder.flush()
+        if _ACTIVE_RECORDER is recorder:
+            _ACTIVE_RECORDER = None
 
 
 if __name__ == "__main__":

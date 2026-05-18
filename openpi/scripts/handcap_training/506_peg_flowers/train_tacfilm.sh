@@ -11,8 +11,11 @@ exec > >(tee -a "logs/${SCRIPT_NAME}_${TIMESTAMP}.log") 2>&1
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
+export WANDB_MODE="${WANDB_MODE:-offline}"
+
 CONFIG_NAME="${CONFIG_NAME:-pi05_506_peg_flowers_tactile_tacfilm}"
 EXP_NAME="${EXP_NAME:-506_peg_flowers_handcap_pi05_4gpu_tacfilm}"
+export WANDB_DIR="${WANDB_DIR:-checkpoints/${CONFIG_NAME}/${EXP_NAME}}"
 DATA_ROOT="${DATA_ROOT:-Data/506_peg_flowers_lerobot}"
 
 # ==============================================================================
@@ -25,6 +28,10 @@ NUM_TRAIN_STEPS="${NUM_TRAIN_STEPS:-100000}"
 SAVE_INTERVAL="${SAVE_INTERVAL:-10000}"
 NUM_WORKERS="${NUM_WORKERS:-64}"
 FSDP_DEVICES="${FSDP_DEVICES:-1}"
+CHECKPOINT_BASE_DIR="${CHECKPOINT_BASE_DIR:-checkpoints}"
+# Keep only the latest checkpoint by default. A very large keep_period avoids
+# accumulating periodic checkpoints such as 20000/40000/60000 on quota-limited disks.
+KEEP_PERIOD="${KEEP_PERIOD:-1000000000}"
 RESUME="${RESUME:-0}"
 OVERWRITE="${OVERWRITE:-0}"
 
@@ -44,6 +51,8 @@ echo "FSDP devices: ${FSDP_DEVICES}"
 echo "Batch size: ${BATCH_SIZE}"
 echo "Train steps: ${NUM_TRAIN_STEPS}"
 echo "Save interval: ${SAVE_INTERVAL}"
+echo "Checkpoint base dir: ${CHECKPOINT_BASE_DIR}"
+echo "Keep period: ${KEEP_PERIOD}"
 echo "Num Workers: ${NUM_WORKERS}"
 echo "Resume: ${RESUME}"
 echo "Overwrite: ${OVERWRITE}"
@@ -54,7 +63,7 @@ if [[ ! -d "${DATA_ROOT}/data" || ! -d "${DATA_ROOT}/meta" || ! -d "${DATA_ROOT}
   exit 1
 fi
 
-CHECKPOINT_DIR="checkpoints/${CONFIG_NAME}/${EXP_NAME}"
+CHECKPOINT_DIR="${CHECKPOINT_BASE_DIR}/${CONFIG_NAME}/${EXP_NAME}"
 LATEST_CKPT="$(
   find "${CHECKPOINT_DIR}" -maxdepth 1 -mindepth 1 -type d -name '[0-9]*' 2>/dev/null \
     | awk -F/ '{print $NF}' \
@@ -94,7 +103,8 @@ python scripts/train.py \
   --batch-size "${BATCH_SIZE}" \
   --num-train-steps "${NUM_TRAIN_STEPS}" \
   --save-interval "${SAVE_INTERVAL}" \
+  --checkpoint-base-dir "${CHECKPOINT_BASE_DIR}" \
+  --keep-period "${KEEP_PERIOD}" \
   --num-workers "${NUM_WORKERS}" \
-  --no-wandb-enabled \
   --fsdp-devices "${FSDP_DEVICES}" \
   "${RUN_MODE_FLAGS[@]}"
